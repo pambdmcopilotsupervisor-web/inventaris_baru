@@ -17,14 +17,22 @@ declare module "iron-session" {
   }
 }
 
+// Validasi SESSION_SECRET saat diakses pertama kali (runtime saja, bukan build time)
+function getSessionSecret(): string {
+  const secret = process.env.SESSION_SECRET
+  if (!secret) throw new Error("SESSION_SECRET environment variable wajib diisi!")
+  if (secret.length < 32) throw new Error("SESSION_SECRET harus minimal 32 karakter!")
+  return secret
+}
+
 const sessionOptions = {
   cookieName: "pedami_session",
-  password: process.env.SESSION_SECRET!,
+  get password() { return getSessionSecret() },
   cookieOptions: {
     secure: process.env.NODE_ENV === "production",
     httpOnly: true,
     sameSite: "strict" as const,
-    maxAge: 60 * 60 * 24 * 7, // 7 hari (dikurangi dari 30)
+    maxAge: 60 * 60 * 24 * 7, // 7 hari
   },
 }
 

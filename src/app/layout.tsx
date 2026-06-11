@@ -3,14 +3,6 @@ import { Fira_Sans, Fira_Code } from "next/font/google";
 import { AuthProvider } from "@/contexts/AuthContext";
 import "./globals.css";
 
-// Validasi environment variable kritis saat startup
-if (!process.env.SESSION_SECRET) {
-  throw new Error("SESSION_SECRET environment variable wajib diisi!")
-}
-if (process.env.SESSION_SECRET.length < 32) {
-  throw new Error("SESSION_SECRET harus minimal 32 karakter!")
-}
-
 const firaSans = Fira_Sans({
   variable: "--font-fira-sans",
   subsets: ["latin"],
