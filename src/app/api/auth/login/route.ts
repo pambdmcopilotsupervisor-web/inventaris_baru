@@ -27,20 +27,25 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json()
-    const email    = typeof body.email    === "string" ? body.email.trim().toLowerCase()  : ""
+    // Tidak lowercase email — biarkan MySQL handle case-insensitive comparison
+    const email    = typeof body.email    === "string" ? body.email.trim()    : ""
     const password = typeof body.password === "string" ? body.password : ""
 
     if (!email || !password) {
       return NextResponse.json({ error: "Email dan password wajib diisi" }, { status: 400 })
     }
 
-    // Validasi format email sederhana
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    // Validasi format email sederhana (case tidak diubah)
+    if (!email.includes("@")) {
       return NextResponse.json({ error: "Format email tidak valid" }, { status: 400 })
     }
 
-    // Cari user di database
-    const user = await prisma.users.findUnique({ where: { email } })
+    // Cari user di database — MySQL collation (ci) handles case-insensitive
+    // Gunakan raw query agar LOWER() memastikan case-insensitive match
+    const usersFound = await prisma.$queryRaw<{ id: bigint; name: string; email: string | null; password: string; role: string | null; karyawan_id: number | null }[]>`
+      SELECT id, name, email, password, role, karyawan_id FROM users WHERE LOWER(email) = LOWER(${email}) LIMIT 1
+    `
+    const user = usersFound[0] ?? null
     if (!user) {
       // Timing-safe: tetap jalankan bcrypt untuk mencegah timing attack
       await bcrypt.compare(password, "$2a$12$fakehashfakehashfakehashfakehashfakehashfakehashfakeh")
