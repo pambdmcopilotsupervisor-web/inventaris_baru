@@ -1,0 +1,452 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "library"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model assets {
+  id                  BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  kode_asset          String                @db.VarChar(255)
+  nama_asset          String                @db.VarChar(255)
+  gambar              String?               @db.VarChar(100)
+  tgl_beli            DateTime?             @db.Date
+  hrg_beli            Int?
+  kelompok_asset      String                @db.VarChar(255)
+  ruangan_id          Int?
+  penanggung_jawab_id Int
+  pemakai             String?               @db.VarChar(50)
+  divisi              String?               @db.VarChar(100)
+  status_barang       String                @db.VarChar(15)
+  karyawan_id         Int
+  created_at          DateTime?             @db.Timestamp(0)
+  updated_at          DateTime?             @db.Timestamp(0)
+  foto                String?               @db.VarChar(100)
+  deskripsi           String?               @db.VarChar(250)
+  kode_nama           String?               @db.VarChar(100)
+  riwayat_service_acs riwayat_service_acs[]
+}
+
+model cache {
+  key        String @id @db.VarChar(255)
+  value      String @db.MediumText
+  expiration Int
+}
+
+model cache_locks {
+  key        String @id @db.VarChar(255)
+  owner      String @db.VarChar(255)
+  expiration Int
+}
+
+model data_r2r4s {
+  id                       BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
+  kode_brg                 String                     @db.VarChar(255)
+  jns_brg                  String                     @db.VarChar(255)
+  plat                     String                     @db.VarChar(255)
+  nm_brg                   String                     @db.VarChar(255)
+  gambar_fisik             String?                    @db.VarChar(100)
+  thn                      Int?
+  no_rangka                String?                    @db.VarChar(255)
+  no_mesin                 String?                    @db.VarChar(255)
+  pajak                    DateTime?                  @db.Date
+  gambar_pajak             String?                    @db.VarChar(100)
+  stnk                     DateTime?                  @db.Date
+  gambar_stnk              String?                    @db.VarChar(100)
+  bpkb                     String?                    @db.VarChar(100)
+  warna                    String?                    @db.VarChar(255)
+  service                  DateTime?                  @db.Date
+  foto                     String?                    @db.VarChar(100)
+  pemegang                 String?                    @db.VarChar(255)
+  departemen               String?                    @db.VarChar(255)
+  gbr_barang               String?                    @db.VarChar(100)
+  stat                     String?                    @db.VarChar(255)
+  created_at               DateTime?                  @db.Timestamp(0)
+  updated_at               DateTime?                  @db.Timestamp(0)
+  no_bpkb                  String?                    @db.VarChar(50)
+  tgl_akhir_kir            DateTime?                  @db.Date
+  tgl_stop_tagihan         DateTime?                  @db.Date
+  hrg_sewa                 Int?
+  hrg_beli                 Decimal?                   @db.Decimal(15, 2)
+  deskripsi                String?                    @db.VarChar(250)
+  alasan_stop_tagihan      String?                    @db.VarChar(255)
+  mutasi_r2r4s             mutasi_r2r4s[]
+  riwayat_pembayaran_r2r4s riwayat_pembayaran_r2r4s[]
+  riwayat_servis_r2r4s     riwayat_servis_r2r4s[]
+}
+
+model divisis {
+  id                                                          BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  kode_divisi                                                 String              @db.VarChar(255)
+  nama_divisi                                                 String              @db.VarChar(255)
+  created_at                                                  DateTime?           @db.Timestamp(0)
+  updated_at                                                  DateTime?           @db.Timestamp(0)
+  mutasi_karyawans_mutasi_karyawans_divisi_asal_idTodivisis   mutasi_karyawans[]  @relation("mutasi_karyawans_divisi_asal_idTodivisis")
+  mutasi_karyawans_mutasi_karyawans_divisi_tujuan_idTodivisis mutasi_karyawans[]  @relation("mutasi_karyawans_divisi_tujuan_idTodivisis")
+  pensiun_karyawans                                           pensiun_karyawans[]
+}
+
+model exports {
+  id              BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  completed_at    DateTime? @db.Timestamp(0)
+  file_disk       String    @db.VarChar(255)
+  file_name       String?   @db.VarChar(255)
+  exporter        String    @db.VarChar(255)
+  processed_rows  Int       @default(0) @db.UnsignedInt
+  total_rows      Int       @db.UnsignedInt
+  successful_rows Int       @default(0) @db.UnsignedInt
+  user_id         BigInt    @db.UnsignedBigInt
+  created_at      DateTime? @db.Timestamp(0)
+  updated_at      DateTime? @db.Timestamp(0)
+  users           users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "exports_user_id_foreign")
+
+  @@index([user_id], map: "exports_user_id_foreign")
+}
+
+model failed_import_rows {
+  id               BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  data             String    @db.LongText
+  import_id        BigInt    @db.UnsignedBigInt
+  validation_error String?   @db.Text
+  created_at       DateTime? @db.Timestamp(0)
+  updated_at       DateTime? @db.Timestamp(0)
+  imports          imports   @relation(fields: [import_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "failed_import_rows_import_id_foreign")
+
+  @@index([import_id], map: "failed_import_rows_import_id_foreign")
+}
+
+model imports {
+  id                 BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  completed_at       DateTime?            @db.Timestamp(0)
+  file_name          String               @db.VarChar(255)
+  file_path          String               @db.VarChar(255)
+  importer           String               @db.VarChar(255)
+  processed_rows     Int                  @default(0) @db.UnsignedInt
+  total_rows         Int                  @db.UnsignedInt
+  successful_rows    Int                  @default(0) @db.UnsignedInt
+  user_id            BigInt               @db.UnsignedBigInt
+  created_at         DateTime?            @db.Timestamp(0)
+  updated_at         DateTime?            @db.Timestamp(0)
+  failed_import_rows failed_import_rows[]
+  users              users                @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "imports_user_id_foreign")
+
+  @@index([user_id], map: "imports_user_id_foreign")
+}
+
+model job_batches {
+  id             String  @id @db.VarChar(255)
+  name           String  @db.VarChar(255)
+  total_jobs     Int
+  pending_jobs   Int
+  failed_jobs    Int
+  failed_job_ids String  @db.LongText
+  options        String? @db.MediumText
+  cancelled_at   Int?
+  created_at     Int
+  finished_at    Int?
+}
+
+model jobs {
+  id           BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  queue        String @db.VarChar(255)
+  payload      String @db.LongText
+  attempts     Int    @db.UnsignedTinyInt
+  reserved_at  Int?   @db.UnsignedInt
+  available_at Int    @db.UnsignedInt
+  created_at   Int    @db.UnsignedInt
+
+  @@index([queue], map: "jobs_queue_index")
+}
+
+model karyawans {
+  id                      BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  nik                     String              @db.VarChar(255)
+  nama_karyawan           String              @db.VarChar(255)
+  divisi_id               Int?
+  jabatan                 String              @db.VarChar(255)
+  subdivisi_id            Int?
+  jkel                    String              @db.VarChar(15)
+  created_at              DateTime?           @db.Timestamp(0)
+  updated_at              DateTime?           @db.Timestamp(0)
+  no_ktp                  String?             @db.VarChar(255)
+  no_hp                   String?             @db.VarChar(255)
+  no_rekening             String?             @db.VarChar(255)
+  alamat                  String?             @db.VarChar(255)
+  tanggal_lahir           DateTime?           @db.Date
+  tanggal_masuk_kerja     DateTime?           @db.Date
+  tempat_lahir            String?             @db.VarChar(100)
+  nama_bank               String?             @db.VarChar(100)
+  kontak_darurat          String?             @db.VarChar(255)
+  status_karyawan         String?             @db.VarChar(100)
+  masa_kerja              Int?
+  no_bpjs_ketenagakerjaan String?             @db.VarChar(255)
+  no_bpjs_kesehatan       String?             @db.VarChar(255)
+  pendidikan_terakhir     String?             @db.VarChar(100)
+  umur                    Int?
+  agama                   String?             @db.VarChar(50)
+  foto                    String?             @db.VarChar(100)
+  mutasi_karyawans        mutasi_karyawans[]
+  pensiun_karyawans       pensiun_karyawans[]
+}
+
+model kontrak_details {
+  id           BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  created_at   DateTime? @db.Timestamp(0)
+  updated_at   DateTime? @db.Timestamp(0)
+  data_r2r4_id Int?
+  kontrak_id   Int
+}
+
+model kontraks {
+  id         BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  created_at DateTime? @db.Timestamp(0)
+  updated_at DateTime? @db.Timestamp(0)
+  no_kontrak String?   @db.VarChar(50)
+  judul      String    @db.VarChar(250)
+  tgl_awal   DateTime  @db.Date
+  tgl_akhir  DateTime  @db.Date
+  file       String?   @db.VarChar(100)
+}
+
+model migrations {
+  id        Int    @id @default(autoincrement()) @db.UnsignedInt
+  migration String @db.VarChar(255)
+  batch     Int
+}
+
+model mutasi_assets {
+  id                    Int       @id @default(autoincrement())
+  created_at            DateTime? @db.Timestamp(0)
+  updated_at            DateTime? @db.Timestamp(0)
+  ruangan_id_a          Int
+  penanggung_jawab_id_a Int
+  karyawan_id_a         Int
+  ruangan_id_t          Int
+  penanggung_jawab_id_t Int
+  karyawan_id_t         Int
+  tgl_mutasi            DateTime  @db.Date
+  deskripsi             String    @db.VarChar(100)
+  asset_id              Int
+  penanggung_jawab_id   Int?
+  ruangan_id            Int?
+  karyawan_id           Int?
+  gambar_awal           String?   @db.VarChar(100)
+  gambar_terbaru        String?   @db.VarChar(100)
+}
+
+model mutasi_karyawans {
+  id                                                          BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
+  karyawan_id                                                 BigInt      @db.UnsignedBigInt
+  tgl_mutasi                                                  DateTime    @db.Date
+  jabatan_asal                                                String?     @db.VarChar(255)
+  jabatan_tujuan                                              String?     @db.VarChar(255)
+  divisi_asal_id                                              BigInt?     @db.UnsignedBigInt
+  subdivisi_asal_id                                           BigInt?     @db.UnsignedBigInt
+  divisi_tujuan_id                                            BigInt?     @db.UnsignedBigInt
+  subdivisi_tujuan_id                                         BigInt?     @db.UnsignedBigInt
+  alasan                                                      String?     @db.VarChar(255)
+  no_sk                                                       String?     @db.VarChar(255)
+  created_at                                                  DateTime?   @db.Timestamp(0)
+  updated_at                                                  DateTime?   @db.Timestamp(0)
+  divisis_mutasi_karyawans_divisi_asal_idTodivisis            divisis?    @relation("mutasi_karyawans_divisi_asal_idTodivisis", fields: [divisi_asal_id], references: [id], onUpdate: Restrict, map: "mutasi_karyawans_divisi_asal_id_foreign")
+  divisis_mutasi_karyawans_divisi_tujuan_idTodivisis          divisis?    @relation("mutasi_karyawans_divisi_tujuan_idTodivisis", fields: [divisi_tujuan_id], references: [id], onUpdate: Restrict, map: "mutasi_karyawans_divisi_tujuan_id_foreign")
+  karyawans                                                   karyawans   @relation(fields: [karyawan_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "mutasi_karyawans_karyawan_id_foreign")
+  subdivisis_mutasi_karyawans_subdivisi_asal_idTosubdivisis   subdivisis? @relation("mutasi_karyawans_subdivisi_asal_idTosubdivisis", fields: [subdivisi_asal_id], references: [id], onUpdate: Restrict, map: "mutasi_karyawans_subdivisi_asal_id_foreign")
+  subdivisis_mutasi_karyawans_subdivisi_tujuan_idTosubdivisis subdivisis? @relation("mutasi_karyawans_subdivisi_tujuan_idTosubdivisis", fields: [subdivisi_tujuan_id], references: [id], onUpdate: Restrict, map: "mutasi_karyawans_subdivisi_tujuan_id_foreign")
+
+  @@index([divisi_asal_id], map: "mutasi_karyawans_divisi_asal_id_foreign")
+  @@index([divisi_tujuan_id], map: "mutasi_karyawans_divisi_tujuan_id_foreign")
+  @@index([karyawan_id], map: "mutasi_karyawans_karyawan_id_foreign")
+  @@index([subdivisi_asal_id], map: "mutasi_karyawans_subdivisi_asal_id_foreign")
+  @@index([subdivisi_tujuan_id], map: "mutasi_karyawans_subdivisi_tujuan_id_foreign")
+}
+
+model mutasi_r2r4s {
+  id                BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
+  data_r2r4_id      BigInt     @db.UnsignedBigInt
+  pemegang_awal     String?    @db.VarChar(255)
+  departemen_awal   String?    @db.VarChar(255)
+  pemegang_tujuan   String     @db.VarChar(255)
+  departemen_tujuan String     @db.VarChar(255)
+  tgl_mutasi        DateTime   @db.Date
+  deskripsi         String?    @db.VarChar(255)
+  created_at        DateTime?  @db.Timestamp(0)
+  updated_at        DateTime?  @db.Timestamp(0)
+  data_r2r4s        data_r2r4s @relation(fields: [data_r2r4_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "mutasi_r2r4s_data_r2r4_id_foreign")
+
+  @@index([data_r2r4_id], map: "mutasi_r2r4s_data_r2r4_id_foreign")
+}
+
+model notifications {
+  id              String    @id @db.Char(36)
+  type            String    @db.VarChar(255)
+  notifiable_type String    @db.VarChar(255)
+  notifiable_id   BigInt    @db.UnsignedBigInt
+  data            String    @db.Text
+  read_at         DateTime? @db.Timestamp(0)
+  created_at      DateTime? @db.Timestamp(0)
+  updated_at      DateTime? @db.Timestamp(0)
+
+  @@index([notifiable_type, notifiable_id], map: "notifications_notifiable_type_notifiable_id_index")
+}
+
+model password_reset_tokens {
+  email      String    @id @db.VarChar(255)
+  token      String    @db.VarChar(255)
+  created_at DateTime? @db.Timestamp(0)
+}
+
+model penjualan_r2r4s {
+  id           Int       @id @default(autoincrement())
+  created_at   DateTime? @db.Timestamp(0)
+  updated_at   DateTime? @db.Timestamp(0)
+  data_r2r4_id Int?
+  tgl_jual     DateTime? @db.Date
+  hrg_jual     Int?
+  nm_pembeli   String?   @db.VarChar(50)
+}
+
+model pensiun_karyawans {
+  id                    BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
+  karyawan_id           BigInt      @db.UnsignedBigInt
+  tgl_pensiun           DateTime    @db.Date
+  jenis_pensiun         String      @db.VarChar(255)
+  no_sk                 String?     @db.VarChar(255)
+  jabatan_terakhir      String?     @db.VarChar(255)
+  divisi_terakhir_id    BigInt?     @db.UnsignedBigInt
+  subdivisi_terakhir_id BigInt?     @db.UnsignedBigInt
+  pesangon              Decimal     @default(0.00) @db.Decimal(15, 2)
+  keterangan            String?     @db.Text
+  created_at            DateTime?   @db.Timestamp(0)
+  updated_at            DateTime?   @db.Timestamp(0)
+  divisis               divisis?    @relation(fields: [divisi_terakhir_id], references: [id], onUpdate: Restrict, map: "pensiun_karyawans_divisi_terakhir_id_foreign")
+  karyawans             karyawans   @relation(fields: [karyawan_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "pensiun_karyawans_karyawan_id_foreign")
+  subdivisis            subdivisis? @relation(fields: [subdivisi_terakhir_id], references: [id], onUpdate: Restrict, map: "pensiun_karyawans_subdivisi_terakhir_id_foreign")
+
+  @@index([divisi_terakhir_id], map: "pensiun_karyawans_divisi_terakhir_id_foreign")
+  @@index([karyawan_id], map: "pensiun_karyawans_karyawan_id_foreign")
+  @@index([subdivisi_terakhir_id], map: "pensiun_karyawans_subdivisi_terakhir_id_foreign")
+}
+
+model permohonan_disposal {
+  id                BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  nomor             String?   @db.VarChar(30)
+  asset_id          Int
+  tgl_pengajuan     DateTime  @db.Date
+  gambar            String?   @db.VarChar(100)
+  kondisi           String?   @db.VarChar(50)
+  dibuat_oleh       Int?
+  verif_manager     Int?
+  verif_ketua       Int?
+  keterangan        String?   @db.VarChar(255)
+  created_at        DateTime? @db.Timestamp(0)
+  updated_at        DateTime? @db.Timestamp(0)
+  tgl_verif_manager DateTime? @db.DateTime(0)
+  tgl_verif_ketua   DateTime? @db.DateTime(0)
+  ketua_id          Int?
+  manager_id        Int?
+}
+
+model riwayat_pembayaran_r2r4s {
+  id                     BigInt                                    @id @default(autoincrement()) @db.UnsignedBigInt
+  data_r2r4_id           BigInt                                    @db.UnsignedBigInt
+  jenis_pembayaran       riwayat_pembayaran_r2r4s_jenis_pembayaran
+  tanggal_pembayaran     DateTime                                  @db.Date
+  biaya                  BigInt                                    @default(0)
+  jatuh_tempo_berikutnya DateTime?                                 @db.Date
+  keterangan             String?                                   @db.Text
+  bukti_foto             String?                                   @db.VarChar(255)
+  created_at             DateTime?                                 @db.Timestamp(0)
+  updated_at             DateTime?                                 @db.Timestamp(0)
+  data_r2r4s             data_r2r4s                                @relation(fields: [data_r2r4_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "riwayat_pembayaran_r2r4s_data_r2r4_id_foreign")
+
+  @@index([data_r2r4_id], map: "riwayat_pembayaran_r2r4s_data_r2r4_id_foreign")
+}
+
+model riwayat_service_acs {
+  id              BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  asset_id        BigInt    @db.UnsignedBigInt
+  tanggal_service DateTime  @db.Date
+  jenis_pekerjaan String    @db.VarChar(255)
+  biaya           BigInt    @default(0)
+  teknisi         String?   @db.VarChar(255)
+  keterangan      String?   @db.Text
+  bukti_foto      String?   @db.VarChar(255)
+  created_at      DateTime? @db.Timestamp(0)
+  updated_at      DateTime? @db.Timestamp(0)
+  assets          assets    @relation(fields: [asset_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "riwayat_service_acs_asset_id_foreign")
+
+  @@index([asset_id], map: "riwayat_service_acs_asset_id_foreign")
+}
+
+model riwayat_servis_r2r4s {
+  id             BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
+  data_r2r4_id   BigInt     @db.UnsignedBigInt
+  tanggal_servis DateTime   @db.Date
+  jenis_servis   String     @db.VarChar(255)
+  biaya          BigInt     @default(0)
+  bengkel        String?    @db.VarChar(255)
+  keterangan     String?    @db.Text
+  struk_foto     String?    @db.VarChar(255)
+  created_at     DateTime?  @db.Timestamp(0)
+  updated_at     DateTime?  @db.Timestamp(0)
+  data_r2r4s     data_r2r4s @relation(fields: [data_r2r4_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "riwayat_servis_r2r4s_data_r2r4_id_foreign")
+
+  @@index([data_r2r4_id], map: "riwayat_servis_r2r4s_data_r2r4_id_foreign")
+}
+
+model ruangans {
+  id         BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  ruangan    String    @db.VarChar(255)
+  created_at DateTime? @db.Timestamp(0)
+  updated_at DateTime? @db.Timestamp(0)
+  lokasi     String    @db.VarChar(50)
+}
+
+model sessions {
+  id            String  @id @db.VarChar(255)
+  user_id       BigInt? @db.UnsignedBigInt
+  ip_address    String? @db.VarChar(45)
+  user_agent    String? @db.Text
+  payload       String  @db.LongText
+  last_activity Int
+
+  @@index([last_activity], map: "sessions_last_activity_index")
+  @@index([user_id], map: "sessions_user_id_index")
+}
+
+model subdivisis {
+  id                                                                BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  kode_sub                                                          String              @db.VarChar(255)
+  divisi_id                                                         Int
+  nama_sub                                                          String              @db.VarChar(255)
+  created_at                                                        DateTime?           @db.Timestamp(0)
+  updated_at                                                        DateTime?           @db.Timestamp(0)
+  mutasi_karyawans_mutasi_karyawans_subdivisi_asal_idTosubdivisis   mutasi_karyawans[]  @relation("mutasi_karyawans_subdivisi_asal_idTosubdivisis")
+  mutasi_karyawans_mutasi_karyawans_subdivisi_tujuan_idTosubdivisis mutasi_karyawans[]  @relation("mutasi_karyawans_subdivisi_tujuan_idTosubdivisis")
+  pensiun_karyawans                                                 pensiun_karyawans[]
+}
+
+model users {
+  id                BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  name              String    @db.VarChar(255)
+  email             String?   @unique(map: "users_email_unique") @db.VarChar(255)
+  email_verified_at DateTime? @db.Timestamp(0)
+  password          String    @db.VarChar(255)
+  remember_token    String?   @db.VarChar(100)
+  created_at        DateTime? @db.Timestamp(0)
+  updated_at        DateTime? @db.Timestamp(0)
+  role              String?   @db.VarChar(50)
+  karyawan_id       Int?
+  exports           exports[]
+  imports           imports[]
+}
+
+enum riwayat_pembayaran_r2r4s_jenis_pembayaran {
+  Pajak
+  STNK
+  KIR
+}
