@@ -436,6 +436,7 @@ model users {
   email             String?   @unique(map: "users_email_unique") @db.VarChar(255)
   email_verified_at DateTime? @db.Timestamp(0)
   password          String    @db.VarChar(255)
+  password_baru     String?   @db.VarChar(255)  // Khusus inventaris_baru — tidak mengubah kolom password lama
   remember_token    String?   @db.VarChar(100)
   created_at        DateTime? @db.Timestamp(0)
   updated_at        DateTime? @db.Timestamp(0)

@@ -34,14 +34,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Field wajib tidak lengkap" }, { status: 400 })
     }
 
-    // Hash password dengan bcrypt (kompatibel dengan Laravel)
+    // Hash password dan simpan ke password_baru (tidak mengubah password lama pedami)
     const hashedPassword = await bcrypt.hash(password, 12)
 
     const user = await prisma.users.create({
       data: {
         name,
         email,
-        password: hashedPassword,
+        password: hashedPassword,   // password lama tetap diisi (required field)
+        password_baru: hashedPassword, // password khusus inventaris_baru
         role,
         karyawan_id: karyawan_id ? Number(karyawan_id) : null,
       },

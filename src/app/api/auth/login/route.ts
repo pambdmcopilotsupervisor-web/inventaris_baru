@@ -40,10 +40,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Format email tidak valid" }, { status: 400 })
     }
 
-    // Cari user di database — MySQL collation (ci) handles case-insensitive
-    // Gunakan raw query agar LOWER() memastikan case-insensitive match
-    const usersFound = await prisma.$queryRaw<{ id: bigint; name: string; email: string | null; password: string; role: string | null; karyawan_id: number | null }[]>`
-      SELECT id, name, email, password, role, karyawan_id FROM users WHERE LOWER(email) = LOWER(${email}) LIMIT 1
+    // Cari user — ambil password_baru (inventaris) dan password lama (pedami)
+    const usersFound = await prisma.$queryRaw<{
+      id: bigint; name: string; email: string | null;
+      password: string; password_baru: string | null;
+      role: string | null; karyawan_id: number | null
+    }[]>`
+      SELECT id, name, email, password, password_baru, role, karyawan_id
+      FROM users WHERE LOWER(email) = LOWER(${email}) LIMIT 1
     `
     const user = usersFound[0] ?? null
     if (!user) {
@@ -52,8 +56,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Email atau password salah" }, { status: 401 })
     }
 
-    // Verifikasi password (bcrypt — kompatibel dengan Laravel)
-    const valid = await bcrypt.compare(password, user.password)
+    // Verifikasi password:
+    // 1. Coba password_baru (khusus inventaris_baru) — jika tidak null
+    // 2. Fallback ke password lama (dari pedami-inventaris)
+    const hashToCheck = user.password_baru ?? user.password
+    const valid = await bcrypt.compare(password, hashToCheck)
     if (!valid) {
       return NextResponse.json({ error: "Email atau password salah" }, { status: 401 })
     }

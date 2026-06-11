@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 
 // Routes yang tidak memerlukan autentikasi
-const PUBLIC_PATHS = ["/login", "/api/auth/login", "/api/debug"]
+const PUBLIC_PATHS = ["/login", "/api/auth/login"]
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl

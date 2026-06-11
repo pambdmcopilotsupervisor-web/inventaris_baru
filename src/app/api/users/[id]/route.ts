@@ -10,9 +10,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const updateData: Record<string, unknown> = { name, email, role, karyawan_id: karyawan_id ? Number(karyawan_id) : null }
 
-    // Hanya update password jika diisi
+    // Hanya update password_baru jika password diisi (tidak menyentuh password lama pedami)
     if (password && password.trim()) {
-      updateData.password = await bcrypt.hash(password, 12)
+      updateData.password_baru = await bcrypt.hash(password, 12)
     }
 
     const updated = await prisma.users.update({ where: { id: BigInt(id) }, data: updateData })
