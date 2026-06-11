@@ -318,13 +318,15 @@ export function Navbar() {
                 </div>
                 <div className="p-1">
                   {[
-                    { icon: <User className="h-4 w-4" />, label: "Profile" },
-                    { icon: <Settings className="h-4 w-4" />, label: "Pengaturan" },
+                    { icon: <User className="h-4 w-4" />, label: "Profile",     href: "/dashboard/profile" },
+                    { icon: <Settings className="h-4 w-4" />, label: "Pengaturan", href: "/dashboard/pengaturan" },
                   ].map((item) => (
-                    <button key={item.label} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm cursor-pointer transition-colors duration-150"
+                    <button key={item.label}
+                      className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm cursor-pointer transition-colors duration-150"
                       style={{ color: "var(--text-700)" }}
                       onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = "var(--primary-light)")}
                       onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = "transparent")}
+                      onClick={() => { setUserOpen(false); window.location.href = item.href }}
                     >
                       {item.icon} {item.label}
                     </button>
