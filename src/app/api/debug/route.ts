@@ -2,13 +2,11 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 
 // ⚠️ ENDPOINT DIAGNOSTIK SEMENTARA — HAPUS SETELAH SELESAI DEBUG
-// Hanya aktif di development atau dengan query param ?debug=1
 export async function GET(req: NextRequest) {
-  // Batasi akses — hanya boleh dari localhost atau dengan secret key
+  // Gunakan key "pedami-debug" sebagai akses sementara
   const debugKey = req.nextUrl.searchParams.get("key")
-  const expectedKey = process.env.SESSION_SECRET?.slice(0, 8)
-  if (debugKey !== expectedKey) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  if (debugKey !== "pedami-debug-2026") {
+    return NextResponse.json({ error: "Forbidden — tambahkan ?key=pedami-debug-2026" }, { status: 403 })
   }
 
   try {
@@ -33,6 +31,7 @@ export async function GET(req: NextRequest) {
         sessionSecretLength: process.env.SESSION_SECRET?.length ?? 0,
         hasDatabaseUrl: !!process.env.DATABASE_URL,
         databaseUrlHost: process.env.DATABASE_URL?.match(/@([^:\/]+)/)?.[1] ?? "unknown",
+        databaseUrlDbName: process.env.DATABASE_URL?.match(/\/([^?/]+)(\?|$)/)?.[1] ?? "unknown",
       },
     })
   } catch (error: any) {
