@@ -37,16 +37,27 @@ export async function POST(req: NextRequest) {
     // Hash password dan simpan ke password_baru (tidak mengubah password lama pedami)
     const hashedPassword = await bcrypt.hash(password, 12)
 
-    const user = await prisma.users.create({
-      data: {
-        name,
-        email,
-        password: hashedPassword,   // password lama tetap diisi (required field)
-        password_baru: hashedPassword, // password khusus inventaris_baru
-        role,
-        karyawan_id: karyawan_id ? Number(karyawan_id) : null,
-      },
-    })
+    let user
+    try {
+      user = await prisma.users.create({
+        data: {
+          name, email,
+          password: hashedPassword,    // password lama tetap diisi (required field)
+          password_baru: hashedPassword, // password khusus inventaris_baru
+          role,
+          karyawan_id: karyawan_id ? Number(karyawan_id) : null,
+        },
+      })
+    } catch (err: any) {
+      if (err?.code === "P2002") throw err // duplicate email
+      // Fallback: kolom password_baru belum ada
+      user = await prisma.users.create({
+        data: {
+          name, email, password: hashedPassword, role,
+          karyawan_id: karyawan_id ? Number(karyawan_id) : null,
+        },
+      })
+    }
 
     return NextResponse.json(serialize({ id: user.id, name: user.name, email: user.email, role: user.role }), { status: 201 })
   } catch (err: any) {

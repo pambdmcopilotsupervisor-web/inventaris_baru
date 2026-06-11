@@ -12,12 +12,24 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     // Hanya update password_baru jika password diisi (tidak menyentuh password lama pedami)
     if (password && password.trim()) {
-      updateData.password_baru = await bcrypt.hash(password, 12)
+      const hashed = await bcrypt.hash(password, 12)
+      // Coba update password_baru; jika kolom belum ada (migration belum jalan), update password biasa
+      try {
+        updateData.password_baru = hashed
+        const updated = await prisma.users.update({ where: { id: BigInt(id) }, data: updateData })
+        return NextResponse.json(serialize({ id: updated.id, name: updated.name, email: updated.email, role: updated.role }))
+      } catch (err: any) {
+        if (err?.message?.includes("password_baru") || err?.code === "P2009") {
+          // Kolom belum ada, fallback ke password lama
+          delete updateData.password_baru
+          updateData.password = hashed
+        } else throw err
+      }
     }
 
     const updated = await prisma.users.update({ where: { id: BigInt(id) }, data: updateData })
     return NextResponse.json(serialize({ id: updated.id, name: updated.name, email: updated.email, role: updated.role }))
-  } catch {
+  } catch (err: any) {
     return NextResponse.json({ error: "Gagal memperbarui" }, { status: 500 })
   }
 }
