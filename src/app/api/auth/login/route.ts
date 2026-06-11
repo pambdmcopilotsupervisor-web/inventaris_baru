@@ -40,16 +40,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Format email tidak valid" }, { status: 400 })
     }
 
-    // Cari user — ambil password_baru (inventaris) dan password lama (pedami)
-    const usersFound = await prisma.$queryRaw<{
-      id: bigint; name: string; email: string | null;
-      password: string; password_baru: string | null;
-      role: string | null; karyawan_id: number | null
-    }[]>`
-      SELECT id, name, email, password, password_baru, role, karyawan_id
-      FROM users WHERE LOWER(email) = LOWER(${email}) LIMIT 1
-    `
-    const user = usersFound[0] ?? null
+    // Cari user — coba ambil password_baru, jika kolom belum ada (migration belum jalan) fallback
+    let user: { id: bigint; name: string; email: string | null; password: string; password_baru?: string | null; role: string | null; karyawan_id: number | null } | null = null
+    try {
+      const usersFound = await prisma.$queryRaw<{
+        id: bigint; name: string; email: string | null;
+        password: string; password_baru: string | null;
+        role: string | null; karyawan_id: number | null
+      }[]>`
+        SELECT id, name, email, password, password_baru, role, karyawan_id
+        FROM users WHERE LOWER(email) = LOWER(${email}) LIMIT 1
+      `
+      user = usersFound[0] ?? null
+    } catch {
+      // Fallback: kolom password_baru belum ada (migration belum dijalankan)
+      const usersFound = await prisma.$queryRaw<{
+        id: bigint; name: string; email: string | null;
+        password: string; role: string | null; karyawan_id: number | null
+      }[]>`
+        SELECT id, name, email, password, role, karyawan_id
+        FROM users WHERE LOWER(email) = LOWER(${email}) LIMIT 1
+      `
+      user = usersFound[0] ? { ...usersFound[0], password_baru: null } : null
+    }
     if (!user) {
       // Timing-safe: tetap jalankan bcrypt untuk mencegah timing attack
       await bcrypt.compare(password, "$2a$12$fakehashfakehashfakehashfakehashfakehashfakehashfakeh")
