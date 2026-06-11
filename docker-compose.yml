@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  inventaris_baru:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      # Wajib diisi di Dokploy → Environment Variables:
+      - DATABASE_URL=${DATABASE_URL}
+      - SESSION_SECRET=${SESSION_SECRET}
+    networks:
+      - dokploy-network
+
+# Gunakan network dokploy-network yang sudah ada
+# agar app bisa mengakses database di container lain
+networks:
+  dokploy-network:
+    external: true

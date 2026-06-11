@@ -178,12 +178,6 @@ export default function TagihanSewaPage() {
       {/* Report content */}
       {!loading && data && (
         <>
-          {/* Period label */}
-          <div className="text-center py-3 rounded-xl" style={{ background: "var(--primary)", color: "#fff" }}>
-            <p className="text-sm font-semibold uppercase tracking-widest opacity-70">Laporan Tagihan Sewa Kendaraan</p>
-            <p className="text-xl font-bold mt-0.5">Periode: {data.periodLabel}</p>
-            <p className="text-sm opacity-80 mt-0.5">Koperasi Konsumen Pedami</p>
-          </div>
 
           {/* Summary cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
