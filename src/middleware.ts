@@ -23,14 +23,14 @@ export function middleware(req: NextRequest) {
 
   if (!sessionCookie?.value) {
     // Redirect ke login jika belum login
-    if (pathname.startsWith("/dashboard") || pathname === "/") {
+    if (pathname.startsWith("/dashboard") || pathname === "/" || pathname === "/select-module") {
       return NextResponse.redirect(new URL("/login", req.url))
     }
   }
 
-  // Jika sudah login dan ke halaman /login → redirect ke dashboard
+  // Jika sudah login dan ke halaman /login → redirect ke select-module
   if (sessionCookie?.value && pathname === "/login") {
-    return NextResponse.redirect(new URL("/dashboard", req.url))
+    return NextResponse.redirect(new URL("/select-module", req.url))
   }
 
   return NextResponse.next()

@@ -57,6 +57,14 @@ const getSisaHari = (tgl: string) => {
 export default function DashboardPage() {
   const { data: stats, loading } = useApi<DashboardStats>("/api/dashboard-stats")
 
+  // Redirect ke select-module jika belum pilih modul
+  React.useEffect(() => {
+    const modul = localStorage.getItem("pedami_modul")
+    if (!modul) {
+      window.location.href = "/select-module"
+    }
+  }, [])
+
   const kondisiData = stats
     ? stats.aset.kondisi.map((k) => ({
         name: k.status_barang, value: k._count.id,

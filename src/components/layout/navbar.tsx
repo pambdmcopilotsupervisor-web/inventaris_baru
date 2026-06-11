@@ -11,7 +11,7 @@ import {
   Cpu, ArrowLeftRight, UserMinus, UserX, Trash2, AirVent,
   Building2, GitBranch, DoorOpen, UserCog, FileText, Wrench,
   CreditCard, ShoppingCart, Receipt, TrendingUp, ChevronRight,
-  Menu, X,
+  Menu, X, Layers,
 } from "lucide-react"
 
 /* ────────────────────────────────────────────
@@ -23,6 +23,13 @@ const NAV_GROUPS = [
     label: "Dashboard",
     icon: <LayoutDashboard className="h-4 w-4" />,
     href: "/dashboard",
+    items: [],
+  },
+  {
+    key: "sdm-dashboard",
+    label: "Dashboard SDM",
+    icon: <LayoutDashboard className="h-4 w-4" />,
+    href: "/dashboard/sdm",
     items: [],
   },
   {
@@ -178,7 +185,22 @@ export function Navbar() {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [userOpen, setUserOpen] = useState(false)
+  const [modul, setModul] = useState<"aset" | "sdm" | null>(null)
   const navRef = useRef<HTMLDivElement>(null)
+
+  // Baca modul aktif dari localStorage
+  useEffect(() => {
+    const m = localStorage.getItem("pedami_modul") as "aset" | "sdm" | null
+    setModul(m)
+  }, [pathname])
+
+  // Filter menu berdasarkan modul aktif
+  const activeGroups = NAV_GROUPS.filter(g => {
+    if (!modul) return true // tampilkan semua jika belum pilih
+    if (modul === "aset") return ["dashboard", "aset", "kendaraan", "laporan"].includes(g.key)
+    if (modul === "sdm")  return ["sdm-dashboard", "sdm", "master"].includes(g.key)
+    return true
+  })
 
   // Close on outside click
   useEffect(() => {
@@ -210,7 +232,7 @@ export function Navbar() {
 
         {/* Nav items — desktop */}
         <nav className="hidden lg:flex items-center gap-1 flex-1">
-          {NAV_GROUPS.map((group) => {
+          {activeGroups.map((group) => {
             const isActive = group.href
               ? pathname === group.href
               : group.items.some((s) => s.links.some((l) => pathname.startsWith(l.href)))
@@ -291,6 +313,21 @@ export function Navbar() {
             <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full" style={{ background: "var(--cta)" }} />
           </button>
 
+          {/* Tombol ganti modul */}
+          {modul && (
+            <button
+              onClick={() => { localStorage.removeItem("pedami_modul"); window.location.href = "/select-module" }}
+              className="hidden md:flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors duration-150 cursor-pointer mr-1"
+              title="Ganti Modul"
+              style={{ background: modul === "aset" ? "rgba(30,64,175,0.3)" : "rgba(22,101,52,0.3)", color: "#fff", border: "1px solid rgba(255,255,255,0.15)" }}
+              onMouseEnter={e => ((e.currentTarget as HTMLElement).style.opacity = "0.8")}
+              onMouseLeave={e => ((e.currentTarget as HTMLElement).style.opacity = "1")}
+            >
+              <Layers className="h-3 w-3" />
+              {modul === "aset" ? "Modul Aset" : "Modul SDM"}
+            </button>
+          )}
+
           {/* User */}
           <div className="relative">
             <button
@@ -364,7 +401,7 @@ export function Navbar() {
           className="fixed inset-x-0 top-14 z-40 lg:hidden overflow-y-auto max-h-[calc(100vh-56px)] pb-6"
           style={{ background: "var(--sb-bg)", borderBottom: "1px solid var(--sb-border)" }}
         >
-          {NAV_GROUPS.map((group) => (
+          {activeGroups.map((group) => (
             <div key={group.key} style={{ borderBottom: "1px solid var(--sb-border)" }}>
               {group.items.length === 0 ? (
                 <Link

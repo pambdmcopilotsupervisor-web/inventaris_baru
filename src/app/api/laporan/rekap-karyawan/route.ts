@@ -20,7 +20,10 @@ const EXCLUDED_DIVISIONS = [
 const USIA_PENSIUN = 56
 const WARNING_DAYS = 365
 
-export async function GET() {
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url)
+  const summaryOnly = searchParams.get("summary") === "true"
+
   try {
     // ── 1. Fetch semua karyawan dengan subdivisi → divisi ──────────────────
     const karyawans = await prisma.karyawans.findMany({
@@ -158,12 +161,17 @@ export async function GET() {
         campuran:  isExcludedDivisi(divisi) ? 0 : members.filter(k => k.jkel === 'L/P' && k.status_karyawan === 'Aktif').length,
       }))
 
-    return NextResponse.json({
+    // Jika hanya butuh summary (untuk SDM dashboard)
+    if (summaryOnly) {
+      return NextResponse.json(serialize({ mendekatiPensiun }))
+    }
+
+    return NextResponse.json(serialize({
       stats,
       rekapPerDivisi,
       mendekatiPensiun,
       genderPerDivisiData,
-    })
+    }))
   } catch (err) {
     console.error(err)
     return NextResponse.json({ error: "Gagal mengambil rekap karyawan" }, { status: 500 })

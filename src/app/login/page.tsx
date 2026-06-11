@@ -23,7 +23,7 @@ export default function LoginPage() {
     try {
       const result = await login(email, password)
       if (result.ok) {
-        router.push("/dashboard")
+        router.push("/select-module")
         router.refresh()
       } else {
         setError(result.error ?? "Login gagal")
