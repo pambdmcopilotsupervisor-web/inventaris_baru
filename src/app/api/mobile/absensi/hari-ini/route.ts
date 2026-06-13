@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma, serialize } from "@/lib/prisma"
-import { requireMobileAuth } from "@/lib/mobile-auth"
+import { requireMobileAuth, getTodayWIB } from "@/lib/mobile-auth"
 
 // GET /api/mobile/absensi/hari-ini
 // Status absensi hari ini + info shift + apakah bisa absen masuk/pulang
@@ -15,9 +15,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const now = new Date()
-    const tglStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`
-    const tglDate = new Date(tglStr) // UTC midnight — benar untuk Prisma ↔ MySQL DATE
+    const { tglDate } = getTodayWIB()
 
     // Data absensi hari ini
     const absensi = await prisma.absensi.findFirst({

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma, serialize } from "@/lib/prisma"
-import { requireMobileAuth, hitungJarakMeter } from "@/lib/mobile-auth"
+import { requireMobileAuth, hitungJarakMeter, getTodayWIB } from "@/lib/mobile-auth"
 import { writeAuditLog } from "@/lib/audit"
 import { hitungAbsensi, resolveLeaveStatus } from "@/lib/attendance"
 
@@ -39,10 +39,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Status karyawan tidak aktif" }, { status: 422 })
     }
 
+    const { tglDate } = getTodayWIB()
     const now = new Date()
-    // Gunakan string tanggal lokal untuk menghindari timezone shift Prisma ↔ MySQL
-    const tglStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`
-    const tglDate = new Date(tglStr) // UTC midnight → Prisma query benar
     const jamMasuk = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
 
     // Validasi radius lokasi

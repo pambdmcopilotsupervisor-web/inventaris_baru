@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma, serialize } from "@/lib/prisma"
-import { requireMobileAuth, hitungJarakMeter } from "@/lib/mobile-auth"
+import { requireMobileAuth, hitungJarakMeter, getTodayWIB } from "@/lib/mobile-auth"
 import { writeAuditLog } from "@/lib/audit"
 import { hitungAbsensi, resolveLeaveStatus } from "@/lib/attendance"
 
@@ -26,9 +26,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Foto selfie wajib dikirim" }, { status: 400 })
     }
 
+    const { tglDate } = getTodayWIB()
     const now = new Date()
-    const tglStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`
-    const tglDate = new Date(tglStr) // UTC midnight — benar untuk Prisma ↔ MySQL DATE
     const jamPulang = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
 
     // Cek apakah sudah absen masuk

@@ -8,6 +8,23 @@ import { prisma } from "@/lib/prisma"
 import { NextRequest, NextResponse } from "next/server"
 import { randomBytes, createHash } from "crypto"
 
+/**
+ * Dapatkan tanggal hari ini dalam format YYYY-MM-DD di timezone WIB (Asia/Jakarta UTC+7).
+ * Aman digunakan di lingkungan server UTC maupun UTC+7.
+ * Menghindari bug timezone: `now.getDate()` bergantung pada server TZ,
+ * sedangkan user di WIB (UTC+7) sebelum jam 07:00 pagi masih di hari sebelumnya di UTC.
+ */
+export function getTodayWIB(): { tglStr: string; tglDate: Date } {
+  const wibDateStr = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(new Date()) // format: "2026-06-13"
+  return {
+    tglStr: wibDateStr,
+    tglDate: new Date(wibDateStr), // UTC midnight — benar untuk query Prisma ↔ MySQL DATE
+  }
+}
+
 export interface MobileUser {
   id: number           // users.id
   name: string
