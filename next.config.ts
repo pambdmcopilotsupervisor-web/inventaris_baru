@@ -10,11 +10,11 @@ const securityHeaders = [
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-eval' 'unsafe-inline'",  // unsafe-eval diperlukan Next.js dev
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://unpkg.com",  // unsafe-eval diperlukan Next.js dev
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com",
       "font-src 'self' https://fonts.gstatic.com",
-      "img-src 'self' data: blob:",
-      "connect-src 'self'",
+      "img-src 'self' data: blob: https://tile.openstreetmap.org https://*.tile.openstreetmap.org",
+      "connect-src 'self' https://unpkg.com https://tile.openstreetmap.org https://*.tile.openstreetmap.org",
       "frame-ancestors 'none'",
     ].join("; "),
   },
@@ -28,8 +28,19 @@ const nextConfig: NextConfig = {
   output: "standalone",
   async headers() {
     return [
+      // CORS headers untuk semua endpoint mobile API
       {
-        source: "/(.*)",
+        source: "/api/mobile/:path*",
+        headers: [
+          { key: "Access-Control-Allow-Origin", value: "*" },
+          { key: "Access-Control-Allow-Methods", value: "GET, POST, PUT, DELETE, OPTIONS, PATCH" },
+          { key: "Access-Control-Allow-Headers", value: "Content-Type, Authorization, X-Requested-With" },
+          { key: "Access-Control-Max-Age", value: "86400" },
+        ],
+      },
+      // Security headers untuk halaman web (bukan API)
+      {
+        source: "/((?!api).*)",
         headers: securityHeaders,
       },
     ]

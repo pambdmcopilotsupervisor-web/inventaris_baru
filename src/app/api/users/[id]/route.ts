@@ -29,8 +29,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const updated = await prisma.users.update({ where: { id: BigInt(id) }, data: updateData })
     return NextResponse.json(serialize({ id: updated.id, name: updated.name, email: updated.email, role: updated.role }))
-  } catch (err: any) {
-    return NextResponse.json({ error: "Gagal memperbarui" }, { status: 500 })
+  } catch (err: unknown) {
+    console.error("[users PUT]", err)
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.includes("Unique") || (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "P2002")) {
+      return NextResponse.json({ error: "Email sudah digunakan oleh user lain" }, { status: 409 })
+    }
+    return NextResponse.json({ error: `Gagal memperbarui: ${msg}` }, { status: 500 })
   }
 }
 

@@ -9,6 +9,10 @@ export interface SessionUser {
   karyawan_id: number | null
   jabatan: string | null  // jabatan dari tabel karyawans
   nama_karyawan: string | null
+  divisi_id?: number | null
+  nama_divisi?: string | null
+  /** Daftar menu_href yang diizinkan. null = semua menu tampil (admin/belum diset). */
+  allowed_menus?: string[] | null
 }
 
 declare module "iron-session" {

@@ -168,6 +168,8 @@ model karyawans {
   divisi_id               Int?
   jabatan                 String              @db.VarChar(255)
   subdivisi_id            Int?
+  atasan_id               BigInt?             @db.UnsignedBigInt
+  tarif_lembur_per_jam    Decimal?            @db.Decimal(15, 2)
   jkel                    String              @db.VarChar(15)
   created_at              DateTime?           @db.Timestamp(0)
   updated_at              DateTime?           @db.Timestamp(0)
@@ -188,8 +190,18 @@ model karyawans {
   umur                    Int?
   agama                   String?             @db.VarChar(50)
   foto                    String?             @db.VarChar(100)
+  // Self-relation: atasan langsung
+  atasan                  karyawans?          @relation("KaryawanAtasan", fields: [atasan_id], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "karyawans_atasan_id_foreign")
+  bawahan                 karyawans[]         @relation("KaryawanAtasan")
   mutasi_karyawans        mutasi_karyawans[]
   pensiun_karyawans       pensiun_karyawans[]
+  jadwal_shifts           jadwal_shifts[]
+  absensi                 absensi[]
+  pengajuan_cutis         pengajuan_cutis[]
+  saldo_cutis             saldo_cutis[]
+  pengajuan_izins         pengajuan_izins[]
+  pengajuan_sakits        pengajuan_sakits[]
+  overtime_requests       overtime_requests[]
 }
 
 model kontrak_details {
@@ -450,4 +462,409 @@ enum riwayat_pembayaran_r2r4s_jenis_pembayaran {
   Pajak
   STNK
   KIR
+}
+
+// ─── SDM: Shift, Jadwal, Hari Libur, Audit Log ───────────────────
+
+model shift_kerjas {
+  id                         BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
+  kode_shift                 String          @unique @db.VarChar(20)
+  nama_shift                 String          @db.VarChar(100)
+  jam_masuk                  String          @db.VarChar(8)
+  jam_pulang                 String          @db.VarChar(8)
+  toleransi_terlambat_menit  Int             @default(15)
+  batas_absen_masuk_mulai    String?         @db.VarChar(8)
+  batas_absen_masuk_selesai  String?         @db.VarChar(8)
+  batas_absen_pulang_mulai   String?         @db.VarChar(8)
+  batas_absen_pulang_selesai String?         @db.VarChar(8)
+  is_lintas_hari             Boolean         @default(false)
+  durasi_kerja_menit         Int?
+  status                     String          @default("aktif") @db.VarChar(10)
+  keterangan                 String?         @db.VarChar(255)
+  created_at                 DateTime?       @db.Timestamp(0)
+  updated_at                 DateTime?       @db.Timestamp(0)
+  jadwal_shifts              jadwal_shifts[]
+}
+
+model hari_liburs {
+  id         BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  tanggal    DateTime  @unique @db.Date
+  nama_libur String    @db.VarChar(100)
+  tipe_libur String    @default("Nasional") @db.VarChar(20)
+  keterangan String?   @db.VarChar(255)
+  created_at DateTime? @db.Timestamp(0)
+  updated_at DateTime? @db.Timestamp(0)
+}
+
+model jadwal_shifts {
+  id          BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
+  karyawan_id BigInt       @db.UnsignedBigInt
+  shift_id    BigInt       @db.UnsignedBigInt
+  tanggal     DateTime     @db.Date
+  keterangan  String?      @db.VarChar(255)
+  created_at  DateTime?    @db.Timestamp(0)
+  updated_at  DateTime?    @db.Timestamp(0)
+  karyawans    karyawans    @relation(fields: [karyawan_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "jadwal_shifts_karyawan_id_foreign")
+  shift_kerjas shift_kerjas @relation(fields: [shift_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "jadwal_shifts_shift_id_foreign")
+  absensi      absensi[]
+
+  @@unique([karyawan_id, tanggal], map: "jadwal_shifts_karyawan_tanggal_unique")
+  @@index([shift_id], map: "jadwal_shifts_shift_id_index")
+  @@index([tanggal], map: "jadwal_shifts_tanggal_index")
+}
+
+model audit_logs {
+  id         BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  user_id    BigInt?   @db.UnsignedBigInt
+  user_name  String?   @db.VarChar(255)
+  action     String    @db.VarChar(100)
+  model_type String    @db.VarChar(100)
+  model_id   BigInt?
+  data_lama  Json?
+  data_baru  Json?
+  ip_address String?   @db.VarChar(45)
+  created_at DateTime? @db.Timestamp(0)
+
+  @@index([model_type, model_id], map: "audit_logs_model_index")
+  @@index([user_id], map: "audit_logs_user_index")
+  @@index([created_at], map: "audit_logs_created_index")
+}
+
+model absensi {
+  id                    BigInt         @id @default(autoincrement()) @db.UnsignedBigInt
+  karyawan_id           BigInt         @db.UnsignedBigInt
+  jadwal_shift_id       BigInt?        @db.UnsignedBigInt
+  tanggal_absensi       DateTime       @db.Date
+  jam_masuk             String?        @db.VarChar(8)
+  jam_pulang            String?        @db.VarChar(8)
+  status_absensi        String         @default("alpha") @db.VarChar(30)
+  is_terlambat          Boolean        @default(false)
+  is_pulang_cepat       Boolean        @default(false)
+  is_tidak_absen_masuk  Boolean        @default(false)
+  is_tidak_absen_pulang Boolean        @default(false)
+  menit_terlambat       Int            @default(0)
+  menit_pulang_cepat    Int            @default(0)
+  total_jam_kerja_menit Int            @default(0)
+  is_manual             Boolean        @default(false)
+  alasan_manual         String?        @db.VarChar(255)
+  catatan_manual        String?        @db.Text
+  attachment_path       String?        @db.VarChar(255)
+  foto_masuk            String?        @db.VarChar(255)
+  foto_pulang           String?        @db.VarChar(255)
+  lokasi_masuk_lat      Decimal?       @db.Decimal(10, 7)
+  lokasi_masuk_lng      Decimal?       @db.Decimal(10, 7)
+  lokasi_pulang_lat     Decimal?       @db.Decimal(10, 7)
+  lokasi_pulang_lng     Decimal?       @db.Decimal(10, 7)
+  metode_input          String         @default("system") @db.VarChar(20)
+  perangkat_info        String?        @db.VarChar(255)
+  generated_at          DateTime?      @db.Timestamp(0)
+  generated_by          BigInt?        @db.UnsignedBigInt
+  created_by            BigInt?        @db.UnsignedBigInt
+  updated_by            BigInt?        @db.UnsignedBigInt
+  created_at            DateTime?      @db.Timestamp(0)
+  updated_at            DateTime?      @db.Timestamp(0)
+  karyawans             karyawans      @relation(fields: [karyawan_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "absensi_karyawan_id_foreign")
+  jadwal_shifts         jadwal_shifts? @relation(fields: [jadwal_shift_id], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "absensi_jadwal_shift_id_foreign")
+
+  @@unique([karyawan_id, tanggal_absensi], map: "absensi_karyawan_tanggal_unique")
+  @@index([jadwal_shift_id], map: "absensi_jadwal_shift_id_index")
+  @@index([status_absensi], map: "absensi_status_index")
+  @@index([tanggal_absensi], map: "absensi_tanggal_index")
+  @@index([created_by], map: "absensi_created_by_index")
+}
+
+// ─── Cuti ────────────────────────────────────────────────────────
+
+model jenis_cutis {
+  id                   BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  kode_cuti            String            @unique @db.VarChar(20)
+  nama_cuti            String            @db.VarChar(100)
+  jatah_hari_default   Int               @default(12)
+  membutuhkan_lampiran Boolean           @default(false)
+  potong_saldo_cuti    Boolean           @default(true)
+  status               String            @default("aktif") @db.VarChar(10)
+  keterangan           String?           @db.VarChar(255)
+  created_at           DateTime?         @db.Timestamp(0)
+  updated_at           DateTime?         @db.Timestamp(0)
+  pengajuan_cutis      pengajuan_cutis[]
+  saldo_cutis          saldo_cutis[]
+}
+
+model saldo_cutis {
+  id                     BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
+  karyawan_id            BigInt       @db.UnsignedBigInt
+  jenis_cuti_id          BigInt       @db.UnsignedBigInt
+  tahun                  Int
+  saldo_awal             Int          @default(0)
+  saldo_terpakai         Int          @default(0)
+  saldo_penyesuaian      Int          @default(0)
+  keterangan_penyesuaian String?      @db.VarChar(255)
+  created_at             DateTime?    @db.Timestamp(0)
+  updated_at             DateTime?    @db.Timestamp(0)
+  karyawans              karyawans    @relation(fields: [karyawan_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "saldo_cutis_karyawan_id_foreign")
+  jenis_cutis            jenis_cutis  @relation(fields: [jenis_cuti_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "saldo_cutis_jenis_cuti_id_foreign")
+
+  @@unique([karyawan_id, jenis_cuti_id, tahun], map: "saldo_cutis_karyawan_jenis_tahun_unique")
+  @@index([jenis_cuti_id], map: "saldo_cutis_jenis_cuti_id_index")
+}
+
+model pengajuan_cutis {
+  id                 BigInt                   @id @default(autoincrement()) @db.UnsignedBigInt
+  karyawan_id        BigInt                   @db.UnsignedBigInt
+  jenis_cuti_id      BigInt                   @db.UnsignedBigInt
+  tanggal_mulai      DateTime                 @db.Date
+  tanggal_selesai    DateTime                 @db.Date
+  jumlah_hari        Int                      @default(0)
+  alasan             String                   @db.Text
+  alamat_selama_cuti String?                  @db.VarChar(255)
+  lampiran           String?                  @db.VarChar(255)
+  status             String                   @default("draft") @db.VarChar(30)
+  dibuat_oleh        BigInt?                  @db.UnsignedBigInt
+  created_at         DateTime?                @db.Timestamp(0)
+  updated_at         DateTime?                @db.Timestamp(0)
+  karyawans          karyawans                @relation(fields: [karyawan_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "pengajuan_cutis_karyawan_id_foreign")
+  jenis_cutis        jenis_cutis              @relation(fields: [jenis_cuti_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "pengajuan_cutis_jenis_cuti_id_foreign")
+  approvals          leave_request_approvals[]
+
+  @@index([karyawan_id], map: "pengajuan_cutis_karyawan_id_index")
+  @@index([status], map: "pengajuan_cutis_status_index")
+  @@index([tanggal_mulai], map: "pengajuan_cutis_tanggal_index")
+}
+
+model leave_request_approvals {
+  id                BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
+  pengajuan_cuti_id BigInt           @db.UnsignedBigInt
+  approver_id       BigInt?          @db.UnsignedBigInt
+  approver_user_id  BigInt?          @db.UnsignedBigInt
+  approver_role     String           @db.VarChar(50)
+  approval_level    Int
+  status            String           @default("pending") @db.VarChar(20)
+  note              String?          @db.Text
+  approved_at       DateTime?        @db.Timestamp(0)
+  created_at        DateTime?        @db.Timestamp(0)
+  updated_at        DateTime?        @db.Timestamp(0)
+  pengajuan_cutis   pengajuan_cutis  @relation(fields: [pengajuan_cuti_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "lra_pengajuan_cuti_id_foreign")
+
+  @@index([pengajuan_cuti_id], map: "lra_pengajuan_id_index")
+  @@index([approver_id], map: "lra_approver_id_index")
+  @@index([status], map: "lra_status_index")
+}
+
+// ─── Izin ─────────────────────────────────────────────────────────
+
+model jenis_izins {
+  id                   BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  kode_izin            String            @unique @db.VarChar(20)
+  nama_izin            String            @db.VarChar(100)
+  satuan               String            @default("hari") @db.VarChar(5)
+  maksimal_durasi      Int               @default(1)
+  membutuhkan_lampiran Boolean           @default(false)
+  memotong_absensi     Boolean           @default(true)
+  status               String            @default("aktif") @db.VarChar(10)
+  keterangan           String?           @db.VarChar(255)
+  created_at           DateTime?         @db.Timestamp(0)
+  updated_at           DateTime?         @db.Timestamp(0)
+  pengajuan_izins      pengajuan_izins[]
+}
+
+model pengajuan_izins {
+  id              BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  karyawan_id     BigInt            @db.UnsignedBigInt
+  jenis_izin_id   BigInt            @db.UnsignedBigInt
+  tanggal_mulai   DateTime          @db.Date
+  tanggal_selesai DateTime          @db.Date
+  jam_mulai       String?           @db.VarChar(8)
+  jam_selesai     String?           @db.VarChar(8)
+  durasi          Decimal           @default(0) @db.Decimal(5, 2)
+  satuan_durasi   String            @default("hari") @db.VarChar(5)
+  alasan          String            @db.Text
+  lampiran        String?           @db.VarChar(255)
+  status          String            @default("draft") @db.VarChar(30)
+  dibuat_oleh     BigInt?           @db.UnsignedBigInt
+  created_at      DateTime?         @db.Timestamp(0)
+  updated_at      DateTime?         @db.Timestamp(0)
+  karyawans       karyawans         @relation(fields: [karyawan_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "pengajuan_izins_karyawan_id_foreign")
+  jenis_izins     jenis_izins       @relation(fields: [jenis_izin_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "pengajuan_izins_jenis_izin_id_foreign")
+  izin_approvals  izin_approvals[]
+
+  @@index([karyawan_id], map: "pengajuan_izins_karyawan_id_index")
+  @@index([status], map: "pengajuan_izins_status_index")
+  @@index([tanggal_mulai], map: "pengajuan_izins_tanggal_index")
+}
+
+model izin_approvals {
+  id                BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
+  pengajuan_izin_id BigInt           @db.UnsignedBigInt
+  approver_id       BigInt?          @db.UnsignedBigInt
+  approver_user_id  BigInt?          @db.UnsignedBigInt
+  approver_role     String           @db.VarChar(50)
+  approval_level    Int
+  status            String           @default("pending") @db.VarChar(20)
+  note              String?          @db.Text
+  approved_at       DateTime?        @db.Timestamp(0)
+  created_at        DateTime?        @db.Timestamp(0)
+  updated_at        DateTime?        @db.Timestamp(0)
+  pengajuan_izins   pengajuan_izins  @relation(fields: [pengajuan_izin_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "izin_approvals_pengajuan_izin_id_foreign")
+
+  @@index([pengajuan_izin_id], map: "izin_approvals_pengajuan_id_index")
+  @@index([approver_id], map: "izin_approvals_approver_id_index")
+  @@index([status], map: "izin_approvals_status_index")
+}
+
+// ─── Sakit ────────────────────────────────────────────────────────
+
+model pengajuan_sakits {
+  id                       BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  karyawan_id              BigInt            @db.UnsignedBigInt
+  tanggal_mulai            DateTime          @db.Date
+  tanggal_selesai          DateTime          @db.Date
+  jumlah_hari              Int               @default(0)
+  keterangan_sakit         String?           @db.Text
+  nama_dokter              String?           @db.VarChar(100)
+  nama_fasilitas_kesehatan String?           @db.VarChar(150)
+  nomor_surat_sakit        String?           @db.VarChar(100)
+  lampiran_path            String?           @db.VarChar(255)
+  status                   String            @default("draft") @db.VarChar(30)
+  submitted_at             DateTime?         @db.Timestamp(0)
+  dibuat_oleh              BigInt?           @db.UnsignedBigInt
+  created_at               DateTime?         @db.Timestamp(0)
+  updated_at               DateTime?         @db.Timestamp(0)
+  karyawans                karyawans         @relation(fields: [karyawan_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "pengajuan_sakits_karyawan_id_foreign")
+  sakit_approvals          sakit_approvals[]
+
+  @@index([karyawan_id], map: "pengajuan_sakits_karyawan_id_index")
+  @@index([status], map: "pengajuan_sakits_status_index")
+  @@index([tanggal_mulai], map: "pengajuan_sakits_tanggal_index")
+}
+
+model sakit_approvals {
+  id                   BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  pengajuan_sakit_id   BigInt            @db.UnsignedBigInt
+  approver_id          BigInt?           @db.UnsignedBigInt
+  approver_user_id     BigInt?           @db.UnsignedBigInt
+  approver_role        String            @db.VarChar(50)
+  approval_level       Int
+  status               String            @default("pending") @db.VarChar(20)
+  note                 String?           @db.Text
+  approved_at          DateTime?         @db.Timestamp(0)
+  created_at           DateTime?         @db.Timestamp(0)
+  updated_at           DateTime?         @db.Timestamp(0)
+  pengajuan_sakits     pengajuan_sakits  @relation(fields: [pengajuan_sakit_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "sakit_approvals_pengajuan_sakit_id_foreign")
+
+  @@index([pengajuan_sakit_id], map: "sakit_approvals_pengajuan_id_index")
+  @@index([approver_id], map: "sakit_approvals_approver_id_index")
+  @@index([status], map: "sakit_approvals_status_index")
+}
+
+// ─── Lembur ───────────────────────────────────────────────────────
+
+model overtime_settings {
+  id                         BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  nama_setting               String              @db.VarChar(100)
+  tipe_hari                  String              @default("hari_kerja") @db.VarChar(20)
+  metode_perhitungan         String              @default("per_jam") @db.VarChar(20)
+  tarif_flat                 Decimal             @default(0) @db.Decimal(15, 2)
+  tarif_per_jam              Decimal             @default(0) @db.Decimal(15, 2)
+  multiplier_jam_pertama     Decimal             @default(1.5) @db.Decimal(5, 2)
+  multiplier_jam_berikutnya  Decimal             @default(2.0) @db.Decimal(5, 2)
+  batas_minimal_menit_lembur Int                 @default(30)
+  pembulatan_menit           Int                 @default(30)
+  status                     String              @default("aktif") @db.VarChar(10)
+  keterangan                 String?             @db.VarChar(255)
+  created_at                 DateTime?           @db.Timestamp(0)
+  updated_at                 DateTime?           @db.Timestamp(0)
+  overtime_requests          overtime_requests[]
+}
+
+model overtime_requests {
+  id                     BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
+  karyawan_id            BigInt             @db.UnsignedBigInt
+  tanggal_lembur         DateTime           @db.Date
+  jam_mulai_rencana      String             @db.VarChar(8)
+  jam_selesai_rencana    String             @db.VarChar(8)
+  durasi_rencana_menit   Int                @default(0)
+  jam_mulai_aktual       String?            @db.VarChar(8)
+  jam_selesai_aktual     String?            @db.VarChar(8)
+  durasi_aktual_menit    Int?
+  durasi_disetujui_menit Int?
+  alasan_lembur          String             @db.Text
+  pekerjaan_lembur       String?            @db.Text
+  lampiran               String?            @db.VarChar(255)
+  status                 String             @default("draft") @db.VarChar(30)
+  total_uang_lembur      Decimal?           @db.Decimal(15, 2)
+  calculation_detail     Json?
+  catatan_realisasi      String?            @db.Text
+  is_lintas_hari         Boolean            @default(false)
+  overtime_setting_id    BigInt?            @db.UnsignedBigInt
+  submitted_at           DateTime?          @db.Timestamp(0)
+  realized_at            DateTime?          @db.Timestamp(0)
+  dibuat_oleh            BigInt?            @db.UnsignedBigInt
+  created_at             DateTime?          @db.Timestamp(0)
+  updated_at             DateTime?          @db.Timestamp(0)
+  karyawans              karyawans          @relation(fields: [karyawan_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "overtime_requests_karyawan_id_foreign")
+  overtime_settings      overtime_settings? @relation(fields: [overtime_setting_id], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "overtime_requests_setting_id_foreign")
+  overtime_approvals     overtime_approvals[]
+
+  @@index([karyawan_id], map: "overtime_requests_karyawan_id_index")
+  @@index([status], map: "overtime_requests_status_index")
+  @@index([tanggal_lembur], map: "overtime_requests_tanggal_index")
+}
+
+model overtime_approvals {
+  id                  BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  overtime_request_id BigInt            @db.UnsignedBigInt
+  approver_id         BigInt?           @db.UnsignedBigInt
+  approver_user_id    BigInt?           @db.UnsignedBigInt
+  approver_role       String            @db.VarChar(50)
+  approval_level      Int
+  status              String            @default("pending") @db.VarChar(20)
+  note                String?           @db.Text
+  approved_at         DateTime?         @db.Timestamp(0)
+  created_at          DateTime?         @db.Timestamp(0)
+  updated_at          DateTime?         @db.Timestamp(0)
+  overtime_requests   overtime_requests @relation(fields: [overtime_request_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "oa_overtime_request_id_foreign")
+
+  @@index([overtime_request_id], map: "oa_overtime_request_id_index")
+  @@index([approver_id], map: "oa_approver_id_index")
+  @@index([status], map: "oa_status_index")
+}
+
+// ─── Mobile ───────────────────────────────────────────────────────
+
+model mobile_sessions {
+  id           BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  user_id      BigInt    @db.UnsignedBigInt
+  token        String    @unique @db.VarChar(255)
+  device_info  String?   @db.VarChar(255)
+  last_used_at DateTime? @db.Timestamp(0)
+  expires_at   DateTime? @db.Timestamp(0)
+  created_at   DateTime? @db.Timestamp(0)
+  updated_at   DateTime? @db.Timestamp(0)
+
+  @@index([user_id], map: "mobile_sessions_user_id_index")
+}
+
+model absensi_lokasi_configs {
+  id           BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  nama_lokasi  String    @db.VarChar(100)
+  latitude     Decimal   @db.Decimal(10, 7)
+  longitude    Decimal   @db.Decimal(10, 7)
+  radius_meter Int       @default(100)
+  aktif        Boolean   @default(true)
+  keterangan   String?   @db.VarChar(255)
+  created_at   DateTime? @db.Timestamp(0)
+  updated_at   DateTime? @db.Timestamp(0)
+}
+
+// ─── Hak Akses Menu ──────────────────────────────────────────────
+
+model user_menu_permissions {
+  id         BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  user_id    BigInt    @db.UnsignedBigInt
+  menu_href  String    @db.VarChar(255)
+  created_at DateTime? @db.Timestamp(0)
+  updated_at DateTime? @db.Timestamp(0)
+
+  @@unique([user_id, menu_href], map: "uq_user_menu")
+  @@index([user_id], map: "idx_user_id")
 }

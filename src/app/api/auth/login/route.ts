@@ -81,17 +81,42 @@ export async function POST(req: NextRequest) {
     // Ambil data karyawan terkait untuk jabatan
     let jabatan: string | null = null
     let nama_karyawan: string | null = null
+    let divisi_id: number | null = null
+    let nama_divisi: string | null = null
     if (user.karyawan_id) {
       const karyawan = await prisma.karyawans.findUnique({
         where: { id: BigInt(user.karyawan_id) },
-        select: { jabatan: true, nama_karyawan: true },
+        select: { jabatan: true, nama_karyawan: true, divisi_id: true },
       })
       jabatan = karyawan?.jabatan ?? null
       nama_karyawan = karyawan?.nama_karyawan ?? null
+      divisi_id = karyawan?.divisi_id ?? null
+      if (divisi_id) {
+        const divisi = await prisma.divisis.findUnique({ where: { id: BigInt(divisi_id) }, select: { nama_divisi: true } })
+        nama_divisi = divisi?.nama_divisi ?? null
+      }
     }
 
     // Simpan ke session
     const session = await getSession()
+
+    // Load menu permissions (null = tampilkan semua, array = filter)
+    // Wrapped in try-catch: jika tabel belum ada (migration belum jalan), login tetap berhasil
+    let allowed_menus: string[] | null = null
+    if (user.role !== "admin") {
+      try {
+        const perms = await prisma.user_menu_permissions.findMany({
+          where: { user_id: user.id },
+          select: { menu_href: true },
+        })
+        if (perms.length > 0) {
+          allowed_menus = perms.map((p) => p.menu_href)
+        }
+      } catch {
+        // Tabel belum ada (migration belum dijalankan) — abaikan, tampilkan semua menu
+      }
+    }
+
     session.user = {
       id:           Number(user.id),
       name:         user.name,
@@ -100,12 +125,15 @@ export async function POST(req: NextRequest) {
       karyawan_id:  user.karyawan_id,
       jabatan,
       nama_karyawan,
+      divisi_id,
+      nama_divisi,
+      allowed_menus,
     }
     await session.save()
 
     return NextResponse.json(serialize({
       id: user.id, name: user.name, email: user.email,
-      role: user.role, karyawan_id: user.karyawan_id, jabatan, nama_karyawan,
+      role: user.role, karyawan_id: user.karyawan_id, jabatan, nama_karyawan, divisi_id, nama_divisi,
     }))
   } catch (err) {
     // Jangan expose detail error ke client

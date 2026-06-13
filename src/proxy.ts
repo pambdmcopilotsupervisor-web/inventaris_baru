@@ -3,9 +3,30 @@ import { NextRequest, NextResponse } from "next/server"
 // Routes yang tidak memerlukan autentikasi
 const PUBLIC_PATHS = ["/login", "/api/auth/login"]
 
-export function middleware(req: NextRequest) {
+// CORS headers untuk endpoint mobile
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+  "Access-Control-Max-Age": "86400",
+}
+
+export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl
 
+  // ── CORS untuk semua endpoint /api/mobile/* ────────────────────────────
+  if (pathname.startsWith("/api/mobile")) {
+    // Handle preflight OPTIONS request
+    if (req.method === "OPTIONS") {
+      return new NextResponse(null, { status: 200, headers: CORS_HEADERS })
+    }
+    // Tambah CORS headers ke response normal (lanjut ke route handler)
+    const response = NextResponse.next()
+    Object.entries(CORS_HEADERS).forEach(([k, v]) => response.headers.set(k, v))
+    return response
+  }
+
+  // ── Auth guard untuk halaman web ──────────────────────────────────────
   // Skip public paths, static files, dan API lain
   if (
     PUBLIC_PATHS.some(p => pathname.startsWith(p)) ||

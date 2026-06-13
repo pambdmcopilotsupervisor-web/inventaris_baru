@@ -10,6 +10,10 @@ export interface AuthUser {
   karyawan_id: number | null
   jabatan: string | null
   nama_karyawan: string | null
+  divisi_id?: number | null
+  nama_divisi?: string | null
+  /** Daftar menu_href yang diizinkan. null = semua menu tampil. */
+  allowed_menus?: string[] | null
 }
 
 interface AuthContext {
@@ -33,10 +37,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchMe = useCallback(async () => {
     try {
+      // Refresh allowed_menus langsung dari DB → hasilnya dipakai sebagai override
+      // agar tidak perlu menunggu session round-trip (mencegah flash "semua menu")
+      let freshAllowedMenus: string[] | null | undefined = undefined
+
+      try {
+        const refreshRes = await fetch("/api/auth/refresh-menus", { method: "POST" })
+        if (refreshRes.ok) {
+          const refreshData = await refreshRes.json()
+          freshAllowedMenus = refreshData.allowed_menus // null = semua tampil, array = dibatasi
+        }
+      } catch { /* abaikan jika endpoint belum ada */ }
+
       const res = await fetch("/api/auth/me")
       if (res.ok) {
         const data = await res.json()
-        setUser(data)
+        // Override allowed_menus dengan data fresh dari DB jika tersedia
+        setUser({
+          ...data,
+          allowed_menus: freshAllowedMenus !== undefined ? freshAllowedMenus : (data.allowed_menus ?? null),
+        })
       } else {
         setUser(null)
       }

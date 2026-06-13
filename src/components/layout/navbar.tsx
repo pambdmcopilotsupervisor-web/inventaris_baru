@@ -11,7 +11,9 @@ import {
   Cpu, ArrowLeftRight, UserMinus, UserX, Trash2, AirVent,
   Building2, GitBranch, DoorOpen, UserCog, FileText, Wrench,
   CreditCard, ShoppingCart, Receipt, TrendingUp, ChevronRight,
-  Menu, X, Layers,
+  Menu, X, Layers, Clock, CalendarDays, CalendarOff, CalendarX, ClipboardList,
+  Umbrella, CheckSquare, Wallet, ClipboardCheck, LogIn, Stethoscope, Timer, AlertTriangle,
+  MapPin, Shield,
 } from "lucide-react"
 
 /* ────────────────────────────────────────────
@@ -22,33 +24,120 @@ const NAV_GROUPS = [
     key: "dashboard",
     label: "Dashboard",
     icon: <LayoutDashboard className="h-4 w-4" />,
-    href: "/dashboard",
-    items: [],
-  },
-  {
-    key: "sdm-dashboard",
-    label: "Dashboard SDM",
-    icon: <LayoutDashboard className="h-4 w-4" />,
     href: "/dashboard/sdm",
     items: [],
   },
   {
     key: "sdm",
-    label: "SDM",
+    label: "Karyawan",
     icon: <Users className="h-4 w-4" />,
     items: [
       {
         section: "Data Karyawan",
         links: [
-          { label: "Data Karyawan",    href: "/dashboard/master-data/karyawan",             icon: <Users className="h-3.5 w-3.5" />, desc: "Kelola data seluruh karyawan" },
-          { label: "Mutasi Karyawan",  href: "/dashboard/transaksi/mutasi-karyawan",        icon: <ArrowLeftRight className="h-3.5 w-3.5" />, desc: "Rotasi & perpindahan jabatan" },
-          { label: "Pensiun Karyawan", href: "/dashboard/transaksi/pensiun-karyawan",       icon: <UserX className="h-3.5 w-3.5" />, desc: "Data karyawan pensiun" },
+          { label: "Data Karyawan",    href: "/dashboard/master-data/karyawan",      icon: <Users className="h-3.5 w-3.5" />,         desc: "Kelola data seluruh karyawan" },
+          { label: "Mutasi Karyawan",  href: "/dashboard/transaksi/mutasi-karyawan", icon: <ArrowLeftRight className="h-3.5 w-3.5" />, desc: "Rotasi & perpindahan jabatan" },
+          { label: "Pensiun Karyawan", href: "/dashboard/transaksi/pensiun-karyawan",icon: <UserX className="h-3.5 w-3.5" />,          desc: "Data karyawan pensiun" },
         ],
       },
       {
-        section: "Laporan SDM",
+        section: "Laporan",
         links: [
-          { label: "Rekap Karyawan",   href: "/dashboard/laporan/rekap-karyawan",           icon: <BarChart3 className="h-3.5 w-3.5" />, desc: "Statistik & rekap per divisi" },
+          { label: "Rekap Karyawan", href: "/dashboard/laporan/rekap-karyawan", icon: <BarChart3 className="h-3.5 w-3.5" />, desc: "Statistik & rekap per divisi" },
+        ],
+      },
+    ],
+  },
+  {
+    key: "jadwal-kerja",
+    label: "Jadwal Kerja",
+    icon: <CalendarDays className="h-4 w-4" />,
+    items: [
+      {
+        section: "Shift & Jadwal",
+        links: [
+          { label: "Master Shift",  href: "/dashboard/sdm/shift",        icon: <Clock className="h-3.5 w-3.5" />,       desc: "Definisi shift Pagi / Siang / Malam" },
+          { label: "Jadwal Kerja",  href: "/dashboard/sdm/jadwal-shift", icon: <CalendarDays className="h-3.5 w-3.5" />, desc: "Assign jadwal shift pegawai" },
+        ],
+      },
+      {
+        section: "Kalender",
+        links: [
+          { label: "Hari Libur", href: "/dashboard/sdm/hari-libur", icon: <CalendarOff className="h-3.5 w-3.5" />, desc: "Kalender libur nasional & perusahaan" },
+        ],
+      },
+    ],
+  },
+  {
+    key: "absensi",
+    label: "Absensi",
+    icon: <ClipboardList className="h-4 w-4" />,
+    items: [
+      {
+        section: "Monitoring & Input",
+        links: [
+          { label: "Monitoring Absensi", href: "/dashboard/sdm/absensi", icon: <ClipboardList className="h-3.5 w-3.5" />, desc: "Input manual & monitoring absensi harian" },
+        ],
+      },
+      {
+        section: "Laporan Absensi",
+        links: [
+          { label: "Absensi Bulanan Pegawai", href: "/dashboard/sdm/absensi/bulanan", icon: <CalendarDays className="h-3.5 w-3.5" />, desc: "Absensi pegawai per bulan dalam tabel & kalender" },
+          { label: "Anomali Absensi", href: "/dashboard/sdm/absensi/anomali", icon: <AlertTriangle className="h-3.5 w-3.5" />, desc: "Pantau telat, alpha, tidak absen, dan absen di luar jam" },
+          { label: "Karyawan Tanpa Jadwal", href: "/dashboard/sdm/absensi/tanpa-jadwal", icon: <CalendarX className="h-3.5 w-3.5" />, desc: "Pegawai aktif yang belum memiliki jadwal shift" },
+          { label: "Lokasi Absensi Mobile", href: "/dashboard/sdm/absensi/lokasi-config", icon: <MapPin className="h-3.5 w-3.5" />, desc: "Atur titik lokasi dan radius absensi mobile" },
+          { label: "Rekap Absensi",   href: "/dashboard/sdm/absensi/rekap",   icon: <BarChart3 className="h-3.5 w-3.5" />,    desc: "Rekap ringkas absensi per periode" },
+        ],
+      },
+    ],
+  },
+  {
+    key: "pengajuan",
+    label: "Pengajuan",
+    icon: <ClipboardList className="h-4 w-4" />,
+    items: [
+      {
+        section: "Cuti",
+        links: [
+          { label: "Pengajuan Cuti",  href: "/dashboard/sdm/pengajuan-cuti", icon: <Umbrella className="h-3.5 w-3.5" />,     desc: "Ajukan & kelola cuti" },
+          { label: "Approval Cuti",   href: "/dashboard/sdm/approval-cuti",  icon: <CheckSquare className="h-3.5 w-3.5" />,  desc: "Antrian persetujuan cuti" },
+          { label: "Jenis Cuti",      href: "/dashboard/sdm/jenis-cuti",     icon: <FileText className="h-3.5 w-3.5" />,     desc: "Master jenis cuti" },
+          { label: "Saldo Cuti",      href: "/dashboard/sdm/saldo-cuti",     icon: <Wallet className="h-3.5 w-3.5" />,       desc: "Saldo cuti per pegawai" },
+        ],
+      },
+      {
+        section: "Izin",
+        links: [
+          { label: "Pengajuan Izin",  href: "/dashboard/sdm/pengajuan-izin", icon: <ClipboardCheck className="h-3.5 w-3.5" />, desc: "Ajukan & kelola izin" },
+          { label: "Approval Izin",   href: "/dashboard/sdm/approval-izin",  icon: <CheckSquare className="h-3.5 w-3.5" />,    desc: "Antrian persetujuan izin" },
+          { label: "Jenis Izin",      href: "/dashboard/sdm/jenis-izin",     icon: <FileText className="h-3.5 w-3.5" />,       desc: "Master jenis izin" },
+        ],
+      },
+      {
+        section: "Sakit",
+        links: [
+          { label: "Pengajuan Sakit",  href: "/dashboard/sdm/pengajuan-sakit", icon: <Stethoscope className="h-3.5 w-3.5" />, desc: "Ajukan sakit + lampiran surat sakit" },
+          { label: "Approval Sakit",   href: "/dashboard/sdm/approval-sakit",  icon: <CheckSquare className="h-3.5 w-3.5" />,  desc: "Antrian persetujuan sakit" },
+        ],
+      },
+    ],
+  },
+  {
+    key: "lembur",
+    label: "Lembur",
+    icon: <Timer className="h-4 w-4" />,
+    items: [
+      {
+        section: "Pengajuan",
+        links: [
+          { label: "Pengajuan Lembur",  href: "/dashboard/sdm/pengajuan-lembur", icon: <Timer className="h-3.5 w-3.5" />,       desc: "Ajukan & kelola pengajuan lembur" },
+          { label: "Approval Lembur",   href: "/dashboard/sdm/approval-lembur",  icon: <CheckSquare className="h-3.5 w-3.5" />, desc: "Daftar lembur menunggu persetujuan" },
+        ],
+      },
+      {
+        section: "Konfigurasi",
+        links: [
+          { label: "Setting Lembur",  href: "/dashboard/sdm/overtime-settings",  icon: <Settings className="h-3.5 w-3.5" />,  desc: "Tarif & aturan perhitungan lembur" },
         ],
       },
     ],
@@ -181,7 +270,7 @@ function DropdownMenu({ group, pathname }: { group: typeof NAV_GROUPS[0]; pathna
    ──────────────────────────────────────── */
 export function Navbar() {
   const pathname = usePathname()
-  const { user, logout } = useAuth()
+  const { user, logout, loading: authLoading } = useAuth()
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [userOpen, setUserOpen] = useState(false)
@@ -198,7 +287,25 @@ export function Navbar() {
   const activeGroups = NAV_GROUPS.filter(g => {
     if (!modul) return true // tampilkan semua jika belum pilih
     if (modul === "aset") return ["dashboard", "aset", "kendaraan", "laporan"].includes(g.key)
-    if (modul === "sdm")  return ["sdm-dashboard", "sdm", "master"].includes(g.key)
+    if (modul === "sdm")  return ["dashboard", "sdm", "jadwal-kerja", "absensi", "pengajuan", "lembur", "master"].includes(g.key)
+    return true
+  }).map((g) => {
+    // Filter menu items berdasarkan allowed_menus user
+    // Admin (role=admin) atau user tanpa batasan (allowed_menus=null) lihat semua
+    if (!user || user.role === "admin" || !user.allowed_menus) return g
+
+    return {
+      ...g,
+      items: g.items
+        .map((section) => ({
+          ...section,
+          links: section.links.filter((l) => user.allowed_menus!.includes(l.href)),
+        }))
+        .filter((section) => section.links.length > 0),
+    }
+  }).filter((g) => {
+    // Hapus group yang tidak punya items setelah filter (kecuali direct link seperti dashboard)
+    if (g.items.length === 0 && g.key !== "dashboard") return false
     return true
   })
 
@@ -232,7 +339,14 @@ export function Navbar() {
 
         {/* Nav items — desktop */}
         <nav className="hidden lg:flex items-center gap-1 flex-1">
-          {activeGroups.map((group) => {
+          {authLoading ? (
+            /* Placeholder selama loading — cegah flash semua menu */
+            <div className="flex gap-1">
+              {[1,2,3].map((i) => (
+                <div key={i} className="h-7 w-20 rounded-lg animate-pulse" style={{ background: "rgba(255,255,255,0.08)" }} />
+              ))}
+            </div>
+          ) : activeGroups.map((group) => {
             const isActive = group.href
               ? pathname === group.href
               : group.items.some((s) => s.links.some((l) => pathname.startsWith(l.href)))
@@ -288,19 +402,6 @@ export function Navbar() {
 
         {/* Right actions */}
         <div className="flex items-center gap-1.5 ml-auto shrink-0">
-          {/* Search */}
-          <div
-            className="hidden md:flex items-center gap-2 rounded-lg px-3 py-1.5 w-44 cursor-text transition-all duration-150"
-            style={{ border: "1px solid var(--sb-border)", background: "rgba(255,255,255,0.05)", color: "var(--sb-label)" }}
-          >
-            <Search className="h-3.5 w-3.5 shrink-0" />
-            <input
-              type="text"
-              placeholder="Cari..."
-              className="bg-transparent outline-none w-full text-xs text-white placeholder-[--sb-label]"
-              style={{ fontFamily: "var(--font-body)" }}
-            />
-          </div>
 
           {/* Bell */}
           <button
@@ -357,6 +458,7 @@ export function Navbar() {
                   {[
                     { icon: <User className="h-4 w-4" />, label: "Profile",     href: "/dashboard/profile" },
                     { icon: <Settings className="h-4 w-4" />, label: "Pengaturan", href: "/dashboard/pengaturan" },
+                    ...(user?.role === "admin" ? [{ icon: <Shield className="h-4 w-4" />, label: "Hak Akses Menu", href: "/dashboard/pengaturan/hak-akses" }] : []),
                   ].map((item) => (
                     <button key={item.label}
                       className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm cursor-pointer transition-colors duration-150"

@@ -9,6 +9,8 @@ import {
   Archive, Truck, FileText, ArrowLeftRight, UserMinus, Trash2,
   Wrench, AirVent, CreditCard, ShoppingCart, UserX, BarChart3,
   TrendingUp, Receipt, ChevronDown, ChevronRight, Package, X,
+    Clock, CalendarDays, CalendarOff, CalendarCheck, AlertTriangle, CalendarX,
+    MapPin,
 } from "lucide-react"
 
 interface NavItem { label: string; href: string; icon: React.ReactNode }
@@ -27,6 +29,19 @@ const navGroups: NavGroup[] = [
       { label: "Sub Divisi", href: "/dashboard/master-data/subdivisi", icon: <GitBranch className="h-4 w-4" /> },
       { label: "Ruangan", href: "/dashboard/master-data/ruangan", icon: <DoorOpen className="h-4 w-4" /> },
       { label: "Users", href: "/dashboard/master-data/users", icon: <UserCog className="h-4 w-4" /> },
+    ],
+  },
+  {
+    group: "SDM",
+    items: [
+      { label: "Dashboard SDM",   href: "/dashboard/sdm",                   icon: <LayoutDashboard className="h-4 w-4" /> },
+      { label: "Master Shift",    href: "/dashboard/sdm/shift",              icon: <Clock className="h-4 w-4" /> },
+      { label: "Jadwal Kerja",    href: "/dashboard/sdm/jadwal-shift",       icon: <CalendarDays className="h-4 w-4" /> },
+      { label: "Absensi Bulanan Pegawai", href: "/dashboard/sdm/absensi/bulanan",    icon: <CalendarCheck className="h-4 w-4" /> },
+      { label: "Anomali Absensi", href: "/dashboard/sdm/absensi/anomali",    icon: <AlertTriangle className="h-4 w-4" /> },
+      { label: "Karyawan Tanpa Jadwal", href: "/dashboard/sdm/absensi/tanpa-jadwal",    icon: <CalendarX className="h-4 w-4" /> },
+      { label: "Lokasi Absensi Mobile", href: "/dashboard/sdm/absensi/lokasi-config", icon: <MapPin className="h-4 w-4" /> },
+      { label: "Hari Libur",      href: "/dashboard/sdm/hari-libur",         icon: <CalendarOff className="h-4 w-4" /> },
     ],
   },
   {
@@ -59,7 +74,7 @@ const navGroups: NavGroup[] = [
 export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
   const pathname = usePathname()
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
-    "Master Data": true, "Transaksi": true, "Laporan": true,
+    "Master Data": true, "SDM": true, "Transaksi": true, "Laporan": true,
   })
 
   const toggleGroup = (g: string) =>

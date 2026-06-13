@@ -135,9 +135,9 @@ export default function UsersPage() {
       <div className="flex items-center gap-4 p-4 rounded-xl text-xs" style={{ background: "var(--primary-light)", border: "1px solid var(--primary-mid)" }}>
         <span className="font-semibold" style={{ color: "var(--primary)" }}>Role:</span>
         {[
-          { role: "admin",    label: "Admin — akses penuh, dapat edit semua data" },
-          { role: "operator", label: "Operator — dapat verifikasi (Manager/Ketua)" },
-          { role: "user",     label: "User — akses read + buat permohonan" },
+          { role: "admin",    label: "Admin — akses penuh, dapat edit semua data & approve semua cuti" },
+          { role: "operator", label: "Operator — verifikasi (Manager/Ketua)" },
+          { role: "user",     label: "User — akses read + ajukan cuti (hak approval otomatis dari jabatan)" },
         ].map(r => (
           <div key={r.role} className="flex items-center gap-1.5">
             <Badge variant={ROLE_VARIANT[r.role] ?? "secondary"} className="text-[10px]">{r.role}</Badge>
