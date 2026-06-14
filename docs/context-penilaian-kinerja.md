@@ -259,6 +259,37 @@ Validasi bulk transisi:
 - ID tidak ditemukan dan ID di luar scope dikembalikan sebagai hasil gagal per item.
 - Eksekusi tetap memanggil `doTransition`, sehingga semua guard workflow tetap berlaku.
 
+### Dashboard Kinerja Organisasi
+
+File:
+
+- `src/app/api/penilaian/dashboard/route.ts` — API agregat dashboard
+- `src/app/dashboard/sdm/penilaian-kinerja/dashboard/page.tsx` — UI dashboard Chart.js
+
+Endpoint:
+
+- `GET /api/penilaian/dashboard?id_periode=&divisi_id=`
+
+Data yang dikembalikan:
+
+- Summary rata-rata nilai akhir, jumlah pegawai final, persentase final, distribusi predikat, dan delta rata-rata vs periode sebelumnya.
+- Trend rata-rata nilai akhir 6 periode terakhir.
+- Jika user boleh melihat semua dan tidak memilih divisi, trend tampil multi-line per divisi.
+- Distribusi predikat horizontal bar: `Istimewa`, `Sangat Baik`, `Baik`, `Cukup`, `Kurang`.
+- Ranking pegawai dengan kolom peringkat, nama, jabatan, divisi, nilai akhir, predikat, delta vs periode lalu, dan komponen radar.
+- Tabel ranking memakai pagination lokal dengan pilihan 10/25/50 pegawai per halaman.
+
+Scope akses:
+
+- Admin, HRD, Manager/Manajer/Direktur, dan Kepala Divisi HRD bisa melihat semua divisi.
+- Role/jabatan lain dibatasi ke divisi efektif user sendiri.
+- Filter divisi hanya aktif untuk user yang boleh melihat semua divisi.
+
+Library chart:
+
+- `chart.js`
+- `react-chartjs-2`
+
 Notifikasi otomatis per transisi:
 
 - `draft → diajukan`: notif ke atasan langsung pegawai
@@ -373,6 +404,7 @@ Integrasi menu:
 - Navbar modul `Kinerja` hanya menampilkan group `Penilaian`.
 - Nilai `localStorage.pedami_modul` sekarang mendukung `aset`, `sdm`, dan `kinerja`.
 - Link: `/dashboard/sdm/penilaian-kinerja/target`.
+- Link dashboard: `/dashboard/sdm/penilaian-kinerja/dashboard`.
 
 ## Dependensi Data Existing
 
@@ -401,10 +433,10 @@ npx tsc --noEmit
 Berhasil tanpa error.
 
 ```bash
-npx eslint "src/lib/penilaian-periode.ts" "src/lib/penilaian-mandiri.ts" "src/lib/penilaian-atasan.ts" "src/app/api/penilaian/ringkasan/route.ts"
+npx eslint "src/app/api/penilaian/dashboard/route.ts" "src/app/dashboard/sdm/penilaian-kinerja/dashboard/page.tsx" "src/components/layout/navbar.tsx"
 ```
 
-Berhasil tanpa error.
+Berhasil tanpa error. Masih ada warning unused import lama di `src/components/layout/navbar.tsx`.
 
 ## Logika Hierarki Bawahan
 

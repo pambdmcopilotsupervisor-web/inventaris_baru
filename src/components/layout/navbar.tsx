@@ -183,6 +183,13 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    key: "dashboard-kinerja",
+    label: "Dashboard Kinerja",
+    icon: <BarChart3 className="h-4 w-4" />,
+    href: "/dashboard/sdm/penilaian-kinerja/dashboard",
+    items: [],
+  },
+  {
     key: "penilaian",
     label: "Penilaian",
     icon: <ClipboardCheck className="h-4 w-4" />,
@@ -331,7 +338,8 @@ export function Navbar() {
 
   // Baca localStorage setelah hydration selesai agar SSR dan client match
   useEffect(() => {
-    setModul(readStoredModul())
+    const timeoutId = window.setTimeout(() => setModul(readStoredModul()), 0)
+    return () => window.clearTimeout(timeoutId)
   }, [])
 
   // Sinkronkan jika localStorage berubah dari tab/window lain.
@@ -346,12 +354,13 @@ export function Navbar() {
     if (!modul) return true // tampilkan semua jika belum pilih
     if (modul === "aset") return ["dashboard", "aset", "kendaraan", "laporan"].includes(g.key)
     if (modul === "sdm")  return ["dashboard", "sdm", "jadwal-kerja", "absensi", "pengajuan", "lembur", "master"].includes(g.key)
-    if (modul === "kinerja") return ["penilaian"].includes(g.key)
+    if (modul === "kinerja") return ["dashboard-kinerja", "penilaian"].includes(g.key)
     return true
   }).map((g) => {
     // Filter menu items berdasarkan allowed_menus user
     // Admin (role=admin) atau user tanpa batasan (allowed_menus=null) lihat semua
     if (!user || user.role === "admin" || !user.allowed_menus) return g
+    if (g.href) return user.allowed_menus.includes(g.href) ? g : { ...g, href: undefined, items: [] }
 
     return {
       ...g,
@@ -364,7 +373,7 @@ export function Navbar() {
     }
   }).filter((g) => {
     // Hapus group yang tidak punya items setelah filter (kecuali direct link seperti dashboard)
-    if (g.items.length === 0 && g.key !== "dashboard") return false
+    if (g.items.length === 0 && !g.href) return false
     return true
   })
 
