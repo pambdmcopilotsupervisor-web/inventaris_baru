@@ -13,7 +13,7 @@ import {
   CreditCard, ShoppingCart, Receipt, TrendingUp, ChevronRight,
   Menu, X, Layers, Clock, CalendarDays, CalendarOff, CalendarX, ClipboardList,
   Umbrella, CheckSquare, Wallet, ClipboardCheck, LogIn, Stethoscope, Timer, AlertTriangle,
-  MapPin, Shield,
+  MapPin, Shield, History,
 } from "lucide-react"
 
 /* ────────────────────────────────────────────
@@ -39,10 +39,24 @@ type NavGroup = {
   items: NavSection[]
 }
 
-function readStoredModul(): "aset" | "sdm" | null {
+type AppModul = "aset" | "sdm" | "kinerja"
+
+function readStoredModul(): AppModul | null {
   if (typeof window === "undefined") return null
   const value = localStorage.getItem("pedami_modul")
-  return value === "aset" || value === "sdm" ? value : null
+  return value === "aset" || value === "sdm" || value === "kinerja" ? value : null
+}
+
+const modulLabels: Record<AppModul, string> = {
+  aset: "Modul Aset",
+  sdm: "Modul SDM",
+  kinerja: "Modul Kinerja",
+}
+
+const modulColors: Record<AppModul, string> = {
+  aset: "rgba(30,64,175,0.3)",
+  sdm: "rgba(22,101,52,0.3)",
+  kinerja: "rgba(234,88,12,0.3)",
 }
 
 const NAV_GROUPS: NavGroup[] = [
@@ -164,6 +178,22 @@ const NAV_GROUPS: NavGroup[] = [
         section: "Konfigurasi",
         links: [
           { label: "Setting Lembur",  href: "/dashboard/sdm/overtime-settings",  icon: <Settings className="h-3.5 w-3.5" />,  desc: "Tarif & aturan perhitungan lembur" },
+        ],
+      },
+    ],
+  },
+  {
+    key: "penilaian",
+    label: "Penilaian",
+    icon: <ClipboardCheck className="h-4 w-4" />,
+    items: [
+      {
+        section: "Kinerja Pegawai",
+        links: [
+          { label: "Target Kerja",     href: "/dashboard/sdm/penilaian-kinerja/target",  icon: <ClipboardCheck className="h-3.5 w-3.5" />, desc: "Penetapan target kerja awal periode" },
+          { label: "Penilaian Mandiri", href: "/dashboard/sdm/penilaian-kinerja/mandiri", icon: <ClipboardList className="h-3.5 w-3.5" />,  desc: "Form self-assessment penilaian kinerja" },
+          { label: "Penilaian Atasan",  href: "/dashboard/sdm/penilaian-kinerja/atasan",  icon: <Users className="h-3.5 w-3.5" />,          desc: "Form penilaian kinerja bawahan" },
+          { label: "Inbox Approval",    href: "/dashboard/sdm/penilaian-kinerja/inbox",   icon: <CheckSquare className="h-3.5 w-3.5" />,    desc: "Monitoring & approval penilaian kinerja" },
         ],
       },
     ],
@@ -296,7 +326,7 @@ export function Navbar() {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [userOpen, setUserOpen] = useState(false)
-  const [modul, setModul] = useState<"aset" | "sdm" | null>(null)
+  const [modul, setModul] = useState<AppModul | null>(null)
   const navRef = useRef<HTMLDivElement>(null)
 
   // Baca localStorage setelah hydration selesai agar SSR dan client match
@@ -316,6 +346,7 @@ export function Navbar() {
     if (!modul) return true // tampilkan semua jika belum pilih
     if (modul === "aset") return ["dashboard", "aset", "kendaraan", "laporan"].includes(g.key)
     if (modul === "sdm")  return ["dashboard", "sdm", "jadwal-kerja", "absensi", "pengajuan", "lembur", "master"].includes(g.key)
+    if (modul === "kinerja") return ["penilaian"].includes(g.key)
     return true
   }).map((g) => {
     // Filter menu items berdasarkan allowed_menus user
@@ -448,12 +479,12 @@ export function Navbar() {
               onClick={() => { localStorage.removeItem("pedami_modul"); window.location.href = "/select-module" }}
               className="hidden md:flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors duration-150 cursor-pointer mr-1"
               title="Ganti Modul"
-              style={{ background: modul === "aset" ? "rgba(30,64,175,0.3)" : "rgba(22,101,52,0.3)", color: "#fff", border: "1px solid rgba(255,255,255,0.15)" }}
+              style={{ background: modulColors[modul], color: "#fff", border: "1px solid rgba(255,255,255,0.15)" }}
               onMouseEnter={e => ((e.currentTarget as HTMLElement).style.opacity = "0.8")}
               onMouseLeave={e => ((e.currentTarget as HTMLElement).style.opacity = "1")}
             >
               <Layers className="h-3 w-3" />
-              {modul === "aset" ? "Modul Aset" : "Modul SDM"}
+              {modulLabels[modul]}
             </button>
           )}
 
@@ -486,6 +517,7 @@ export function Navbar() {
                   {[
                     { icon: <User className="h-4 w-4" />, label: "Profile",     href: "/dashboard/profile" },
                     { icon: <Settings className="h-4 w-4" />, label: "Pengaturan", href: "/dashboard/pengaturan" },
+                    ...(user?.role === "admin" || user?.role === "hrd" ? [{ icon: <History className="h-4 w-4" />, label: "Audit Log", href: "/dashboard/pengaturan/audit-log" }] : []),
                     ...(user?.role === "admin" ? [{ icon: <Shield className="h-4 w-4" />, label: "Hak Akses Menu", href: "/dashboard/pengaturan/hak-akses" }] : []),
                   ].map((item) => (
                     <button key={item.label}
