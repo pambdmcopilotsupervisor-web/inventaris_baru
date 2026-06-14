@@ -1,67 +1,9 @@
 import { prisma } from "@/lib/prisma"
 import type { SessionUser } from "@/lib/session"
-import { getBawahanIds } from "@/lib/penilaian-target"
-import { assertPeriodePenilaianTerbuka } from "@/lib/penilaian-periode"
+import { assertPeriodePenilaianTerbuka, getPeriodeAktifAtauTerbaru } from "@/lib/penilaian-periode"
+import { getBawahanPenilaianMultiLevelIds } from "@/lib/penilaian-scope"
 
 export type PerilakuAspek = "integritas" | "kerjasama" | "inisiatif" | "orientasi_layanan" | "kedisiplinan"
-
-// Jabatan non-pemimpin (bawahan dari Kepala Divisi)
-const JABATAN_STAF = ["Staff", "Staf", "Koordinator", "Bendahara", "Sekretaris", "Ketua"]
-const JABATAN_KEPALA = ["Kepala Divisi", "Kepala Bagian"]
-const JABATAN_MANAGER = ["Manager", "Manajer", "Direktur"]
-
-/**
- * Deteksi bawahan berdasarkan jabatan + divisi (logika penilaian kinerja).
- * - Manager → semua Kepala Divisi aktif
- * - Kepala Divisi → semua Staf/Koordinator dalam divisi yang sama
- * - Fallback → gunakan atasan_id jika ada
- */
-export async function getBawahanPenilaianIds(karyawanId: number): Promise<bigint[]> {
-  type Info = { jabatan: string; divisi_id: number | null }
-  const rows = await prisma.$queryRaw<Info[]>`
-    SELECT jabatan, divisi_id FROM karyawans WHERE id = ${BigInt(karyawanId)} LIMIT 1
-  `
-  const info = rows[0]
-  if (!info) return []
-
-  const jabatan = info.jabatan ?? ""
-  const toSqlList = (arr: string[]) => arr.map(s => `'${s.replace(/'/g, "\\'")}'`).join(",")
-
-  // Manager → semua Kepala Divisi
-  if (JABATAN_MANAGER.some(j => jabatan.toLowerCase().includes(j.toLowerCase()))) {
-    const result = await prisma.$queryRawUnsafe<{ id: bigint }[]>(
-      `SELECT id FROM karyawans WHERE jabatan IN (${toSqlList(JABATAN_KEPALA)}) AND status_karyawan NOT IN ('Pensiun','Nonaktif') AND id != ${karyawanId}`,
-    )
-    if (result.length > 0) return result.map(r => r.id)
-  }
-
-  // Kepala Divisi → prioritas: subdivisi yang sama, lalu divisi yang sama, lalu atasan_id
-  if (JABATAN_KEPALA.some(j => jabatan.toLowerCase().includes(j.toLowerCase()))) {
-    type Info2 = { jabatan: string; divisi_id: number | null; subdivisi_id: number | null }
-    const fullRows = await prisma.$queryRaw<Info2[]>`
-      SELECT jabatan, divisi_id, subdivisi_id FROM karyawans WHERE id = ${BigInt(karyawanId)} LIMIT 1
-    `
-    const full = fullRows[0]
-
-    // Bangun filter: subdivisi → divisi → atasan_id
-    const filters: string[] = []
-    if (full?.subdivisi_id) filters.push(`subdivisi_id = ${full.subdivisi_id}`)
-    if (full?.divisi_id)    filters.push(`divisi_id = ${full.divisi_id}`)
-    filters.push(`atasan_id = ${karyawanId}`)
-
-    const whereClause = filters.map(f => `(${f})`).join(" OR ")
-    const result = await prisma.$queryRawUnsafe<{ id: bigint }[]>(
-      `SELECT id FROM karyawans WHERE (${whereClause}) AND jabatan IN (${toSqlList(JABATAN_STAF)}) AND status_karyawan NOT IN ('Pensiun','Nonaktif') AND id != ${karyawanId}`,
-    )
-    if (result.length > 0) return result.map(r => r.id)
-  }
-
-  // Fallback: gunakan atasan_id (relasi langsung)
-  return getBawahanIds(karyawanId, true)
-}
-
-
-
 export type VerifikasiTargetInput = {
   id: number
   realisasi_nilai_atasan: number | null
@@ -185,7 +127,7 @@ export async function canAccessBawahanPenilaian(user: SessionUser, idPegawai: nu
   if (!user.karyawan_id) return false
   if (user.role === "admin" || user.role === "hrd") return true
   // Cek bawahan rekursif untuk semua role (termasuk user yang jadi atasan)
-  const bawahanIds = await getBawahanPenilaianIds(user.karyawan_id)
+  const bawahanIds = await getBawahanPenilaianMultiLevelIds(user.karyawan_id)
   return bawahanIds.some(id => BigInt(id) === BigInt(idPegawai))
 }
 
@@ -198,13 +140,9 @@ export async function getDaftarPenilaianBawahan(user: SessionUser, idPeriode?: n
   if (idPeriode) {
     periodeId = BigInt(idPeriode)
   } else {
-    const rows = await prisma.$queryRaw<{ id: bigint }[]>`
-      SELECT id FROM periode_penilaian
-      ORDER BY CASE WHEN status = 'aktif' THEN 0 ELSE 1 END, tanggal_mulai DESC, id DESC
-      LIMIT 1
-    `
-    if (!rows[0]) throw new Error("Periode penilaian belum tersedia")
-    periodeId = rows[0].id
+    const periode = await getPeriodeAktifAtauTerbaru()
+    if (!periode) throw new Error("Periode penilaian belum tersedia")
+    periodeId = periode.id
   }
 
   const periodeRows = await prisma.$queryRaw<PeriodeRow[]>`
@@ -214,15 +152,7 @@ export async function getDaftarPenilaianBawahan(user: SessionUser, idPeriode?: n
   if (!periodeRows[0]) throw new Error("Periode tidak ditemukan")
 
   let bawahanIds: bigint[]
-  // Kumpulkan semua bawahan secara multi-level via jabatan+divisi
-  const level1 = await getBawahanPenilaianIds(user.karyawan_id)
-  const allIds  = new Set(level1.map(id => id.toString()))
-  // Level 2: bawahan dari bawahan (Manager → semua Staf via Kepala Divisi)
-  for (const id of level1) {
-    const level2 = await getBawahanPenilaianIds(Number(id))
-    level2.forEach(id2 => allIds.add(id2.toString()))
-  }
-  bawahanIds = Array.from(allIds).map(id => BigInt(id))
+  bawahanIds = await getBawahanPenilaianMultiLevelIds(user.karyawan_id)
 
   if (bawahanIds.length === 0 && (user.role === "admin" || user.role === "hrd")) {
     // Admin/HRD tanpa bawahan langsung → tampilkan semua pegawai aktif

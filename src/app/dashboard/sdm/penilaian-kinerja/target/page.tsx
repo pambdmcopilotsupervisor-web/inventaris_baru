@@ -8,7 +8,7 @@ import { Modal } from "@/components/ui/modal"
 import { TextField, SelectField, TextareaField } from "@/components/ui/form-field"
 import { useApi } from "@/hooks/useApi"
 import { useAuth } from "@/contexts/AuthContext"
-import { Plus, RefreshCw, Save, CheckSquare, ClipboardList } from "lucide-react"
+import { Plus, RefreshCw, Save, CheckSquare, ClipboardList, Pencil } from "lucide-react"
 
 type Periode = {
   id: number
@@ -19,6 +19,7 @@ type Periode = {
   tanggal_buka: string
   tanggal_tutup: string
   status: "draft" | "aktif" | "tutup"
+  keterangan: string | null
 }
 
 type TargetKerja = {
@@ -57,6 +58,12 @@ const satuanOptions = [
   { value: "lainnya", label: "Lainnya" },
 ]
 
+const statusPeriodeOptions = [
+  { value: "draft", label: "Draft" },
+  { value: "aktif", label: "Aktif" },
+  { value: "tutup", label: "Tutup" },
+]
+
 function statusBadge(status: MonitoringRow["status_target"]): "secondary" | "warning" | "success" | "destructive" | "info" {
   if (status === "disetujui") return "success"
   if (status === "diajukan") return "warning"
@@ -81,12 +88,30 @@ function createDefaultTargets(): TargetKerja[] {
   ]
 }
 
+function toDateInput(value?: string | null): string {
+  return value ? value.slice(0, 10) : ""
+}
+
+function emptyPeriodeForm() {
+  return {
+    kode_periode: "",
+    nama_periode: "",
+    tanggal_mulai: "",
+    tanggal_selesai: "",
+    tanggal_buka: "",
+    tanggal_tutup: "",
+    status: "aktif" as Periode["status"],
+    keterangan: "",
+  }
+}
+
 export default function TargetKerjaPage() {
   const { user } = useAuth()
   const { data: periodes, loading: periodeLoading, refetch: refetchPeriode } = useApi<Periode[]>("/api/periode")
   const periodeList = periodes ?? []
   const [selectedPeriodeId, setSelectedPeriodeId] = useState("")
   const activePeriodeId = selectedPeriodeId || (periodeList[0]?.id ? String(periodeList[0].id) : "")
+  const currentPeriode = periodeList.find(p => String(p.id) === activePeriodeId) ?? null
 
   const { data: monitoring, loading: monitoringLoading, refetch: refetchMonitoring } = useApi<MonitoringRow[]>(
     `/api/target?id_periode=${activePeriodeId || 0}`,
@@ -102,16 +127,8 @@ export default function TargetKerjaPage() {
   const [approving, setApproving] = useState(false)
 
   const [periodeOpen, setPeriodeOpen] = useState(false)
-  const [periodeForm, setPeriodeForm] = useState({
-    kode_periode: "",
-    nama_periode: "",
-    tanggal_mulai: "",
-    tanggal_selesai: "",
-    tanggal_buka: "",
-    tanggal_tutup: "",
-    status: "aktif",
-    keterangan: "",
-  })
+  const [editingPeriodeId, setEditingPeriodeId] = useState<number | null>(null)
+  const [periodeForm, setPeriodeForm] = useState(emptyPeriodeForm())
 
   const totalBobot = targets.reduce((sum, item) => sum + Number(item.bobot_dalam_capaian || 0), 0)
   const currentTargetPegawaiId = targetPegawaiId || (user?.karyawan_id ? String(user.karyawan_id) : "")
@@ -195,7 +212,31 @@ export default function TargetKerjaPage() {
     }
   }
 
-  const createPeriode = async () => {
+  const openCreatePeriode = () => {
+    setErrors({})
+    setEditingPeriodeId(null)
+    setPeriodeForm(emptyPeriodeForm())
+    setPeriodeOpen(true)
+  }
+
+  const openEditPeriode = () => {
+    if (!currentPeriode) { setErrors({ _: "Pilih periode yang akan diedit" }); return }
+    setErrors({})
+    setEditingPeriodeId(currentPeriode.id)
+    setPeriodeForm({
+      kode_periode: currentPeriode.kode_periode,
+      nama_periode: currentPeriode.nama_periode,
+      tanggal_mulai: toDateInput(currentPeriode.tanggal_mulai),
+      tanggal_selesai: toDateInput(currentPeriode.tanggal_selesai),
+      tanggal_buka: toDateInput(currentPeriode.tanggal_buka),
+      tanggal_tutup: toDateInput(currentPeriode.tanggal_tutup),
+      status: currentPeriode.status,
+      keterangan: currentPeriode.keterangan ?? "",
+    })
+    setPeriodeOpen(true)
+  }
+
+  const savePeriode = async () => {
     const e: Record<string, string> = {}
     if (!periodeForm.kode_periode.trim()) e.kode_periode = "Kode wajib diisi"
     if (!periodeForm.nama_periode.trim()) e.nama_periode = "Nama wajib diisi"
@@ -208,15 +249,16 @@ export default function TargetKerjaPage() {
     setSaving(true)
     try {
       const res = await fetch("/api/periode", {
-        method: "POST",
+        method: editingPeriodeId ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(periodeForm),
+        body: JSON.stringify(editingPeriodeId ? { ...periodeForm, id: editingPeriodeId } : periodeForm),
       })
       const json = await res.json()
-      if (!res.ok) { setErrors({ _: json.error ?? "Gagal membuat periode" }); return }
+      if (!res.ok) { setErrors({ _: json.error ?? (editingPeriodeId ? "Gagal memperbarui periode" : "Gagal membuat periode") }); return }
       setPeriodeOpen(false)
       await refetchPeriode()
-      setSelectedPeriodeId(String(json.id))
+      if (editingPeriodeId) setSelectedPeriodeId(String(editingPeriodeId))
+      else setSelectedPeriodeId(String(json.id))
     } finally {
       setSaving(false)
     }
@@ -253,7 +295,8 @@ export default function TargetKerjaPage() {
             {periodeList.map(p => <option key={p.id} value={p.id}>{p.nama_periode}</option>)}
           </select>
           <Button variant="outline" size="sm" onClick={() => { refetchPeriode(); refetchMonitoring() }}><RefreshCw className="h-3.5 w-3.5" /></Button>
-          <Button size="sm" onClick={() => { setErrors({}); setPeriodeOpen(true) }}><Plus className="h-3.5 w-3.5 mr-1.5" />Buat Periode</Button>
+          <Button variant="outline" size="sm" onClick={openEditPeriode} disabled={!currentPeriode}><Pencil className="h-3.5 w-3.5 mr-1.5" />Edit Periode</Button>
+          <Button size="sm" onClick={openCreatePeriode}><Plus className="h-3.5 w-3.5 mr-1.5" />Buat Periode</Button>
         </div>
       </div>
 
@@ -335,8 +378,8 @@ export default function TargetKerjaPage() {
         </div>
       </div>
 
-      <Modal open={periodeOpen} onClose={() => setPeriodeOpen(false)} title="Buat Periode Penilaian" size="md"
-        footer={<><Button variant="outline" onClick={() => setPeriodeOpen(false)}>Batal</Button><Button onClick={createPeriode} disabled={saving}>{saving ? "Menyimpan..." : "Buat Periode"}</Button></>}
+      <Modal open={periodeOpen} onClose={() => setPeriodeOpen(false)} title={editingPeriodeId ? "Edit Periode Penilaian" : "Buat Periode Penilaian"} size="md"
+        footer={<><Button variant="outline" onClick={() => setPeriodeOpen(false)}>Batal</Button><Button onClick={savePeriode} disabled={saving}>{saving ? "Menyimpan..." : editingPeriodeId ? "Simpan Perubahan" : "Buat Periode"}</Button></>}
       >
         <div className="space-y-4">
           <TextField label="Kode Periode" required error={errors.kode_periode} value={periodeForm.kode_periode} placeholder="SEM1-2026" onChange={e => setPeriodeForm(f => ({ ...f, kode_periode: e.target.value.toUpperCase() }))} />
@@ -347,6 +390,7 @@ export default function TargetKerjaPage() {
             <TextField label="Tanggal Buka" required type="date" error={errors.tanggal_buka} value={periodeForm.tanggal_buka} onChange={e => setPeriodeForm(f => ({ ...f, tanggal_buka: e.target.value }))} />
             <TextField label="Tanggal Tutup" required type="date" error={errors.tanggal_tutup} value={periodeForm.tanggal_tutup} onChange={e => setPeriodeForm(f => ({ ...f, tanggal_tutup: e.target.value }))} />
           </div>
+          <SelectField label="Status" required options={statusPeriodeOptions} value={periodeForm.status} onChange={e => setPeriodeForm(f => ({ ...f, status: e.target.value as Periode["status"] }))} />
           <TextareaField label="Keterangan" value={periodeForm.keterangan} onChange={e => setPeriodeForm(f => ({ ...f, keterangan: e.target.value }))} />
         </div>
       </Modal>

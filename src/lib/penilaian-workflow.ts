@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/prisma"
-import { getBawahanIds } from "@/lib/penilaian-target"
-import { getBawahanPenilaianIds } from "@/lib/penilaian-atasan"
 import { assertPeriodePenilaianTerbuka } from "@/lib/penilaian-periode"
+import { getBawahanPenilaianIds, getBawahanPenilaianMultiLevelIds } from "@/lib/penilaian-scope"
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -407,21 +406,7 @@ export async function getMenungguSaya(karyawanId: number, role: string, idPeriod
     return rows
   }
 
-  // Kumpulkan semua bawahan secara multi-level via jabatan+divisi
-  // Level 1: bawahan langsung (Kepala Divisi untuk Manager, Staf untuk Kepala Divisi)
-  const level1 = await getBawahanPenilaianIds(karyawanId)
-  const allIds  = new Set(level1.map(id => id.toString()))
-
-  // Level 2: bawahan dari bawahan (untuk Manager agar bisa lihat penilaian Staf)
-  for (const id of level1) {
-    const level2 = await getBawahanPenilaianIds(Number(id))
-    level2.forEach(id2 => allIds.add(id2.toString()))
-  }
-
-  let bawahanIds = Array.from(allIds).map(id => BigInt(id))
-
-  // Fallback: jika masih kosong, coba atasan_id rekursif
-  if (bawahanIds.length === 0) bawahanIds = await getBawahanIds(karyawanId, true)
+  const bawahanIds = await getBawahanPenilaianMultiLevelIds(karyawanId)
   if (bawahanIds.length === 0) return []
 
   const idList = bawahanIds.map(id => `${id}`).join(",")

@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma"
 import type { SessionUser } from "@/lib/session"
 import { hitungNilaiKehadiran } from "@/lib/penilaian-kehadiran"
-import { assertPeriodePenilaianTerbuka } from "@/lib/penilaian-periode"
+import { assertPeriodePenilaianTerbuka, getPeriodeAktifAtauTerbaru } from "@/lib/penilaian-periode"
 
 export type PerilakuAspek = "integritas" | "kerjasama" | "inisiatif" | "orientasi_layanan" | "kedisiplinan"
 
@@ -51,17 +51,6 @@ type IdentitasRow = {
   divisi_id: number | null
   nama_divisi: string | null
   nama_atasan: string | null
-}
-
-type PeriodeRow = {
-  id: bigint
-  kode_periode: string
-  nama_periode: string
-  tanggal_mulai: Date
-  tanggal_selesai: Date
-  tanggal_buka: Date
-  tanggal_tutup: Date
-  status: string
 }
 
 type TargetRow = {
@@ -128,26 +117,6 @@ export function hitungNilaiPengembangan(input: PengembanganMandiriInput): number
   if (input.rencana_pengembangan.trim()) score += 30
   if (input.pencapaian_terbaik.trim()) score += 30
   return score
-}
-
-export async function getPeriodeAktifAtauTerbaru(idPeriode?: number): Promise<PeriodeRow | null> {
-  if (idPeriode) {
-    const rows = await prisma.$queryRaw<PeriodeRow[]>`
-      SELECT id, kode_periode, nama_periode, tanggal_mulai, tanggal_selesai, tanggal_buka, tanggal_tutup, status
-      FROM periode_penilaian
-      WHERE id = ${BigInt(idPeriode)}
-      LIMIT 1
-    `
-    return rows[0] ?? null
-  }
-
-  const rows = await prisma.$queryRaw<PeriodeRow[]>`
-    SELECT id, kode_periode, nama_periode, tanggal_mulai, tanggal_selesai, tanggal_buka, tanggal_tutup, status
-    FROM periode_penilaian
-    ORDER BY CASE WHEN status = 'aktif' THEN 0 ELSE 1 END, tanggal_mulai DESC, id DESC
-    LIMIT 1
-  `
-  return rows[0] ?? null
 }
 
 export async function getPenilaianMandiri(user: SessionUser, idPeriode?: number) {

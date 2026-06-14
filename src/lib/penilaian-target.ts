@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma"
 import type { SessionUser } from "@/lib/session"
 import { assertPeriodePenilaianTerbuka } from "@/lib/penilaian-periode"
+import { getBawahanPenilaianMultiLevelIds } from "@/lib/penilaian-scope"
 
 export type TargetKerjaInput = {
   uraian_tugas: string
@@ -105,42 +106,13 @@ export async function getTargetKerja(idPegawai: number | bigint, idPeriode: numb
   `
 }
 
-export async function getBawahanIds(karyawanId: number | bigint, recursive = true): Promise<bigint[]> {
-  const rows = await prisma.karyawans.findMany({
-    where: {
-      OR: [
-        { status_karyawan: null },
-        { status_karyawan: { notIn: ["Pensiun", "Nonaktif"] } },
-      ],
-    },
-    select: { id: true, atasan_id: true },
-  })
-
-  const rootId = BigInt(karyawanId)
-  const byAtasan = new Map<string, bigint[]>()
-  rows.forEach(row => {
-    if (!row.atasan_id) return
-    const key = row.atasan_id.toString()
-    byAtasan.set(key, [...(byAtasan.get(key) ?? []), row.id])
-  })
-
-  const result: bigint[] = []
-  const queue = [...(byAtasan.get(rootId.toString()) ?? [])]
-  while (queue.length > 0) {
-    const current = queue.shift()!
-    result.push(current)
-    if (recursive) queue.push(...(byAtasan.get(current.toString()) ?? []))
-  }
-  return result
-}
-
 export async function canAccessPegawaiTarget(user: SessionUser, idPegawai: number | bigint): Promise<boolean> {
   const pegawaiId = BigInt(idPegawai)
   if (isAdminLike(user)) return true
   if (user.karyawan_id && BigInt(user.karyawan_id) === pegawaiId) return true
   if (!user.karyawan_id) return false
   // Gunakan jabatan+divisi multi-level
-  const bawahanIds = await getBawahanByJabatanDivisi(user.karyawan_id)
+  const bawahanIds = await getBawahanPenilaianMultiLevelIds(user.karyawan_id)
   return bawahanIds.some(id => id === pegawaiId)
 }
 
@@ -148,7 +120,7 @@ export async function canApprovePegawaiTarget(user: SessionUser, idPegawai: numb
   void final
   if (isAdminLike(user)) return true
   if (!user.karyawan_id) return false
-  const bawahanIds = await getBawahanByJabatanDivisi(user.karyawan_id)
+  const bawahanIds = await getBawahanPenilaianMultiLevelIds(user.karyawan_id)
   return bawahanIds.some(id => id === BigInt(idPegawai))
 }
 
@@ -229,8 +201,7 @@ export async function approveTargetKerja(idTarget: number | bigint, approverId: 
 export async function getMonitoringTarget(idPeriode: number | bigint, atasanId?: number | bigint | null): Promise<MonitoringTargetRow[]> {
   let employeeIds: bigint[] | null = null
   if (atasanId) {
-    // Gunakan jabatan+divisi multi-level (sama seperti penilaian-atasan.ts)
-    employeeIds = await getBawahanByJabatanDivisi(atasanId)
+    employeeIds = await getBawahanPenilaianMultiLevelIds(atasanId)
     if (employeeIds.length === 0) return []
   }
 
@@ -261,54 +232,4 @@ export async function getMonitoringTarget(idPeriode: number | bigint, atasanId?:
   if (!employeeIds) return rows
   const allowed = new Set(employeeIds.map(id => id.toString()))
   return rows.filter(row => allowed.has(row.id_pegawai.toString()))
-}
-
-/**
- * Ambil bawahan berdasarkan jabatan+divisi+subdivisi (multi-level).
- * Tidak di-export agar tidak circular dependency.
- */
-async function getBawahanByJabatanDivisi(karyawanId: number | bigint): Promise<bigint[]> {
-  type Info = { jabatan: string; divisi_id: number | null; subdivisi_id: number | null }
-  const rows = await prisma.$queryRaw<Info[]>`
-    SELECT jabatan, divisi_id, subdivisi_id FROM karyawans WHERE id = ${BigInt(karyawanId)} LIMIT 1
-  `
-  const info = rows[0]
-  if (!info) return []
-
-  const jabatan = info.jabatan ?? ""
-  const JABATAN_STAF  = ["Staff", "Staf", "Koordinator", "Bendahara", "Sekretaris", "Ketua"]
-  const JABATAN_KEPALA = ["Kepala Divisi", "Kepala Bagian"]
-  const JABATAN_MANAGER = ["Manager", "Manajer", "Direktur"]
-  const toSqlList = (arr: string[]) => arr.map(s => `'${s.replace(/'/g, "\\'")}'`).join(",")
-
-  // Manager → semua Kepala Divisi, lalu semua Staf dari setiap Kepala Divisi
-  if (JABATAN_MANAGER.some(j => jabatan.toLowerCase().includes(j.toLowerCase()))) {
-    const kepalasResult = await prisma.$queryRawUnsafe<{ id: bigint }[]>(
-      `SELECT id FROM karyawans WHERE jabatan IN (${toSqlList(JABATAN_KEPALA)}) AND status_karyawan NOT IN ('Pensiun','Nonaktif') AND id != ${karyawanId}`,
-    )
-    if (kepalasResult.length > 0) {
-      const allIds = new Set(kepalasResult.map(r => r.id.toString()))
-      for (const kepala of kepalasResult) {
-        const staf = await getBawahanByJabatanDivisi(kepala.id)
-        staf.forEach(id => allIds.add(id.toString()))
-      }
-      return Array.from(allIds).map(id => BigInt(id))
-    }
-  }
-
-  // Kepala Divisi → Staf di subdivisi/divisi yang sama + atasan_id langsung
-  if (JABATAN_KEPALA.some(j => jabatan.toLowerCase().includes(j.toLowerCase()))) {
-    const filters: string[] = []
-    if (info.subdivisi_id) filters.push(`subdivisi_id = ${info.subdivisi_id}`)
-    if (info.divisi_id)    filters.push(`divisi_id = ${info.divisi_id}`)
-    filters.push(`atasan_id = ${karyawanId}`)
-    const whereClause = filters.map(f => `(${f})`).join(" OR ")
-    const result = await prisma.$queryRawUnsafe<{ id: bigint }[]>(
-      `SELECT id FROM karyawans WHERE (${whereClause}) AND jabatan IN (${toSqlList(JABATAN_STAF)}) AND status_karyawan NOT IN ('Pensiun','Nonaktif') AND id != ${karyawanId}`,
-    )
-    if (result.length > 0) return result.map(r => r.id)
-  }
-
-  // Fallback: atasan_id rekursif
-  return getBawahanIds(karyawanId, true)
 }

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { serialize } from "@/lib/prisma"
 import { requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { getBawahanIds } from "@/lib/penilaian-target"
+import { getBawahanPenilaianMultiLevelIds } from "@/lib/penilaian-scope"
+import { getPeriodeAktifAtauTerbaru } from "@/lib/penilaian-periode"
 
 // GET /api/penilaian/ringkasan?id_periode=...
 // Ringkasan penilaian per divisi atau per bawahan untuk manager/admin/hrd
@@ -24,13 +25,9 @@ export async function GET(req: NextRequest) {
     if (idPeriode) {
       periodeId = BigInt(idPeriode)
     } else {
-      const rows = await prisma.$queryRaw<PeriodeRow[]>`
-        SELECT id, nama_periode FROM periode_penilaian
-        ORDER BY CASE WHEN status = 'aktif' THEN 0 ELSE 1 END, tanggal_mulai DESC, id DESC
-        LIMIT 1
-      `
-      if (!rows[0]) return NextResponse.json({ error: "Periode belum tersedia" }, { status: 404 })
-      periodeId = rows[0].id
+      const periode = await getPeriodeAktifAtauTerbaru()
+      if (!periode) return NextResponse.json({ error: "Periode belum tersedia" }, { status: 404 })
+      periodeId = periode.id
     }
 
     const periodeRows = await prisma.$queryRaw<PeriodeRow[]>`
@@ -43,7 +40,7 @@ export async function GET(req: NextRequest) {
       const rows = await prisma.$queryRaw<{ id: bigint }[]>`SELECT id FROM karyawans WHERE status_karyawan NOT IN ('Pensiun','Nonaktif')`
       bawahanIds = rows.map(r => r.id)
     } else {
-      bawahanIds = await getBawahanIds(karyawanId, true)
+      bawahanIds = await getBawahanPenilaianMultiLevelIds(karyawanId)
     }
 
     if (bawahanIds.length === 0) return NextResponse.json({ periode: periodeRows[0], divisi: [] })

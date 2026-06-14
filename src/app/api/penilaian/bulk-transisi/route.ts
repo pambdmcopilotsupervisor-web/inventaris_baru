@@ -6,8 +6,7 @@ import { writeAuditLog } from "@/lib/audit"
 import { doTransition, isStatusPenilaian } from "@/lib/penilaian-workflow"
 import type { StatusPenilaian } from "@/lib/penilaian-workflow"
 import { prisma } from "@/lib/prisma"
-import { getBawahanIds } from "@/lib/penilaian-target"
-import { getBawahanPenilaianIds } from "@/lib/penilaian-atasan"
+import { getBawahanPenilaianMultiLevelIds } from "@/lib/penilaian-scope"
 
 // POST /api/penilaian/bulk-transisi
 // Body: { ids: number[], ke: StatusPenilaian, catatan?: string }
@@ -45,16 +44,7 @@ export async function POST(req: NextRequest) {
 
     let bawahanIds: bigint[] = []
     if (auth.user.role !== "admin" && auth.user.role !== "hrd") {
-      // Gunakan multi-level traversal untuk Manager
-      const level1 = await getBawahanPenilaianIds(karyawanId)
-      const allIds  = new Set(level1.map(id => id.toString()))
-      for (const id of level1) {
-        const level2 = await getBawahanPenilaianIds(Number(id))
-        level2.forEach(id2 => allIds.add(id2.toString()))
-      }
-      bawahanIds = Array.from(allIds).map(id => BigInt(id))
-      // Fallback atasan_id
-      if (bawahanIds.length === 0) bawahanIds = await getBawahanIds(karyawanId, true)
+      bawahanIds = await getBawahanPenilaianMultiLevelIds(karyawanId)
     }
 
     const results: { id: number; success: boolean; message: string }[] = []

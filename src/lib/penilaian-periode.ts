@@ -8,6 +8,17 @@ type PeriodeGuardRow = {
   status: "draft" | "aktif" | "tutup"
 }
 
+export type PeriodePenilaianAktifRow = {
+  id: bigint
+  kode_periode: string
+  nama_periode: string
+  tanggal_mulai: Date
+  tanggal_selesai: Date
+  tanggal_buka: Date
+  tanggal_tutup: Date
+  status: "draft" | "aktif" | "tutup"
+}
+
 function toLocalIsoDate(date: Date): string {
   return [
     date.getFullYear(),
@@ -44,4 +55,32 @@ export async function assertPeriodePenilaianTerbuka(
   }
 
   return periode
+}
+
+export async function getPeriodeAktifAtauTerbaru(idPeriode?: number | bigint): Promise<PeriodePenilaianAktifRow | null> {
+  if (idPeriode) {
+    const rows = await prisma.$queryRaw<PeriodePenilaianAktifRow[]>`
+      SELECT id, kode_periode, nama_periode, tanggal_mulai, tanggal_selesai, tanggal_buka, tanggal_tutup, status
+      FROM periode_penilaian
+      WHERE id = ${BigInt(idPeriode)}
+      LIMIT 1
+    `
+    return rows[0] ?? null
+  }
+
+  const rows = await prisma.$queryRaw<PeriodePenilaianAktifRow[]>`
+    SELECT id, kode_periode, nama_periode, tanggal_mulai, tanggal_selesai, tanggal_buka, tanggal_tutup, status
+    FROM periode_penilaian
+    ORDER BY
+      CASE
+        WHEN status = 'aktif' AND CURRENT_DATE() BETWEEN tanggal_buka AND tanggal_tutup THEN 0
+        WHEN status = 'aktif' THEN 1
+        ELSE 2
+      END,
+      tanggal_buka DESC,
+      tanggal_mulai DESC,
+      id DESC
+    LIMIT 1
+  `
+  return rows[0] ?? null
 }

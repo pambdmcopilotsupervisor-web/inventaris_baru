@@ -134,7 +134,6 @@ Fungsi utama:
 - `validateTargetInputs(items)`
 - `getPeriodePenilaian(idPeriode)`
 - `getTargetKerja(idPegawai, idPeriode)`
-- `getBawahanIds(karyawanId, recursive)`
 - `canAccessPegawaiTarget(user, idPegawai)`
 - `canApprovePegawaiTarget(user, idPegawai, final)`
 - `createPenilaianDraftForEmployees(idPeriode, employeeIds)`
@@ -144,9 +143,7 @@ Fungsi utama:
 
 Catatan implementasi:
 
-- Scope bawahan memakai relasi existing `karyawans.atasan_id`.
-- `getBawahanIds(..., true)` mengambil bawahan secara recursive, cocok untuk Manager.
-- `getBawahanIds(..., false)` mengambil bawahan langsung, cocok untuk Kepala Divisi jika nanti perlu dibedakan.
+- Scope bawahan memakai resolver tunggal di `src/lib/penilaian-scope.ts`.
 - Saat periode dibuat, sistem membuat draft `penilaian_kinerja` untuk pegawai target supaya form target periode tersedia.
 - Karena `target_kerja.uraian_tugas` wajib diisi, sistem tidak membuat row target kosong. Form kosong ditangani di UI.
 
@@ -159,6 +156,7 @@ File:
 Fungsi utama:
 
 - `assertPeriodePenilaianTerbuka(idPeriode, action?)`
+- `getPeriodeAktifAtauTerbaru(idPeriode?)`
 
 Aturan:
 
@@ -166,6 +164,13 @@ Aturan:
 - `periode_penilaian.status` wajib `aktif`.
 - Tanggal server hari ini wajib berada dalam rentang `tanggal_buka` sampai `tanggal_tutup` secara inklusif.
 - Jika belum dibuka atau sudah lewat batas, service melempar error dan operasi tulis dibatalkan.
+- Default periode untuk Penilaian Mandiri, Penilaian Atasan, dan Ringkasan memakai `getPeriodeAktifAtauTerbaru()`.
+
+Prioritas default periode:
+
+- Periode `aktif` yang hari ini berada dalam rentang `tanggal_buka` sampai `tanggal_tutup`.
+- Jika tidak ada, periode `aktif` terbaru.
+- Jika tidak ada, periode terbaru berdasarkan `tanggal_buka`, `tanggal_mulai`, lalu `id`.
 
 Operasi yang memakai guard ini:
 
@@ -188,6 +193,7 @@ Endpoint:
 
 - `GET /api/periode` untuk daftar periode penilaian.
 - `POST /api/periode` untuk membuat periode baru dan membuat draft form penilaian pegawai dalam scope manager/admin.
+- `PUT /api/periode` untuk mengedit periode existing berdasarkan `id`.
 - `GET /api/target/:id_pegawai/:id_periode` untuk mengambil target pegawai pada periode tertentu.
 - `GET /api/target?id_periode=...` untuk monitoring target pegawai dalam scope atasan.
 - `POST /api/target` untuk menyimpan usulan target pegawai.
@@ -349,6 +355,7 @@ Fitur UI:
 
 - Pilih periode penilaian.
 - Buat periode baru.
+- Edit periode terpilih: kode, nama, tanggal mulai/selesai, tanggal buka/tutup, status, dan keterangan.
 - Form target kerja 3-5 baris.
 - Field: uraian tugas, satuan pengukuran, target nilai, bobot, catatan.
 - Validasi total bobot harus 100%.
@@ -394,24 +401,26 @@ npx tsc --noEmit
 Berhasil tanpa error.
 
 ```bash
-npx eslint "src/lib/penilaian-periode.ts" "src/lib/penilaian-target.ts" "src/lib/penilaian-mandiri.ts" "src/lib/penilaian-atasan.ts" "src/lib/penilaian-workflow.ts" "src/app/api/target/[id]/setujui/route.ts"
+npx eslint "src/lib/penilaian-periode.ts" "src/lib/penilaian-mandiri.ts" "src/lib/penilaian-atasan.ts" "src/app/api/penilaian/ringkasan/route.ts"
 ```
 
 Berhasil tanpa error.
 
-## Logika Hierarki Bawahan (getBawahanByJabatanDivisi)
+## Logika Hierarki Bawahan
 
 Dipakai di semua fitur penilaian kinerja (target, mandiri, atasan, workflow, inbox).
+
+Implementasi tunggal:
+
+- `src/lib/penilaian-scope.ts`
+- `getBawahanIds(karyawanId, recursive)` untuk fallback relasi `atasan_id`.
+- `getBawahanPenilaianIds(karyawanId)` untuk bawahan level langsung berdasarkan jabatan/divisi.
+- `getBawahanPenilaianMultiLevelIds(karyawanId)` untuk scope modul Penilaian Kinerja secara umum.
 
 Algoritma (priority):
 1. **Manager/Manajer/Direktur** → semua `Kepala Divisi/Bagian` aktif + semua Staf dari setiap Kepala Divisi (multi-level)
 2. **Kepala Divisi/Bagian** → Staf/Koordinator/dll di: (a) subdivisi yang sama, (b) divisi yang sama, (c) atasan_id langsung
 3. **Fallback** → `atasan_id` rekursif (untuk jabatan non-standar)
-
-Implementasi tersebar di:
-- `src/lib/penilaian-atasan.ts` → `getBawahanPenilaianIds()` (exported, untuk penilaian)
-- `src/lib/penilaian-target.ts` → `getBawahanByJabatanDivisi()` (internal, untuk target kerja)
-- `src/lib/penilaian-workflow.ts` → menggunakan `getBawahanPenilaianIds` + multi-level traversal
 
 ## Hal Yang Belum Dikerjakan
 
