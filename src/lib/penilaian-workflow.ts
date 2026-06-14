@@ -65,8 +65,13 @@ const TRANSISI: TransisiInfo[] = [
 // ─── Helper: resolve role efektif dalam hierarki ──────────────────
 
 /**
- * Apakah user adalah kepala_divisi (bawahan langsung rekursi=false) dari pegawai?
- * Apakah user adalah manager (bawahan rekursi=true) dari pegawai?
+ * Resolve "peran efektif" pada workflow berdasarkan LEVEL hierarki (bukan jabatan):
+ * - Bawahan langsung (level 1)  → peran "kepala_divisi" (tahap verifikasi: diajukan→diverifikasi)
+ * - Bawahan tidak langsung (level 2+) → peran "manager" (tahap persetujuan: diverifikasi→disetujui)
+ *
+ * Dengan model ini, Manager yang menjadi atasan langsung Kepala Divisi akan
+ * berperan sebagai "kepala_divisi" (verifikator) untuk penilaian Kepala Divisi tsb,
+ * dan berperan "manager" (approver) untuk penilaian Staf di bawahnya.
  */
 async function getRoleEfektif(
   karyawanId: number,
@@ -77,24 +82,14 @@ async function getRoleEfektif(
   if (role === "hrd")   return "hrd"
   if (karyawanId === idPegawai) return "pegawai"
 
-  // Cek apakah atasan langsung (kepala divisi) berdasarkan jabatan+divisi
-  const kepalaIds = await getBawahanPenilaianIds(karyawanId)
-  type JabInfo = { jabatan: string }
-  const jabRows = await prisma.$queryRaw<JabInfo[]>`SELECT jabatan FROM karyawans WHERE id = ${BigInt(karyawanId)} LIMIT 1`
-  const jabatan = jabRows[0]?.jabatan ?? ""
-  const isManager = ["Manager", "Manajer", "Direktur"].some(j => jabatan.toLowerCase().includes(j.toLowerCase()))
+  // Level 1: bawahan langsung → verifikator
+  const level1 = await getBawahanPenilaianIds(karyawanId)
+  if (level1.some(id => Number(id) === idPegawai)) return "kepala_divisi"
 
-  // Kepala Divisi: idPegawai ada di level 1 bawahan
-  if (!isManager && kepalaIds.some(id => Number(id) === idPegawai)) return "kepala_divisi"
-
-  // Manager: idPegawai bisa ada di level 1 (Kepala Divisi) atau level 2 (Staf di bawah Kepala Divisi)
-  if (isManager) {
-    if (kepalaIds.some(id => Number(id) === idPegawai)) return "manager"
-    // Level 2: cek bawahan dari setiap Kepala Divisi
-    for (const kepalaId of kepalaIds) {
-      const level2 = await getBawahanPenilaianIds(Number(kepalaId))
-      if (level2.some(id => Number(id) === idPegawai)) return "manager"
-    }
+  // Level 2: bawahan dari bawahan → approver
+  for (const id1 of level1) {
+    const level2 = await getBawahanPenilaianIds(Number(id1))
+    if (level2.some(id => Number(id) === idPegawai)) return "manager"
   }
 
   return null

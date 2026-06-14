@@ -347,20 +347,54 @@ function ViewKepalaDivisi() {
 
 /* ─── View Manager ────────────────────────────────────────────────── */
 function ViewManager() {
+  type DaftarKD = {
+    penilaian_id: number | null
+    id_pegawai: number
+    nama_karyawan: string
+    jabatan: string
+    status: string | null
+    id_penilai_atasan: number | null
+    tanggal_diajukan: string | null
+  }
   const { data: menunggu, loading: loadMenunggu, refetch: refetchMenunggu } = useApi<MenungguItem[]>("/api/penilaian/menunggu-saya")
   const { data: ringkasan, loading: loadRingkasan, refetch: refetchRingkasan } = useApi<RingkasanResponse>("/api/penilaian/ringkasan")
+  const { data: daftarBawahan, refetch: refetchDaftar } = useApi<{ list: DaftarKD[] }>("/api/penilaian-atasan")
   const [selected, setSelected] = useState<number[]>([])
   const [bulkModal, setBulkModal] = useState(false)
   const [catatan, setCatatan]    = useState("")
   const [saving, setSaving]      = useState(false)
   const [msg, setMsg]            = useState("")
   const [errMsg, setErrMsg]      = useState("")
+  // Verifikasi Kepala Divisi (Manager sebagai atasan langsung Kepala Divisi)
+  const [kdActionModal, setKdActionModal] = useState<{ id: number; ke: "diverifikasi" | "draft" } | null>(null)
+  const [kdCatatan, setKdCatatan] = useState("")
+
+  const KEPALA_LIST = ["Kepala Divisi", "Kepala Bagian"]
+  const daftarKepalaDivisi = (daftarBawahan?.list ?? []).filter(r =>
+    KEPALA_LIST.some(j => r.jabatan.includes(j)) && r.status === "diajukan"
+  )
 
   const daftarMenunggu = (menunggu ?? []).filter(r => r.status === "diverifikasi")
 
   const toggleSelect = (id: number) => setSelected(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id])
   const selectAll    = () => setSelected(daftarMenunggu.map(r => r.id))
   const deselectAll  = () => setSelected([])
+
+  const doKdAction = async () => {
+    if (!kdActionModal) return
+    if (kdActionModal.ke === "draft" && !kdCatatan.trim()) { setErrMsg("Catatan alasan wajib diisi"); return }
+    setSaving(true); setErrMsg("")
+    try {
+      const res = await fetch(`/api/penilaian/${kdActionModal.id}/transisi`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ke: kdActionModal.ke, catatan: kdCatatan }),
+      })
+      const j = await res.json()
+      if (!res.ok) { setErrMsg(j.error ?? "Gagal"); return }
+      setMsg(j.message ?? "Berhasil")
+      setKdActionModal(null); setKdCatatan(""); refetchDaftar(); refetchMenunggu(); refetchRingkasan()
+    } finally { setSaving(false) }
+  }
 
   const doBulkApprove = async () => {
     if (!selected.length) return
@@ -391,8 +425,44 @@ function ViewManager() {
       </div>
 
       {msg && <div className="rounded-lg px-4 py-3 text-sm" style={{ background: "var(--success-bg)", color: "var(--success)" }}>{msg}</div>}
+      {errMsg && <div className="rounded-lg px-4 py-3 text-sm" style={{ background: "var(--danger-bg)", color: "var(--danger)" }}>{errMsg}</div>}
 
-      {/* Summary divisi */}
+      {/* Verifikasi penilaian Kepala Divisi (Manager = atasan langsung) */}
+      <div className="rounded-xl p-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+        <p className="font-bold text-sm mb-3" style={{ color: "var(--text-900)" }}>
+          Perlu Verifikasi Anda — Kepala Divisi ({daftarKepalaDivisi.length})
+        </p>
+        {daftarKepalaDivisi.length === 0 && <p className="text-xs" style={{ color: "var(--text-subtle)" }}>Tidak ada penilaian Kepala Divisi yang menunggu verifikasi.</p>}
+        <div className="space-y-2">
+          {daftarKepalaDivisi.map(row => (
+            <div key={row.id_pegawai} className="flex items-center justify-between gap-3 rounded-lg px-3 py-2" style={{ background: "var(--surface-muted)", border: "1px solid var(--border)" }}>
+              <div className="flex-1">
+                <p className="font-semibold text-sm" style={{ color: "var(--text-900)" }}>{row.nama_karyawan}</p>
+                <p className="text-xs" style={{ color: "var(--text-subtle)" }}>{row.jabatan}</p>
+              </div>
+              {!row.id_penilai_atasan
+                ? <Badge variant="warning">Perlu Dinilai</Badge>
+                : <Badge variant="secondary">Siap Diverifikasi</Badge>}
+              <div className="flex gap-2">
+                {row.penilaian_id && (row.id_penilai_atasan ? (
+                  <Button size="sm" onClick={() => { setKdActionModal({ id: row.penilaian_id!, ke: "diverifikasi" }); setKdCatatan(""); setErrMsg("") }}>
+                    <CheckCircle className="h-3.5 w-3.5" />Verifikasi
+                  </Button>
+                ) : (
+                  <Link href="/dashboard/sdm/penilaian-kinerja/atasan">
+                    <Button size="sm"><CheckCircle className="h-3.5 w-3.5" />Verifikasi</Button>
+                  </Link>
+                ))}
+                {row.penilaian_id && (
+                  <Button size="sm" variant="outline" onClick={() => { setKdActionModal({ id: row.penilaian_id!, ke: "draft" }); setKdCatatan(""); setErrMsg("") }}>
+                    Kembalikan
+                  </Button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
       {loadRingkasan ? <p className="text-xs" style={{ color: "var(--text-subtle)" }}>Memuat ringkasan...</p> : ringkasan && (
         <div className="rounded-xl p-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
           <p className="font-bold text-sm mb-3" style={{ color: "var(--text-900)" }}>Ringkasan per Divisi</p>
@@ -492,6 +562,19 @@ function ViewManager() {
         <div className="flex justify-end gap-2 mt-4">
           <Button variant="outline" onClick={() => setBulkModal(false)}>Batal</Button>
           <Button onClick={doBulkApprove} disabled={saving}>{saving ? "Memproses..." : `Setujui ${selected.length}`}</Button>
+        </div>
+      </Modal>
+
+      {/* Modal verifikasi/kembalikan Kepala Divisi */}
+      <Modal open={!!kdActionModal} onClose={() => setKdActionModal(null)}
+        title={kdActionModal?.ke === "draft" ? "Kembalikan Penilaian" : "Verifikasi Penilaian"}>
+        {errMsg && <div className="mb-3 rounded-lg px-3 py-2 text-sm" style={{ background: "var(--danger-bg)", color: "var(--danger)" }}>{errMsg}</div>}
+        {kdActionModal?.ke === "diverifikasi"
+          ? <p className="text-sm mb-4" style={{ color: "var(--text-700)" }}>Konfirmasi verifikasi penilaian Kepala Divisi ini?</p>
+          : <TextareaField label="Catatan Alasan Pengembalian (wajib)" required value={kdCatatan} onChange={e => setKdCatatan(e.target.value)} />}
+        <div className="flex justify-end gap-2 mt-4">
+          <Button variant="outline" onClick={() => setKdActionModal(null)}>Batal</Button>
+          <Button onClick={doKdAction} disabled={saving}>{saving ? "Memproses..." : "Konfirmasi"}</Button>
         </div>
       </Modal>
     </div>
