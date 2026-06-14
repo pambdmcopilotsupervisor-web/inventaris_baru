@@ -4,6 +4,24 @@ File ini adalah sumber konteks berkelanjutan untuk pengembangan modul **Penilaia
 
 Setiap kali ada pengembangan terkait penilaian kinerja, update file ini agar konteks tetap bisa dilanjutkan di sesi berikutnya.
 
+## Generate Dokumen PDF
+
+Library: `pdfkit` (PDF) + `jszip` (bulk ZIP). `pdfkit` didaftarkan di `serverExternalPackages` pada `next.config.ts` agar file font `.afm` dimuat dari node_modules saat runtime.
+
+File:
+
+- `src/lib/penilaian-pdf-data.ts` — gathering data (`getPdfPenilaianData`, `getPenilaianIdsByPeriode`, `getPredikat`). Divisi pakai COALESCE subdivisi→divisi; atasan pakai fallback Kepala Divisi.
+- `src/lib/penilaian-pdf-generator.ts` — `generatePenilaianPdf(data): Promise<Buffer>`. A4 portrait, 7 bagian + watermark.
+- `src/app/api/penilaian/[id]/pdf/route.ts` — `GET` unduh PDF individual (runtime nodejs). Akses: pemilik / atasan scope / admin / hrd.
+- `src/app/api/periode/[id]/pdf-semua/route.ts` — `GET` unduh ZIP semua PDF 1 periode (admin/hrd, maxDuration 60).
+
+Isi PDF: header (logo teks PDM, judul, periode, nomor dok), identitas, tabel capaian sasaran, tabel perilaku (mandiri/atasan/gabungan), rekap nilai per komponen + nilai akhir, predikat berwarna (Istimewa≥91 hijau, Baik≥76 biru, Cukup≥61 oranye, Kurang≥51 merah, <51 merah tua), catatan atasan, riwayat approval, kolom TTD (pegawai/Kepala Divisi/Manager). Watermark "DOKUMEN FINAL" (hijau) jika status final, "DRAFT" (merah) jika belum.
+
+Tombol unduh di UI:
+- Penilaian Atasan (detail) → tombol "PDF"
+- Inbox Approval (ViewStaf riwayat) → tombol "PDF" per periode
+- Inbox Approval (ViewAdminHrd header) → "Download Semua (ZIP)"
+
 ## Tujuan Modul
 
 Membangun sistem penilaian kinerja pegawai yang terintegrasi dengan data karyawan, absensi, struktur atasan, dan approval berjenjang.
@@ -282,9 +300,10 @@ Data yang dikembalikan:
 
 Scope akses:
 
-- Admin, HRD, Manager/Manajer/Direktur, dan Kepala Divisi HRD bisa melihat semua divisi.
+- Admin, HRD, dan pegawai dengan `jabatan = 'Manager'` (exact match dari tabel `karyawans`) bisa melihat semua divisi.
 - Role/jabatan lain dibatasi ke divisi efektif user sendiri.
 - Filter divisi hanya aktif untuk user yang boleh melihat semua divisi.
+- Jabatan dibaca langsung dari DB saat request, bukan dari session/jabatan client.
 
 Library chart:
 

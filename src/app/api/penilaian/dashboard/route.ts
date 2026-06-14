@@ -12,6 +12,7 @@ type PeriodeRow = {
 }
 
 type EffectiveDivisiRow = {
+  jabatan: string | null
   divisi_id: bigint | number | null
   nama_divisi: string | null
 }
@@ -69,17 +70,10 @@ function avg(values: number[]): number | null {
   return Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 100) / 100
 }
 
-function isManagerOrHrdLeader(jabatan?: string | null, namaDivisi?: string | null): boolean {
-  const jab = (jabatan ?? "").toLowerCase()
-  const div = (namaDivisi ?? "").toLowerCase()
-  const isManager = ["manager", "manajer", "direktur"].some(key => jab.includes(key))
-  const isKepalaHrd = jab.includes("kepala") && (jab.includes("hrd") || div.includes("hrd") || div.includes("sumber daya") || div.includes("human"))
-  return isManager || isKepalaHrd
-}
-
 async function getEffectiveDivisi(karyawanId: number): Promise<EffectiveDivisiRow | null> {
   const rows = await prisma.$queryRaw<EffectiveDivisiRow[]>`
-    SELECT COALESCE(k.divisi_id, s.divisi_id) AS divisi_id,
+    SELECT k.jabatan,
+           COALESCE(k.divisi_id, s.divisi_id) AS divisi_id,
            COALESCE(d.nama_divisi, sub_d.nama_divisi, s.nama_sub) AS nama_divisi
     FROM karyawans k
     LEFT JOIN divisis d ON d.id = k.divisi_id
@@ -125,10 +119,10 @@ export async function GET(req: NextRequest) {
     const periode = await getPeriodeAktifAtauTerbaru(requestedPeriodeId ? Number(requestedPeriodeId) : undefined)
     if (!periode) return NextResponse.json({ error: "Periode penilaian belum tersedia" }, { status: 404 })
 
-    const userDivisi = await getEffectiveDivisi(auth.user.karyawan_id)
-    const canSeeAll = auth.user.role === "admin" || auth.user.role === "hrd" || isManagerOrHrdLeader(auth.user.jabatan, userDivisi?.nama_divisi)
-    const enforcedDivisiId = canSeeAll ? (requestedDivisiId ? Number(requestedDivisiId) : null) : Number(userDivisi?.divisi_id ?? 0) || null
-    const scopeEmployeeIds = await getScopedEmployeeIds(canSeeAll, auth.user.karyawan_id, Number(userDivisi?.divisi_id ?? 0) || null)
+    const userInfo = await getEffectiveDivisi(auth.user.karyawan_id)
+    const canSeeAll = auth.user.role === "admin" || auth.user.role === "hrd" || userInfo?.jabatan === "Manager"
+    const enforcedDivisiId = canSeeAll ? (requestedDivisiId ? Number(requestedDivisiId) : null) : Number(userInfo?.divisi_id ?? 0) || null
+    const scopeEmployeeIds = await getScopedEmployeeIds(canSeeAll, auth.user.karyawan_id, Number(userInfo?.divisi_id ?? 0) || null)
 
     if (scopeEmployeeIds.length === 0) {
       return NextResponse.json(serialize({

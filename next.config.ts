@@ -26,6 +26,8 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // pdfkit memuat file font .afm dari node_modules saat runtime; jangan di-bundle webpack
+  serverExternalPackages: ["pdfkit"],
   async headers() {
     return [
       // CORS headers untuk semua endpoint mobile API

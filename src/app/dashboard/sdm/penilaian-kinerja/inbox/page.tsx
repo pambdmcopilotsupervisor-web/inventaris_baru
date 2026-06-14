@@ -9,7 +9,7 @@ import { useAuth } from "@/contexts/AuthContext"
 import { useApi } from "@/hooks/useApi"
 import {
   CheckCircle, Clock, RefreshCw, Send, ArrowRight,
-  AlertTriangle, TrendingUp, Users, Lock, ChevronRight,
+  AlertTriangle, TrendingUp, Users, Lock, ChevronRight, FileDown, FileArchive,
 } from "lucide-react"
 
 /* ─── Types ─────────────────────────────────────────────────────── */
@@ -158,6 +158,9 @@ function ViewStaf() {
                 <p className="text-xs" style={{ color: "var(--text-subtle)" }}>{predikat(r.nilai_akhir)}</p>
               </div>
               <Badge variant={STATUS_BADGE_VARIANT[r.status]}>{STATUS_LABEL[r.status]}</Badge>
+              <a href={`/api/penilaian/${r.id}/pdf`} target="_blank" rel="noopener noreferrer">
+                <Button variant="outline" size="sm"><FileDown className="h-3.5 w-3.5" />PDF</Button>
+              </a>
             </div>
           ))}
         </div>
@@ -550,6 +553,11 @@ function ViewAdminHrd() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={refetch}><RefreshCw className="h-3.5 w-3.5" /></Button>
+          {ringkasan?.periode.id && (
+            <a href={`/api/periode/${ringkasan.periode.id}/pdf-semua`} target="_blank" rel="noopener noreferrer">
+              <Button variant="outline" size="sm"><FileArchive className="h-3.5 w-3.5" />Download Semua (ZIP)</Button>
+            </a>
+          )}
           {siapFinal > 0 && (
             <Button onClick={() => setKunciModal(true)}>
               <Lock className="h-3.5 w-3.5" />Kunci Semua ({siapFinal})

@@ -7,7 +7,7 @@ import { Modal } from "@/components/ui/modal"
 import { useApi } from "@/hooks/useApi"
 import {
   Users, CheckCircle, RefreshCw, Save, Send, ArrowLeft,
-  TrendingUp, Eye, Clock,
+  TrendingUp, Eye, Clock, FileDown,
 } from "lucide-react"
 
 /* ─── Types ─────────────────────────────────────────────────────── */
@@ -370,6 +370,9 @@ export default function PenilaianAtasanPage() {
           <Badge variant={STATUS_BADGE[penilaian.status]?.variant ?? "outline"}>
             {STATUS_BADGE[penilaian.status]?.label ?? penilaian.status}
           </Badge>
+          <a href={`/api/penilaian/${selectedId}/pdf`} target="_blank" rel="noopener noreferrer">
+            <Button variant="outline" size="sm"><FileDown className="h-3.5 w-3.5" />PDF</Button>
+          </a>
           <Button variant="outline" size="sm" onClick={() => fetchDetail(selectedId!)}>
             <RefreshCw className="h-3.5 w-3.5" />
           </Button>
