@@ -78,6 +78,11 @@ export async function POST(req: NextRequest) {
     // Cek hari libur
     const hariLibur = await prisma.hari_liburs.findFirst({ where: { tanggal: tglDate } })
 
+    // Blokir jika tidak ada shift hari ini
+    if (!jadwal) {
+      return NextResponse.json({ error: "Tidak ada shift aktif hari ini. Selamat menikmati hari libur!" }, { status: 422 })
+    }
+
     // Resolve leave status
     const { has_cuti, has_izin, has_sakit } = await resolveLeaveStatus(BigInt(karyawanId), tglDate)
 

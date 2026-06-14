@@ -19,7 +19,33 @@ import {
 /* ────────────────────────────────────────────
    MENU STRUCTURE — dikelompokkan secara logis
    ──────────────────────────────────────────── */
-const NAV_GROUPS = [
+type NavLink = {
+  label: string
+  href: string
+  icon: React.ReactNode
+  desc: string
+}
+
+type NavSection = {
+  section: string
+  links: NavLink[]
+}
+
+type NavGroup = {
+  key: string
+  label: string
+  icon: React.ReactNode
+  href?: string
+  items: NavSection[]
+}
+
+function readStoredModul(): "aset" | "sdm" | null {
+  if (typeof window === "undefined") return null
+  const value = localStorage.getItem("pedami_modul")
+  return value === "aset" || value === "sdm" ? value : null
+}
+
+const NAV_GROUPS: NavGroup[] = [
   {
     key: "dashboard",
     label: "Dashboard",
@@ -216,11 +242,7 @@ const NAV_GROUPS = [
 /* ────────────────────────────────────────
    Dropdown Menu
    ──────────────────────────────────────── */
-function DropdownMenu({ group, pathname }: { group: typeof NAV_GROUPS[0]; pathname: string }) {
-  const isGroupActive = group.items.some((s) =>
-    s.links.some((l) => pathname.startsWith(l.href))
-  )
-
+function DropdownMenu({ group, pathname }: { group: NavGroup; pathname: string }) {
   return (
     <div className="space-y-4">
       {group.items.map((section) => (
@@ -277,11 +299,17 @@ export function Navbar() {
   const [modul, setModul] = useState<"aset" | "sdm" | null>(null)
   const navRef = useRef<HTMLDivElement>(null)
 
-  // Baca modul aktif dari localStorage
+  // Baca localStorage setelah hydration selesai agar SSR dan client match
   useEffect(() => {
-    const m = localStorage.getItem("pedami_modul") as "aset" | "sdm" | null
-    setModul(m)
-  }, [pathname])
+    setModul(readStoredModul())
+  }, [])
+
+  // Sinkronkan jika localStorage berubah dari tab/window lain.
+  useEffect(() => {
+    const handleStorage = () => setModul(readStoredModul())
+    window.addEventListener("storage", handleStorage)
+    return () => window.removeEventListener("storage", handleStorage)
+  }, [])
 
   // Filter menu berdasarkan modul aktif
   const activeGroups = NAV_GROUPS.filter(g => {

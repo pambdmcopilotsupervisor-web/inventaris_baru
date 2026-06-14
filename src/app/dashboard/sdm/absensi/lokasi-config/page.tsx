@@ -36,7 +36,7 @@ declare global {
     L?: {
       map: (el: HTMLElement) => LeafletMap
       tileLayer: (url: string, options: Record<string, unknown>) => { addTo: (map: LeafletMap) => void }
-      marker: (latlng: [number, number]) => LeafletLayer & { bindPopup: (html: string) => void }
+      marker: (latlng: [number, number], options?: Record<string, unknown>) => LeafletMarker
       circle: (latlng: [number, number], options: Record<string, unknown>) => LeafletLayer
       circleMarker: (latlng: [number, number], options: Record<string, unknown>) => LeafletLayer
       layerGroup: () => LeafletLayerGroup
@@ -56,6 +56,11 @@ type LeafletMap = {
 type LeafletLayer = {
   addTo: (target: LeafletLayerGroup) => void
   on?: (eventName: string, handler: () => void) => void
+}
+
+type LeafletMarker = LeafletLayer & {
+  bindPopup: (html: string) => LeafletMarker
+  openPopup: () => LeafletMarker
 }
 
 type LeafletLayerGroup = {

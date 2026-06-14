@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
     // Lokasi config
     const lokasiConfig = await prisma.absensi_lokasi_configs.findFirst({ where: { aktif: true } })
 
-    const bisa_masuk  = !absensi?.jam_masuk && !hariLibur
+    const bisa_masuk  = !absensi?.jam_masuk && !hariLibur && !!jadwal
     const bisa_pulang = !!absensi?.jam_masuk && !absensi?.jam_pulang && !hariLibur
 
     return NextResponse.json(serialize({
