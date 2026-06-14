@@ -4,9 +4,8 @@ import { DataTable, Column } from "@/components/ui/data-table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Modal } from "@/components/ui/modal"
-import { ConfirmDelete } from "@/components/ui/confirm-delete"
 import { TextField, SelectField, TextareaField } from "@/components/ui/form-field"
-import { Plus, Pencil, Trash2, RefreshCw, AlertTriangle, CheckCircle2 } from "lucide-react"
+import { Pencil, RefreshCw, AlertTriangle, CheckCircle2 } from "lucide-react"
 import { useApi } from "@/hooks/useApi"
 
 interface Komponen {
@@ -26,12 +25,9 @@ export default function KomponenPenilaianPage() {
   const list = data ?? []
 
   const [modalOpen, setModalOpen]   = useState(false)
-  const [deleteOpen, setDeleteOpen] = useState(false)
-  const [editMode, setEditMode]     = useState(false)
   const [selected, setSelected]     = useState<Komponen | null>(null)
   const [form, setForm]             = useState<Partial<Komponen>>(EMPTY)
   const [saving, setSaving]         = useState(false)
-  const [deleting, setDeleting]     = useState(false)
   const [errors, setErrors]         = useState<Record<string, string>>({})
 
   const set = <K extends keyof Komponen>(k: K, v: Komponen[K]) => setForm(f => ({ ...f, [k]: v }))
@@ -39,34 +35,21 @@ export default function KomponenPenilaianPage() {
   const totalBobotAktif = list.filter(k => k.aktif).reduce((s, k) => s + Number(k.default_bobot_percent), 0)
   const bobotValid = Math.abs(totalBobotAktif - 100) < 0.01
 
-  const openAdd  = () => { setEditMode(false); setSelected(null); setForm({ ...EMPTY, urutan: list.length + 1 }); setErrors({}); setModalOpen(true) }
-  const openEdit = (row: Komponen) => { setEditMode(true); setSelected(row); setForm({ ...row }); setErrors({}); setModalOpen(true) }
+  const openEdit = (row: Komponen) => { setSelected(row); setForm({ ...row }); setErrors({}); setModalOpen(true) }
 
   const handleSubmit = async () => {
+    if (!selected) return
     const e: Record<string, string> = {}
-    if (!editMode && !form.kode_komponen?.trim()) e.kode_komponen = "Kode wajib diisi"
     if (!form.nama_komponen?.trim()) e.nama_komponen = "Nama wajib diisi"
     const b = Number(form.default_bobot_percent ?? 0)
     if (b < 0 || b > 100) e.default_bobot_percent = "Bobot 0-100"
     setErrors(e); if (Object.keys(e).length) return
     setSaving(true)
     try {
-      const url    = editMode && selected ? `/api/sdm/komponen-penilaian/${selected.id}` : "/api/sdm/komponen-penilaian"
-      const method = editMode ? "PUT" : "POST"
-      const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) })
+      const res = await fetch(`/api/sdm/komponen-penilaian/${selected.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) })
       if (!res.ok) { const j = await res.json(); setErrors({ _: j.error ?? "Gagal" }); return }
       setModalOpen(false); refetch()
     } finally { setSaving(false) }
-  }
-
-  const handleDelete = async () => {
-    if (!selected) return
-    setDeleting(true)
-    try {
-      const res = await fetch(`/api/sdm/komponen-penilaian/${selected.id}`, { method: "DELETE" })
-      if (!res.ok) { const j = await res.json(); alert(j.error ?? "Gagal menghapus") }
-      setDeleteOpen(false); refetch()
-    } finally { setDeleting(false) }
   }
 
   const columns: Column<Komponen>[] = [
@@ -87,7 +70,6 @@ export default function KomponenPenilaianPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={refetch}><RefreshCw className="h-3.5 w-3.5" /></Button>
-          <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Tambah Komponen</Button>
         </div>
       </div>
 
@@ -113,21 +95,19 @@ export default function KomponenPenilaianPage() {
           return (
             <div className="flex items-center justify-center gap-1">
               <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--warning)" }} onClick={() => openEdit(r)}><Pencil className="h-3.5 w-3.5" /></Button>
-              <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--danger)" }} onClick={() => { setSelected(r); setDeleteOpen(true) }}><Trash2 className="h-3.5 w-3.5" /></Button>
             </div>
           )
         }}
       />
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editMode ? "Edit Komponen" : "Tambah Komponen"} size="md"
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Edit Komponen" size="md"
         footer={<><Button variant="outline" onClick={() => setModalOpen(false)}>Batal</Button><Button onClick={handleSubmit} disabled={saving}>{saving ? "Menyimpan..." : "Simpan"}</Button></>}
       >
         {errors._ && <div className="mb-4 rounded-lg px-4 py-3 text-sm" style={{ background: "var(--danger-bg)", color: "var(--danger)" }}>{errors._}</div>}
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <TextField label="Kode Komponen" required error={errors.kode_komponen} value={form.kode_komponen ?? ""}
-              placeholder="KEHADIRAN" disabled={editMode}
-              onChange={e => set("kode_komponen", e.target.value.toUpperCase())} />
+            <TextField label="Kode Komponen" value={form.kode_komponen ?? ""} disabled
+              onChange={() => {}} />
             <TextField label="Urutan" type="number" min={0} value={String(form.urutan ?? 0)}
               onChange={e => set("urutan", Number(e.target.value) as unknown as never)} />
           </div>
@@ -142,9 +122,6 @@ export default function KomponenPenilaianPage() {
             options={[{ value: "1", label: "Aktif" }, { value: "0", label: "Nonaktif" }]} />
         </div>
       </Modal>
-
-      <ConfirmDelete open={deleteOpen} onClose={() => setDeleteOpen(false)} onConfirm={handleDelete} loading={deleting}
-        description={`Hapus komponen "${selected?.nama_komponen}"? Jika sudah dipakai di periode penilaian, tidak dapat dihapus (nonaktifkan saja).`} />
     </div>
   )
 }

@@ -106,17 +106,48 @@ export function hitungNilaiPerilakuGabungan(
   return round2((avgMandiri * 0.3 + avgAtasan * 0.7) / 5 * 100)
 }
 
+export type BobotKomponen = {
+  kehadiran: number      // persen, mis. 20
+  capaian: number        // mis. 40
+  perilaku: number       // mis. 30
+  pengembangan: number   // mis. 10
+}
+
+const DEFAULT_BOBOT: BobotKomponen = { kehadiran: 20, capaian: 40, perilaku: 30, pengembangan: 10 }
+
+/**
+ * Ambil bobot komponen penilaian dari tabel komponen_penilaian (aktif).
+ * Mapping kode → field. Jika komponen tidak ada/nonaktif, pakai default.
+ */
+export async function getBobotKomponen(): Promise<BobotKomponen> {
+  try {
+    const rows = await prisma.$queryRaw<{ kode_komponen: string; bobot: string | number }[]>`
+      SELECT kode_komponen, default_bobot_percent AS bobot
+      FROM komponen_penilaian WHERE aktif = 1
+    `
+    const map = new Map(rows.map(r => [r.kode_komponen, Number(r.bobot)]))
+    return {
+      kehadiran:    map.get("KEHADIRAN")               ?? DEFAULT_BOBOT.kehadiran,
+      capaian:      map.get("CAPAIAN_SASARAN")         ?? DEFAULT_BOBOT.capaian,
+      perilaku:     map.get("PERILAKU_KERJA")          ?? DEFAULT_BOBOT.perilaku,
+      pengembangan: map.get("PENGEMBANGAN_KOMPETENSI") ?? DEFAULT_BOBOT.pengembangan,
+    }
+  } catch {
+    return DEFAULT_BOBOT
+  }
+}
+
 export function hitungNilaiAkhir(params: {
   nilai_kehadiran: number
   nilai_capaian_sasaran: number
   nilai_perilaku: number
   nilai_pengembangan: number
-}): number {
+}, bobot: BobotKomponen = DEFAULT_BOBOT): number {
   return round2(clamp(
-    params.nilai_kehadiran       * 0.20 +
-    params.nilai_capaian_sasaran * 0.40 +
-    params.nilai_perilaku        * 0.30 +
-    params.nilai_pengembangan    * 0.10,
+    params.nilai_kehadiran       * (bobot.kehadiran / 100) +
+    params.nilai_capaian_sasaran * (bobot.capaian / 100) +
+    params.nilai_perilaku        * (bobot.perilaku / 100) +
+    params.nilai_pengembangan    * (bobot.pengembangan / 100),
     0, 100,
   ))
 }
@@ -336,7 +367,8 @@ export async function simpanPenilaianAtasan(user: SessionUser, input: SimpanPeni
   const nilaiPerilaku     = hitungNilaiPerilakuGabungan(perilakuMandiri, input.perilaku)
   const nilaiPengembangan = round2(clamp(input.nilai_pengembangan, 0, 100))
   const nilaiKehadiran    = round2(Number(detail.penilaian.nilai_kehadiran ?? 0))
-  const nilaiAkhir        = hitungNilaiAkhir({ nilai_kehadiran: nilaiKehadiran, nilai_capaian_sasaran: nilaiCapaian, nilai_perilaku: nilaiPerilaku, nilai_pengembangan: nilaiPengembangan })
+  const bobot             = await getBobotKomponen()
+  const nilaiAkhir        = hitungNilaiAkhir({ nilai_kehadiran: nilaiKehadiran, nilai_capaian_sasaran: nilaiCapaian, nilai_perilaku: nilaiPerilaku, nilai_pengembangan: nilaiPengembangan }, bobot)
 
   await prisma.$transaction(async tx => {
     for (const t of targetsForCalc.filter(t => t.override)) {

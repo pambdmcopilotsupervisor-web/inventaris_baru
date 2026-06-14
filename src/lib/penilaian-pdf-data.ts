@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma"
+import { getBobotKomponen, type BobotKomponen } from "@/lib/penilaian-atasan"
 
 // ─────────────────────────────────────────────────────────────────
 // Data gathering untuk dokumen PDF penilaian kinerja
@@ -52,6 +53,7 @@ export type PdfPenilaianData = {
     catatan: string | null
     created_at: Date | null
   }[]
+  bobot: BobotKomponen
 }
 
 const ASPEK_LABELS: Record<string, string> = {
@@ -198,6 +200,7 @@ export async function getPdfPenilaianData(idPenilaian: number): Promise<PdfPenil
     })),
     perilaku,
     approval,
+    bobot: await getBobotKomponen(),
   }
 }
 

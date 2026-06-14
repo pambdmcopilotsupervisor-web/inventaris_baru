@@ -7,11 +7,11 @@ const PAGE_W = 595.28
 const MARGIN = 40
 const CONTENT_W = PAGE_W - MARGIN * 2
 
-const KOMPONEN = [
-  { key: "nilai_kehadiran" as const,       label: "Kehadiran",              bobot: 20 },
-  { key: "nilai_capaian_sasaran" as const, label: "Capaian Sasaran Kerja",  bobot: 40 },
-  { key: "nilai_perilaku" as const,        label: "Perilaku Kerja",         bobot: 30 },
-  { key: "nilai_pengembangan" as const,    label: "Pengembangan Kompetensi", bobot: 10 },
+const KOMPONEN: { key: "nilai_kehadiran" | "nilai_capaian_sasaran" | "nilai_perilaku" | "nilai_pengembangan"; label: string; bobotKey: "kehadiran" | "capaian" | "perilaku" | "pengembangan" }[] = [
+  { key: "nilai_kehadiran",       label: "Kehadiran",              bobotKey: "kehadiran" },
+  { key: "nilai_capaian_sasaran", label: "Capaian Sasaran Kerja",  bobotKey: "capaian" },
+  { key: "nilai_perilaku",        label: "Perilaku Kerja",         bobotKey: "perilaku" },
+  { key: "nilai_pengembangan",    label: "Pengembangan Kompetensi", bobotKey: "pengembangan" },
 ]
 
 function fmtTanggal(d: Date | null): string {
@@ -156,11 +156,12 @@ export function generatePenilaianPdf(data: PdfPenilaianData): Promise<Buffer> {
     doc.font("Helvetica").fontSize(8.5)
     KOMPONEN.forEach((k, i) => {
       const nilai = data.penilaian[k.key]
-      const tertimbang = nilai != null ? (nilai * k.bobot) / 100 : null
+      const bobot = data.bobot[k.bobotKey]
+      const tertimbang = nilai != null ? (nilai * bobot) / 100 : null
       y = drawTableRow(doc, kCols, [
         k.label,
         fmtNum(nilai),
-        `${k.bobot}%`,
+        `${bobot}%`,
         fmtNum(tertimbang),
       ], y, i % 2 === 1)
     })

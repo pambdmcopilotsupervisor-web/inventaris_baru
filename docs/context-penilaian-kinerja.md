@@ -4,6 +4,17 @@ File ini adalah sumber konteks berkelanjutan untuk pengembangan modul **Penilaia
 
 Setiap kali ada pengembangan terkait penilaian kinerja, update file ini agar konteks tetap bisa dilanjutkan di sesi berikutnya.
 
+## Komponen Penilaian (Bobot Dinamis)
+
+CRUD master `komponen_penilaian`:
+- API: `src/app/api/sdm/komponen-penilaian/route.ts` (GET/POST) + `[id]/route.ts` (PUT/DELETE). Akses CRUD admin/hrd.
+- UI: `src/app/dashboard/sdm/komponen-penilaian/page.tsx` — indikator total bobot aktif harus 100%. Menu navbar section "Konfigurasi" modul Penilaian.
+
+Bobot DINAMIS: `hitungNilaiAkhir(params, bobot?)` di `penilaian-atasan.ts` membaca bobot via `getBobotKomponen()` (mapping kode KEHADIRAN/CAPAIAN_SASARAN/PERILAKU_KERJA/PENGEMBANGAN_KOMPETENSI → field). Default 20/40/30/10 jika nonaktif/hilang.
+- `simpanPenilaianAtasan` panggil `getBobotKomponen()` lalu pakai saat hitung `nilai_akhir`.
+- PDF (`penilaian-pdf-data.ts`) menyertakan `bobot`; generator pakai bobot dari DB.
+- Catatan: nilai_akhir penilaian lama TIDAK otomatis berubah saat bobot diedit — hanya saat disimpan/submit ulang oleh atasan. 4 komponen tetap (kolom `penilaian_kinerja`); komponen baru belum masuk perhitungan.
+
 ## Generate Dokumen PDF
 
 Library: `pdfkit` (PDF) + `jszip` (bulk ZIP). `pdfkit` didaftarkan di `serverExternalPackages` pada `next.config.ts` agar file font `.afm` dimuat dari node_modules saat runtime.
