@@ -1,5 +1,5 @@
 "use client"
-import React, { useState, useMemo } from "react"
+import React, { useState, useMemo, useRef } from "react"
 import { DataTable, Column } from "@/components/ui/data-table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -9,7 +9,7 @@ import { TextField, SelectField, TextareaField } from "@/components/ui/form-fiel
 import { SearchableSelect } from "@/components/ui/searchable-select"
 import {
   Plus, Pencil, Trash2, RefreshCw, Calendar, Users,
-  ChevronLeft, ChevronRight, List,
+  ChevronLeft, ChevronRight, List, Download, Upload,
 } from "lucide-react"
 import { formatDate, formatDateLong } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
@@ -30,6 +30,7 @@ interface JadwalRow {
   karyawans?: { id: number; nik: string; nama_karyawan: string; jabatan: string; divisi_id: number | null }
   shift_kerjas?: { id: number; kode_shift: string; nama_shift: string; jam_masuk: string; jam_pulang: string; is_lintas_hari: boolean }
 }
+type ExcelCell = string | number | boolean | Date | null | undefined
 
 const HARI = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"]
 const HARI_FULL = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"]
@@ -53,6 +54,21 @@ function datesBetween(start: string, end: string): string[] {
     dates.push(isoDate(cur))
   }
   return dates
+}
+function normalizeExcelValue(value: ExcelCell): string {
+  if (value instanceof Date) return isoDate(value)
+  return String(value ?? "").trim()
+}
+function normalizeNik(value: ExcelCell): string {
+  return normalizeExcelValue(value).replace(/\.0$/, "").trim().toLowerCase()
+}
+function stripLeadingZero(value: string): string {
+  return value.replace(/^0+/, "") || "0"
+}
+function excelSerialDateToIso(value: number): string {
+  // Excel serial date starts at 1899-12-30 in JS date math.
+  const date = new Date(Math.round((value - 25569) * 86400 * 1000))
+  return Number.isNaN(date.getTime()) ? "" : isoDate(date)
 }
 
 /* ─── Calendar View ──────────────────────────────────────────────── */
@@ -213,6 +229,8 @@ export default function JadwalShiftPage() {
   const [massalSaving, setMassalSaving] = useState(false)
   const [massalErrors, setMassalErrors] = useState<Record<string, string>>({})
   const [massalResult, setMassalResult] = useState<{ dibuat: number; diperbarui: number; dihapus?: number; gagal?: number; message: string } | null>(null)
+  const [monthlyImportMessage, setMonthlyImportMessage] = useState("")
+  const monthlyImportRef = useRef<HTMLInputElement>(null)
 
   // Subdivisi options tergantung divisi terpilih di form massal
   const [subdivisiOptions, setSubdivisiOptions] = useState<Subdivisi[]>([])
@@ -415,6 +433,150 @@ export default function JadwalShiftPage() {
     }))
   }
 
+  const parseMonthlyHeaderDate = (value: ExcelCell): string => {
+    if (value instanceof Date) {
+      const iso = isoDate(value)
+      return monthlyDates.includes(iso) ? iso : ""
+    }
+    if (typeof value === "number") {
+      const iso = excelSerialDateToIso(value)
+      if (monthlyDates.includes(iso)) return iso
+      const found = monthlyDates.find(date => Number(date.slice(8, 10)) === value)
+      return found ?? ""
+    }
+    const text = normalizeExcelValue(value)
+    if (!text) return ""
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text) && monthlyDates.includes(text)) return text
+    if (/^\d{1,2}$/.test(text) && monthlyDates.length > 0) {
+      const day = Number(text)
+      const found = monthlyDates.find(date => Number(date.slice(8, 10)) === day)
+      return found ?? ""
+    }
+    const parsed = new Date(text)
+    if (!Number.isNaN(parsed.getTime())) {
+      const iso = isoDate(parsed)
+      if (monthlyDates.includes(iso)) return iso
+    }
+    return ""
+  }
+
+  const downloadMonthlyTemplate = async () => {
+    if (monthlyDates.length === 0 || monthlyDates.length > 31) {
+      setMassalErrors({ tgl_mulai: "Pilih periode maksimal 31 hari sebelum download template" })
+      return
+    }
+    const targetEmployees = selectedKaryawanOptions.length > 0 ? selectedKaryawanOptions : karyawanOptions
+    const rows = targetEmployees.map(opt => {
+      const nik = opt.label.split(" — ")[0] ?? ""
+      const nama = opt.label.split(" — ").slice(1).join(" — ")
+      const row: Record<string, string> = { NIK: nik, Nama: nama }
+      monthlyDates.forEach(date => { row[date] = getMonthlyCellValue(opt.value, date) ? (shiftList.find(s => String(s.id) === getMonthlyCellValue(opt.value, date))?.kode_shift ?? "") : "OFF" })
+      return row
+    })
+    const { utils, writeFile } = await import("xlsx")
+    const wb = utils.book_new()
+    const ws = utils.json_to_sheet(rows.length > 0 ? rows : [{ NIK: "", Nama: "", ...Object.fromEntries(monthlyDates.map(date => [date, "OFF"])) }])
+    utils.book_append_sheet(wb, ws, "Jadwal Bulanan")
+    writeFile(wb, `Template_Jadwal_Bulanan_${massalForm.tgl_mulai}_${massalForm.tgl_selesai}.xlsx`)
+  }
+
+  const handleMonthlyExcelImport = async (file: File) => {
+    setMonthlyImportMessage("")
+    setMassalErrors({})
+    if (monthlyDates.length === 0 || monthlyDates.length > 31) {
+      setMassalErrors({ tgl_mulai: "Pilih periode maksimal 31 hari sebelum import Excel" })
+      return
+    }
+
+    const { read, utils } = await import("xlsx")
+    const workbook = read(await file.arrayBuffer(), { type: "array", cellDates: true })
+    const sheet = workbook.Sheets[workbook.SheetNames[0]]
+    const rows = utils.sheet_to_json<ExcelCell[]>(sheet, { header: 1, defval: "", raw: true })
+    if (rows.length < 2) {
+      setMassalErrors({ import: "File Excel tidak berisi data jadwal" })
+      return
+    }
+
+    const header = rows[0]
+    const nikIndex = header.findIndex(cell => normalizeExcelValue(cell).toLowerCase() === "nik")
+    if (nikIndex < 0) {
+      setMassalErrors({ import: "Kolom NIK wajib ada di baris pertama" })
+      return
+    }
+
+    const dateColumns = header
+      .map((cell, index) => ({ index, date: parseMonthlyHeaderDate(cell) }))
+      .filter(col => col.date)
+    if (dateColumns.length === 0) {
+      setMassalErrors({ import: "Tidak ada kolom tanggal yang cocok dengan periode terpilih" })
+      return
+    }
+
+    const employeeByNik = new Map<string, Karyawan>()
+    karyawanList.forEach(k => {
+      const nik = normalizeNik(k.nik)
+      employeeByNik.set(nik, k)
+      employeeByNik.set(stripLeadingZero(nik), k)
+    })
+    const shiftByCode = new Map<string, string>()
+    shiftList.forEach(s => {
+      shiftByCode.set(s.kode_shift.trim().toLowerCase(), String(s.id))
+      shiftByCode.set(s.nama_shift.trim().toLowerCase(), String(s.id))
+    })
+
+    const importedIds = new Set<string>()
+    const importedSchedule: Record<string, Record<string, string>> = {}
+    const errors: string[] = []
+
+    rows.slice(1).forEach((row, rowIndex) => {
+      const excelRow = rowIndex + 2
+      const nik = normalizeNik(row[nikIndex])
+      if (!nik) return
+      const employee = employeeByNik.get(nik) ?? employeeByNik.get(stripLeadingZero(nik))
+      if (!employee || employee.status_karyawan === "Pensiun" || employee.status_karyawan === "Nonaktif") {
+        errors.push(`Baris ${excelRow}: NIK tidak ditemukan/aktif (${nik})`)
+        return
+      }
+
+      const employeeId = String(employee.id)
+      importedIds.add(employeeId)
+      importedSchedule[employeeId] = { ...(importedSchedule[employeeId] ?? {}) }
+
+      dateColumns.forEach(({ index, date }) => {
+        const value = normalizeExcelValue(row[index])
+        const normalized = value.toLowerCase()
+        if (!value || ["off", "libur", "x", "-"].includes(normalized)) {
+          importedSchedule[employeeId][date] = ""
+          return
+        }
+        const shiftId = shiftByCode.get(normalized)
+        if (!shiftId) {
+          errors.push(`Baris ${excelRow} tanggal ${date}: shift tidak dikenal (${value})`)
+          return
+        }
+        importedSchedule[employeeId][date] = shiftId
+      })
+    })
+
+    if (errors.length > 0) {
+      setMassalErrors({ import: errors.slice(0, 5).join("; ") + (errors.length > 5 ? `; +${errors.length - 5} error lain` : "") })
+      return
+    }
+    if (importedIds.size === 0) {
+      setMassalErrors({ import: "Tidak ada pegawai valid yang dapat diimport" })
+      return
+    }
+
+    setMassalForm(f => ({
+      ...f,
+      assignMode: "monthly",
+      mode: "karyawan",
+      karyawan_ids: Array.from(importedIds),
+      monthlySchedule: importedSchedule,
+    }))
+    setMonthlyImportMessage(`${importedIds.size} pegawai dan ${dateColumns.length} kolom tanggal berhasil diimport dari Excel.`)
+  }
+
   const shiftOptions = shiftList.map(s => ({
     value: String(s.id),
     label: `${s.kode_shift} — ${s.nama_shift}`,
@@ -450,7 +612,7 @@ export default function JadwalShiftPage() {
             </button>
           </div>
           <Button variant="outline" size="sm" onClick={refetch}><RefreshCw className="h-3.5 w-3.5" /></Button>
-          <Button variant="secondary" size="sm" onClick={() => { setMassalResult(null); setMassalErrors({}); setMassalOpen(true) }}>
+          <Button variant="secondary" size="sm" onClick={() => { setMassalResult(null); setMassalErrors({}); setMonthlyImportMessage(""); setMassalOpen(true) }}>
             <Users className="h-3.5 w-3.5 mr-1.5" />Assign Massal
           </Button>
           <Button size="sm" onClick={() => { setAddErrors({}); setAddOpen(true) }}>
@@ -823,8 +985,33 @@ export default function JadwalShiftPage() {
                       Pilih shift di setiap tanggal. Pilihan Off akan menghapus jadwal pada tanggal tersebut.
                     </p>
                   </div>
-                  <Badge variant="secondary">{monthlyDates.length} hari</Badge>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge variant="secondary">{monthlyDates.length} hari</Badge>
+                    <Button variant="outline" size="sm" onClick={downloadMonthlyTemplate}>
+                      <Download className="h-3.5 w-3.5" />Template
+                    </Button>
+                    <Button variant="secondary" size="sm" onClick={() => monthlyImportRef.current?.click()}>
+                      <Upload className="h-3.5 w-3.5" />Import Excel
+                    </Button>
+                    <input
+                      ref={monthlyImportRef}
+                      type="file"
+                      accept=".xlsx,.xls"
+                      className="hidden"
+                      onChange={async e => {
+                        const input = e.currentTarget
+                        const file = e.target.files?.[0]
+                        if (file) await handleMonthlyExcelImport(file)
+                        input.value = ""
+                      }}
+                    />
+                  </div>
                 </div>
+                <div className="rounded-lg px-3 py-2 text-xs" style={{ background: "var(--surface-muted)", color: "var(--text-subtle)", border: "1px solid var(--border)" }}>
+                  Format Excel: kolom <span className="font-mono">NIK</span>, <span className="font-mono">Nama</span>, lalu kolom tanggal (<span className="font-mono">YYYY-MM-DD</span>). Isi cell dengan kode shift, atau <span className="font-mono">OFF</span>/kosong untuk libur.
+                </div>
+                {monthlyImportMessage && <p className="text-xs" style={{ color: "var(--success)" }}>{monthlyImportMessage}</p>}
+                {massalErrors.import && <p className="text-xs" style={{ color: "var(--danger)" }}>{massalErrors.import}</p>}
                 {monthlyDates.length > 31 && (
                   <p className="text-xs" style={{ color: "var(--danger)" }}>Periode terlalu panjang. Maksimal 31 hari untuk jadwal bulanan fleksibel.</p>
                 )}
