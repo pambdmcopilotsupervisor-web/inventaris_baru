@@ -3,7 +3,7 @@ import { prisma, serialize } from "@/lib/prisma"
 import { requireRole, getClientIp } from "@/lib/auth"
 import { writeAuditLog } from "@/lib/audit"
 
-// GET  /api/sdm/hari-libur          — list hari libur (filter by tahun)
+// GET  /api/sdm/hari-libur          — list hari libur (filter by tahun, bulan)
 // POST /api/sdm/hari-libur          — tambah hari libur
 
 export async function GET(req: NextRequest) {
@@ -13,15 +13,22 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
     const tahun = searchParams.get("tahun")
+    const bulan = searchParams.get("bulan") // "01".."12" atau kosong = semua
 
-    const where = tahun
-      ? {
-          tanggal: {
-            gte: new Date(`${tahun}-01-01`),
-            lte: new Date(`${tahun}-12-31`),
-          },
-        }
-      : undefined
+    let gte: Date | undefined
+    let lte: Date | undefined
+
+    if (tahun && bulan) {
+      const y = tahun; const m = bulan.padStart(2, "0")
+      const lastDay = new Date(Number(y), Number(m), 0).getDate()
+      gte = new Date(`${y}-${m}-01`)
+      lte = new Date(`${y}-${m}-${lastDay}`)
+    } else if (tahun) {
+      gte = new Date(`${tahun}-01-01`)
+      lte = new Date(`${tahun}-12-31`)
+    }
+
+    const where = gte ? { tanggal: { gte, lte } } : undefined
 
     const data = await prisma.hari_liburs.findMany({
       where,

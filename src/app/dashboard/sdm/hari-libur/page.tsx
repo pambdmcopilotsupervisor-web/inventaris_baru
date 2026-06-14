@@ -40,7 +40,9 @@ const tipeLabel = (tipe: string) =>
 export default function HariLiburPage() {
   const tahunSekarang = new Date().getFullYear()
   const [tahunFilter, setTahunFilter] = useState(String(tahunSekarang))
-  const { data, loading, refetch } = useApi<HariLibur[]>(`/api/sdm/hari-libur?tahun=${tahunFilter}`, [tahunFilter])
+  const [bulanFilter, setBulanFilter] = useState("") // kosong = semua bulan
+  const queryStr = bulanFilter ? `tahun=${tahunFilter}&bulan=${bulanFilter}` : `tahun=${tahunFilter}`
+  const { data, loading, refetch } = useApi<HariLibur[]>(`/api/sdm/hari-libur?${queryStr}`, [tahunFilter, bulanFilter])
   const list = data ?? []
 
   const [modalOpen, setModalOpen]   = useState(false)
@@ -142,12 +144,24 @@ export default function HariLiburPage() {
           {/* Filter tahun */}
           <select
             value={tahunFilter}
-            onChange={e => setTahunFilter(e.target.value)}
+            onChange={e => { setTahunFilter(e.target.value) }}
             className="h-8 rounded-lg px-3 text-sm cursor-pointer"
             style={{ border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--text-900)" }}
           >
             {tahunOptions.map(y => (
               <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+          {/* Filter bulan */}
+          <select
+            value={bulanFilter}
+            onChange={e => setBulanFilter(e.target.value)}
+            className="h-8 rounded-lg px-3 text-sm cursor-pointer"
+            style={{ border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--text-900)" }}
+          >
+            <option value="">Semua Bulan</option>
+            {["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"].map((bln, i) => (
+              <option key={i+1} value={String(i+1).padStart(2,"0")}>{bln}</option>
             ))}
           </select>
           <Button variant="outline" size="sm" onClick={refetch}><RefreshCw className="h-3.5 w-3.5" /></Button>
@@ -158,7 +172,7 @@ export default function HariLiburPage() {
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="rounded-xl p-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
-          <p className="text-xs" style={{ color: "var(--text-subtle)" }}>Total {tahunFilter}</p>
+          <p className="text-xs" style={{ color: "var(--text-subtle)" }}>Total {tahunFilter}{bulanFilter ? ` / ${["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Ags","Sep","Okt","Nov","Des"][Number(bulanFilter)-1]}` : ""}</p>
           <p className="text-2xl font-bold font-mono mt-0.5" style={{ color: "var(--primary)" }}>{list.length}</p>
         </div>
         {countByTipe.map(s => (
@@ -175,7 +189,7 @@ export default function HariLiburPage() {
         columns={columns as unknown as Column<Record<string, unknown>>[]}
         searchKeys={["nama_libur", "tanggal"]}
         loading={loading}
-        emptyMessage={`Tidak ada hari libur untuk tahun ${tahunFilter}`}
+        emptyMessage={`Tidak ada hari libur untuk ${tahunFilter}${bulanFilter ? ` / ${["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"][Number(bulanFilter)-1]}` : ""}`}
         actions={(row: Record<string, unknown>) => {
           const r = row as unknown as HariLibur
           return (

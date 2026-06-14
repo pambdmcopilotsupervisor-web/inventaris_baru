@@ -68,6 +68,17 @@ const MENU_GROUPS = [
     ],
   },
   {
+    group: "Penilaian Kinerja",
+    items: [
+      { label: "Dashboard Kinerja",   href: "/dashboard/sdm/penilaian-kinerja/dashboard" },
+      { label: "Target Kerja",        href: "/dashboard/sdm/penilaian-kinerja/target" },
+      { label: "Penilaian Mandiri",   href: "/dashboard/sdm/penilaian-kinerja/mandiri" },
+      { label: "Penilaian Atasan",    href: "/dashboard/sdm/penilaian-kinerja/atasan" },
+      { label: "Inbox Approval",      href: "/dashboard/sdm/penilaian-kinerja/inbox" },
+      { label: "Komponen Penilaian",  href: "/dashboard/sdm/komponen-penilaian" },
+    ],
+  },
+  {
     group: "Aset Kantor",
     items: [
       { label: "Inventaris Aset",     href: "/dashboard/transaksi/aset" },
