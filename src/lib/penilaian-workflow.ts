@@ -253,7 +253,38 @@ export async function doTransition(params: {
   const tsField = timestamps[ke]
 
   await prisma.$transaction(async tx => {
-    if (tsField) {
+    if (ke === "draft") {
+      await tx.$executeRaw`
+        UPDATE penilaian_kinerja
+        SET status = 'draft',
+            id_penilai_atasan = NULL,
+            id_verifikator = NULL,
+            id_approver_final = NULL,
+            nilai_akhir = NULL,
+            catatan_atasan = NULL,
+            catatan_verifikator = NULL,
+            tanggal_diajukan = NULL,
+            tanggal_diverifikasi = NULL,
+            tanggal_disetujui = NULL,
+            tanggal_final = NULL,
+            updated_at = NOW()
+        WHERE id = ${BigInt(idPenilaian)}
+      `
+
+      await tx.$executeRaw`
+        DELETE FROM penilaian_perilaku
+        WHERE id_penilaian = ${BigInt(idPenilaian)}
+          AND sumber = 'atasan'
+      `
+
+      await tx.$executeRaw`
+        UPDATE target_kerja
+        SET catatan_atasan = NULL,
+            updated_at = NOW()
+        WHERE id_periode = ${penilaian.id_periode}
+          AND id_pegawai = ${penilaian.id_pegawai}
+      `
+    } else if (tsField) {
       const actorField = ke === "diverifikasi"
         ? ", id_verifikator = ?"
         : ke === "final"

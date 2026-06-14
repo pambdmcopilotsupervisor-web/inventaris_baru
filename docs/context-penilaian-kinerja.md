@@ -250,6 +250,7 @@ Guard khusus:
 - Transisi `diajukan → diverifikasi` wajib memiliki `id_penilai_atasan`, `catatan_atasan`, dan 5 aspek `penilaian_perilaku` sumber `atasan`.
 - Transisi `diverifikasi → disetujui` wajib memiliki `id_penilai_atasan`, `tanggal_diverifikasi`, dan `nilai_akhir`.
 - Transisi `disetujui → final` wajib memiliki `tanggal_disetujui` dan `nilai_akhir`.
+- Transisi kembali ke `draft` membersihkan data atasan lama: `id_penilai_atasan`, `id_verifikator`, `id_approver_final`, `nilai_akhir`, catatan/tanggal approval, `penilaian_perilaku` sumber `atasan`, dan `target_kerja.catatan_atasan`.
 
 Validasi bulk transisi:
 
