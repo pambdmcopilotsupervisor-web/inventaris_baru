@@ -43,6 +43,17 @@ function isoDate(d: Date): string {
   ].join("-")
 }
 function addDays(d: Date, n: number): Date { const r = new Date(d); r.setDate(r.getDate() + n); return r }
+function datesBetween(start: string, end: string): string[] {
+  if (!start || !end) return []
+  const startDate = new Date(`${start}T12:00:00`)
+  const endDate = new Date(`${end}T12:00:00`)
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || endDate < startDate) return []
+  const dates: string[] = []
+  for (let cur = startDate; cur <= endDate; cur = addDays(cur, 1)) {
+    dates.push(isoDate(cur))
+  }
+  return dates
+}
 
 /* ─── Calendar View ──────────────────────────────────────────────── */
 function CalendarView({
@@ -191,9 +202,12 @@ export default function JadwalShiftPage() {
   /* ── Assign Massal state ─────────────────────────────────────────── */
   const [massalOpen, setMassalOpen] = useState(false)
   const [massalForm, setMassalForm] = useState({
+    assignMode: "weekly" as "weekly" | "monthly",
     shift_id: "", tgl_mulai: tglMulai, tgl_selesai: tglSelesai,
-    mode: "karyawan" as "karyawan" | "divisi" | "subdivisi",
-    karyawan_id: "", divisi_id: "", subdivisi_id: "",
+    weeklyPattern: { 0: "", 1: "", 2: "", 3: "", 4: "", 5: "", 6: "" } as Record<number, string>,
+    monthlySchedule: {} as Record<string, Record<string, string>>,
+    mode: "karyawan" as "karyawan" | "semua" | "divisi" | "subdivisi",
+    karyawan_ids: [] as string[], divisi_id: "", subdivisi_id: "",
     excludeHariLibur: true, excludeHari: [0] as number[],
   })
   const [massalSaving, setMassalSaving] = useState(false)
@@ -268,25 +282,49 @@ export default function JadwalShiftPage() {
   /* ── Assign Massal ──────────────────────────────────────────────── */
   const handleMassalSubmit = async () => {
     const e: Record<string, string> = {}
-    if (!massalForm.shift_id)   e.shift_id   = "Pilih shift"
+    if (massalForm.assignMode === "weekly" && !Object.values(massalForm.weeklyPattern).some(Boolean)) e.weeklyPattern = "Pilih minimal satu shift pada pola mingguan"
     if (!massalForm.tgl_mulai)  e.tgl_mulai  = "Tanggal mulai wajib diisi"
     if (!massalForm.tgl_selesai) e.tgl_selesai = "Tanggal selesai wajib diisi"
     if (massalForm.tgl_selesai < massalForm.tgl_mulai) e.tgl_selesai = "Tanggal selesai tidak boleh lebih kecil dari tanggal mulai"
-    if (massalForm.mode === "karyawan"  && !massalForm.karyawan_id) e.karyawan_id = "Pilih karyawan"
-    if (massalForm.mode === "divisi"    && !massalForm.divisi_id)   e.divisi_id   = "Pilih divisi"
-    if (massalForm.mode === "subdivisi" && !massalForm.subdivisi_id) e.subdivisi_id = "Pilih sub divisi"
+    if (massalForm.assignMode === "monthly") {
+      if (massalForm.karyawan_ids.length === 0) e.karyawan_id = "Pilih minimal satu karyawan"
+      if (monthlyDates.length === 0) e.tgl_mulai = "Periode bulanan tidak valid"
+      if (monthlyDates.length > 31) e.tgl_selesai = "Jadwal bulanan fleksibel maksimal 31 hari"
+    } else {
+      if (massalForm.mode === "karyawan"  && massalForm.karyawan_ids.length === 0) e.karyawan_id = "Pilih minimal satu karyawan"
+      if (massalForm.mode === "divisi"    && !massalForm.divisi_id)   e.divisi_id   = "Pilih divisi"
+      if (massalForm.mode === "subdivisi" && !massalForm.subdivisi_id) e.subdivisi_id = "Pilih sub divisi"
+    }
     setMassalErrors(e); if (Object.keys(e).length) return
 
     const payload: Record<string, unknown> = {
-      shift_id:          Number(massalForm.shift_id),
       tgl_mulai:         massalForm.tgl_mulai,
       tgl_selesai:       massalForm.tgl_selesai,
       excludeHariLibur:  massalForm.excludeHariLibur,
-      excludeHari:       massalForm.excludeHari,
+      excludeHari:       [],
     }
-    if (massalForm.mode === "karyawan")   payload.karyawan_ids = [Number(massalForm.karyawan_id)]
-    if (massalForm.mode === "divisi")     payload.divisi_id    = Number(massalForm.divisi_id)
-    if (massalForm.mode === "subdivisi")  payload.subdivisi_id = Number(massalForm.subdivisi_id)
+    if (massalForm.assignMode === "weekly") {
+      payload.weeklyPattern = Object.fromEntries(
+        Object.entries(massalForm.weeklyPattern)
+          .filter(([, shiftId]) => shiftId)
+          .map(([day, shiftId]) => [day, Number(shiftId)]),
+      )
+    } else {
+      payload.monthlySchedules = massalForm.karyawan_ids.flatMap(karyawanId =>
+        monthlyDates.map(tanggal => {
+          const shiftId = getMonthlyCellValue(karyawanId, tanggal)
+          return {
+            karyawan_id: Number(karyawanId),
+            tanggal,
+            shift_id: shiftId ? Number(shiftId) : null,
+          }
+        }),
+      )
+    }
+    if (massalForm.assignMode === "monthly" || massalForm.mode === "karyawan") payload.karyawan_ids = massalForm.karyawan_ids.map(id => Number(id))
+    if (massalForm.assignMode !== "monthly" && massalForm.mode === "semua")     payload.allKaryawan = true
+    if (massalForm.assignMode !== "monthly" && massalForm.mode === "divisi")    payload.divisi_id   = Number(massalForm.divisi_id)
+    if (massalForm.assignMode !== "monthly" && massalForm.mode === "subdivisi") payload.subdivisi_id = Number(massalForm.subdivisi_id)
 
     setMassalSaving(true)
     try {
@@ -352,6 +390,30 @@ export default function JadwalShiftPage() {
   const karyawanOptions = karyawanList
     .filter(k => k.status_karyawan !== "Pensiun" && k.status_karyawan !== "Nonaktif")
     .map(k => ({ value: String(k.id), label: `${k.nik} — ${k.nama_karyawan}`, description: k.jabatan }))
+
+  const selectedKaryawanOptions = karyawanOptions.filter(o => massalForm.karyawan_ids.includes(o.value))
+  const availableKaryawanOptions = karyawanOptions.filter(o => !massalForm.karyawan_ids.includes(o.value))
+  const monthlyDates = datesBetween(massalForm.tgl_mulai, massalForm.tgl_selesai)
+
+  const getMonthlyCellValue = (karyawanId: string, tanggal: string): string => {
+    const explicitValue = massalForm.monthlySchedule[karyawanId]?.[tanggal]
+    if (explicitValue !== undefined) return explicitValue
+    const existing = rawList.find(j => String(j.karyawan_id) === karyawanId && j.tanggal.slice(0, 10) === tanggal)
+    return existing ? String(existing.shift_id) : ""
+  }
+
+  const setMonthlyCellValue = (karyawanId: string, tanggal: string, shiftId: string) => {
+    setMassalForm(f => ({
+      ...f,
+      monthlySchedule: {
+        ...f.monthlySchedule,
+        [karyawanId]: {
+          ...(f.monthlySchedule[karyawanId] ?? {}),
+          [tanggal]: shiftId,
+        },
+      },
+    }))
+  }
 
   const shiftOptions = shiftList.map(s => ({
     value: String(s.id),
@@ -563,7 +625,7 @@ export default function JadwalShiftPage() {
       </Modal>
 
       {/* ── Modal: Assign Massal ──────────────────────────────────── */}
-      <Modal open={massalOpen} onClose={() => setMassalOpen(false)} title="Assign Jadwal Massal" size="lg"
+      <Modal open={massalOpen} onClose={() => setMassalOpen(false)} title="Assign Jadwal Massal" size="xl"
         footer={
           massalResult
             ? <Button onClick={() => setMassalOpen(false)}>Tutup</Button>
@@ -598,20 +660,55 @@ export default function JadwalShiftPage() {
           <div className="space-y-5">
             {massalErrors._ && <div className="rounded-lg px-4 py-3 text-sm" style={{ background: "var(--danger-bg)", color: "var(--danger)" }}>{massalErrors._}</div>}
 
-            {/* Shift */}
-            <div className="space-y-1.5">
-              <label className="block text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-                Shift <span style={{ color: "var(--danger)" }}>*</span>
-              </label>
-              <SearchableSelect
-              label=""
-              options={shiftOptions}
-              value={massalForm.shift_id}
-              onChange={(v: string) => setMassalForm(f => ({ ...f, shift_id: v }))}
-                placeholder="Pilih shift..."
-              />
-              {massalErrors.shift_id && <p className="text-xs" style={{ color: "var(--danger)" }}>{massalErrors.shift_id}</p>}
+            {/* Mode assign */}
+            <div className="space-y-3">
+              <label className="block text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Mode Jadwal</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="flex items-start gap-3 rounded-xl p-3 cursor-pointer" style={{ border: "1px solid var(--border)", background: massalForm.assignMode === "weekly" ? "var(--primary-light)" : "var(--surface)" }}>
+                  <input type="radio" checked={massalForm.assignMode === "weekly"}
+                    onChange={() => setMassalForm(f => ({ ...f, assignMode: "weekly" }))}
+                    style={{ accentColor: "var(--primary)", marginTop: 2 }} />
+                  <span>
+                    <span className="block text-sm font-semibold" style={{ color: "var(--text-900)" }}>Pola Mingguan</span>
+                    <span className="block text-xs mt-0.5" style={{ color: "var(--text-subtle)" }}>Shift berbeda per hari, kosongkan hari libur.</span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-3 rounded-xl p-3 cursor-pointer" style={{ border: "1px solid var(--border)", background: massalForm.assignMode === "monthly" ? "var(--primary-light)" : "var(--surface)" }}>
+                  <input type="radio" checked={massalForm.assignMode === "monthly"}
+                    onChange={() => setMassalForm(f => ({ ...f, assignMode: "monthly", mode: "karyawan", divisi_id: "", subdivisi_id: "" }))}
+                    style={{ accentColor: "var(--primary)", marginTop: 2 }} />
+                  <span>
+                    <span className="block text-sm font-semibold" style={{ color: "var(--text-900)" }}>Bulanan Fleksibel</span>
+                    <span className="block text-xs mt-0.5" style={{ color: "var(--text-subtle)" }}>Shift ditentukan per pegawai dan tanggal.</span>
+                  </span>
+                </label>
+              </div>
             </div>
+
+            {massalForm.assignMode === "weekly" ? (
+              <div className="rounded-xl p-4 space-y-3" style={{ background: "var(--surface-muted)", border: "1px solid var(--border)" }}>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>Pola Mingguan</p>
+                  <p className="text-xs mt-1" style={{ color: "var(--text-subtle)" }}>
+                    Contoh: Senin-Kamis pilih shift 08:00-16:00, Jumat pilih shift 08:00-11:00, Sabtu/Minggu biarkan libur.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {HARI_FULL.map((hari, i) => (
+                    <SelectField key={i} label={hari}
+                      options={shiftList.map(s => ({ value: String(s.id), label: `${s.kode_shift} — ${s.nama_shift} (${s.jam_masuk.slice(0, 5)}-${s.jam_pulang.slice(0, 5)})` }))}
+                      placeholder="Libur / tidak dijadwalkan"
+                      value={massalForm.weeklyPattern[i] ?? ""}
+                      onChange={e => setMassalForm(f => ({ ...f, weeklyPattern: { ...f.weeklyPattern, [i]: e.target.value } }))} />
+                  ))}
+                </div>
+                {massalErrors.weeklyPattern && <p className="text-xs" style={{ color: "var(--danger)" }}>{massalErrors.weeklyPattern}</p>}
+              </div>
+            ) : (
+              <div className="rounded-xl px-4 py-3 text-sm" style={{ background: "var(--surface-muted)", border: "1px solid var(--border)", color: "var(--text-subtle)" }}>
+                Pilih periode maksimal 31 hari dan pegawai, lalu isi shift per tanggal pada grid bulanan di bawah.
+              </div>
+            )}
 
             {/* Rentang tanggal */}
             <div className="grid grid-cols-2 gap-4">
@@ -626,27 +723,72 @@ export default function JadwalShiftPage() {
             {/* Target */}
             <div className="space-y-3">
               <label className="block text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Target Pegawai</label>
-              <div className="flex gap-3">
-                {(["karyawan", "divisi", "subdivisi"] as const).map(mode => (
-                  <label key={mode} className="flex items-center gap-2 cursor-pointer">
-                    <input type="radio" checked={massalForm.mode === mode}
-                      onChange={() => setMassalForm(f => ({ ...f, mode, karyawan_id: "", divisi_id: "", subdivisi_id: "" }))}
-                      style={{ accentColor: "var(--primary)" }} />
-                    <span className="text-sm capitalize" style={{ color: "var(--text-900)" }}>{mode === "subdivisi" ? "Sub Divisi" : mode.charAt(0).toUpperCase() + mode.slice(1)}</span>
-                  </label>
-                ))}
-              </div>
+              {massalForm.assignMode !== "monthly" ? (
+                <div className="flex gap-3 flex-wrap">
+                  {([
+                    { value: "karyawan", label: "Pegawai" },
+                    { value: "semua", label: "Semua Pegawai" },
+                    { value: "divisi", label: "Divisi" },
+                    { value: "subdivisi", label: "Sub Divisi" },
+                  ] as const).map(({ value, label }) => (
+                    <label key={value} className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" checked={massalForm.mode === value}
+                        onChange={() => setMassalForm(f => ({ ...f, mode: value, karyawan_ids: [], divisi_id: "", subdivisi_id: "" }))}
+                        style={{ accentColor: "var(--primary)" }} />
+                      <span className="text-sm" style={{ color: "var(--text-900)" }}>{label}</span>
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs" style={{ color: "var(--text-subtle)" }}>Mode bulanan fleksibel memakai pilihan pegawai spesifik agar jadwal bisa diisi per nama.</p>
+              )}
 
               {massalForm.mode === "karyawan" && (
-                <div className="space-y-1.5">
+                <div className="space-y-3">
                   <SearchableSelect
                     label=""
-                    options={karyawanOptions}
-                    value={massalForm.karyawan_id}
-                    onChange={(v: string) => setMassalForm(f => ({ ...f, karyawan_id: v }))}
-                    placeholder="Pilih karyawan..."
+                    options={availableKaryawanOptions}
+                    value=""
+                    onChange={(v: string) => {
+                      if (!v) return
+                      setMassalForm(f => f.karyawan_ids.includes(v) ? f : ({ ...f, karyawan_ids: [...f.karyawan_ids, v] }))
+                    }}
+                    placeholder={selectedKaryawanOptions.length > 0 ? "Tambah karyawan lain..." : "Pilih karyawan..."}
                   />
                   {massalErrors.karyawan_id && <p className="text-xs" style={{ color: "var(--danger)" }}>{massalErrors.karyawan_id}</p>}
+                  <div className="rounded-xl p-3" style={{ background: "var(--surface-muted)", border: "1px solid var(--border)" }}>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>
+                        Terpilih: {selectedKaryawanOptions.length} pegawai
+                      </p>
+                      {selectedKaryawanOptions.length > 0 && (
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setMassalForm(f => ({ ...f, karyawan_ids: [] }))}>
+                          Kosongkan
+                        </Button>
+                      )}
+                    </div>
+                    {selectedKaryawanOptions.length === 0 ? (
+                      <p className="text-xs" style={{ color: "var(--text-subtle)" }}>Belum ada pegawai dipilih.</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {selectedKaryawanOptions.map(opt => (
+                          <span key={opt.value} className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs" style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-900)" }}>
+                            {opt.label}
+                            <button type="button" className="ml-1 font-semibold" style={{ color: "var(--danger)" }}
+                              onClick={() => setMassalForm(f => ({ ...f, karyawan_ids: f.karyawan_ids.filter(id => id !== opt.value) }))}>
+                              Hapus
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {massalForm.mode === "semua" && (
+                <div className="rounded-xl px-4 py-3 text-sm" style={{ background: "var(--primary-light)", border: "1px solid var(--border)", color: "var(--text-900)" }}>
+                  Semua pegawai aktif akan dibuatkan jadwal sesuai periode dan mode jadwal yang dipilih.
                 </div>
               )}
 
@@ -672,6 +814,74 @@ export default function JadwalShiftPage() {
               )}
             </div>
 
+            {massalForm.assignMode === "monthly" && (
+              <div className="rounded-xl p-4 space-y-3" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>Grid Jadwal Bulanan</p>
+                    <p className="text-xs mt-1" style={{ color: "var(--text-subtle)" }}>
+                      Pilih shift di setiap tanggal. Pilihan Off akan menghapus jadwal pada tanggal tersebut.
+                    </p>
+                  </div>
+                  <Badge variant="secondary">{monthlyDates.length} hari</Badge>
+                </div>
+                {monthlyDates.length > 31 && (
+                  <p className="text-xs" style={{ color: "var(--danger)" }}>Periode terlalu panjang. Maksimal 31 hari untuk jadwal bulanan fleksibel.</p>
+                )}
+                {selectedKaryawanOptions.length === 0 ? (
+                  <div className="rounded-lg px-4 py-3 text-sm" style={{ background: "var(--surface-muted)", color: "var(--text-subtle)" }}>
+                    Pilih minimal satu pegawai untuk menampilkan grid jadwal.
+                  </div>
+                ) : monthlyDates.length === 0 ? (
+                  <div className="rounded-lg px-4 py-3 text-sm" style={{ background: "var(--surface-muted)", color: "var(--text-subtle)" }}>
+                    Pilih periode tanggal yang valid.
+                  </div>
+                ) : (
+                  <div className="overflow-auto rounded-lg" style={{ border: "1px solid var(--border)" }}>
+                    <table className="min-w-max w-full text-xs">
+                      <thead>
+                        <tr style={{ background: "var(--surface-muted)", borderBottom: "1px solid var(--border)" }}>
+                          <th className="sticky left-0 z-10 px-3 py-2 text-left min-w-[180px]" style={{ background: "var(--surface-muted)", color: "var(--text-900)", borderRight: "1px solid var(--border)" }}>Pegawai</th>
+                          {monthlyDates.map(date => {
+                            const d = new Date(`${date}T12:00:00`)
+                            return (
+                              <th key={date} className="px-2 py-2 text-center min-w-[120px]" style={{ color: "var(--text-900)", borderRight: "1px solid var(--border)" }}>
+                                <span className="block font-semibold">{d.getDate()}</span>
+                                <span className="block font-normal" style={{ color: "var(--text-subtle)" }}>{HARI[d.getDay()]}</span>
+                              </th>
+                            )
+                          })}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedKaryawanOptions.map(opt => (
+                          <tr key={opt.value} style={{ borderBottom: "1px solid var(--border)" }}>
+                            <td className="sticky left-0 z-10 px-3 py-2 align-top min-w-[180px]" style={{ background: "var(--surface)", borderRight: "1px solid var(--border)" }}>
+                              <p className="font-semibold" style={{ color: "var(--text-900)" }}>{opt.label}</p>
+                              {opt.description && <p className="mt-0.5" style={{ color: "var(--text-subtle)" }}>{opt.description}</p>}
+                            </td>
+                            {monthlyDates.map(date => (
+                              <td key={`${opt.value}-${date}`} className="p-1.5 min-w-[120px]" style={{ borderRight: "1px solid var(--border)" }}>
+                                <select
+                                  value={getMonthlyCellValue(opt.value, date)}
+                                  onChange={e => setMonthlyCellValue(opt.value, date, e.target.value)}
+                                  className="h-8 w-full rounded-lg px-2 text-xs cursor-pointer"
+                                  style={{ border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--text-900)" }}
+                                >
+                                  <option value="">Off</option>
+                                  {shiftList.map(s => <option key={s.id} value={s.id}>{s.kode_shift}</option>)}
+                                </select>
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Pengecualian */}
             <div className="rounded-xl p-4 space-y-3" style={{ background: "var(--surface-muted)", border: "1px solid var(--border)" }}>
               <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>Pengecualian</p>
@@ -681,27 +891,15 @@ export default function JadwalShiftPage() {
                   style={{ accentColor: "var(--primary)" }} className="h-4 w-4" />
                 <span className="text-sm" style={{ color: "var(--text-900)" }}>Lewati hari libur nasional/perusahaan</span>
               </label>
-              <div>
-                <p className="text-xs mb-2" style={{ color: "var(--text-subtle)" }}>Lewati hari dalam seminggu:</p>
-                <div className="flex gap-2 flex-wrap">
-                  {HARI_FULL.map((h, i) => (
-                    <label key={i} className="flex items-center gap-1 cursor-pointer">
-                      <input type="checkbox"
-                        checked={massalForm.excludeHari.includes(i)}
-                        onChange={e => {
-                          setMassalForm(f => ({
-                            ...f,
-                            excludeHari: e.target.checked
-                              ? [...f.excludeHari, i]
-                              : f.excludeHari.filter(d => d !== i),
-                          }))
-                        }}
-                        style={{ accentColor: "var(--primary)" }} className="h-3.5 w-3.5" />
-                      <span className="text-xs" style={{ color: "var(--text-900)" }}>{h}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
+              {massalForm.assignMode === "weekly" ? (
+                <p className="text-xs" style={{ color: "var(--text-subtle)" }}>
+                  Hari tanpa shift pada Pola Mingguan otomatis dianggap libur dan jadwal lama pada hari tersebut akan dihapus dalam periode ini.
+                </p>
+              ) : (
+                <p className="text-xs" style={{ color: "var(--text-subtle)" }}>
+                  Jika aktif, tanggal yang terdaftar sebagai hari libur akan diperlakukan sebagai Off meskipun cell grid berisi shift.
+                </p>
+              )}
             </div>
           </div>
         )}
