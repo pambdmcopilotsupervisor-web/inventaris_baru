@@ -65,34 +65,48 @@ const TRANSISI: TransisiInfo[] = [
 // ─── Helper: resolve role efektif dalam hierarki ──────────────────
 
 /**
- * Resolve "peran efektif" pada workflow berdasarkan LEVEL hierarki (bukan jabatan):
- * - Bawahan langsung (level 1)  → peran "kepala_divisi" (tahap verifikasi: diajukan→diverifikasi)
- * - Bawahan tidak langsung (level 2+) → peran "manager" (tahap persetujuan: diverifikasi→disetujui)
+ * Resolve daftar "peran efektif" pada workflow berdasarkan LEVEL hierarki:
+ * - Bawahan langsung (level 1)  → peran "kepala_divisi" (verifikator: diajukan→diverifikasi).
+ *   Jika user adalah Manager/Direktur (puncak hierarki), ia JUGA "manager"
+ *   sehingga bisa sekaligus menyetujui penilaian bawahan langsungnya.
+ * - Bawahan tidak langsung (level 2+) → peran "manager" (approver: diverifikasi→disetujui).
  *
- * Dengan model ini, Manager yang menjadi atasan langsung Kepala Divisi akan
- * berperan sebagai "kepala_divisi" (verifikator) untuk penilaian Kepala Divisi tsb,
- * dan berperan "manager" (approver) untuk penilaian Staf di bawahnya.
+ * Mengembalikan array agar satu user bisa memegang lebih dari satu peran pada
+ * satu penilaian (mis. Manager = verifikator + approver bagi Kepala Divisi).
  */
+type PeranEfektif = "pegawai" | "kepala_divisi" | "manager" | "admin" | "hrd"
+
 async function getRoleEfektif(
   karyawanId: number,
   idPegawai: number,
   role: string,
-): Promise<"pegawai" | "kepala_divisi" | "manager" | "admin" | "hrd" | null> {
-  if (role === "admin") return "admin"
-  if (role === "hrd")   return "hrd"
-  if (karyawanId === idPegawai) return "pegawai"
+): Promise<PeranEfektif[]> {
+  if (role === "admin") return ["admin"]
+  if (role === "hrd")   return ["hrd"]
+  if (karyawanId === idPegawai) return ["pegawai"]
 
   // Level 1: bawahan langsung → verifikator
   const level1 = await getBawahanPenilaianIds(karyawanId)
-  if (level1.some(id => Number(id) === idPegawai)) return "kepala_divisi"
+  if (level1.some(id => Number(id) === idPegawai)) {
+    const roles: PeranEfektif[] = ["kepala_divisi"]
+    // Jika user adalah Manager/Direktur (puncak), bisa sekaligus menyetujui
+    const jabRows = await prisma.$queryRaw<{ jabatan: string }[]>`
+      SELECT jabatan FROM karyawans WHERE id = ${BigInt(karyawanId)} LIMIT 1
+    `
+    const jabatan = jabRows[0]?.jabatan ?? ""
+    if (["Manager", "Manajer", "Direktur"].some(j => jabatan.toLowerCase().includes(j.toLowerCase()))) {
+      roles.push("manager")
+    }
+    return roles
+  }
 
   // Level 2: bawahan dari bawahan → approver
   for (const id1 of level1) {
     const level2 = await getBawahanPenilaianIds(Number(id1))
-    if (level2.some(id => Number(id) === idPegawai)) return "manager"
+    if (level2.some(id => Number(id) === idPegawai)) return ["manager"]
   }
 
-  return null
+  return []
 }
 
 // ─── canTransition ────────────────────────────────────────────────
@@ -100,10 +114,10 @@ async function getRoleEfektif(
 export function canTransition(
   dari: StatusPenilaian,
   ke: StatusPenilaian,
-  roleEfektif: "pegawai" | "kepala_divisi" | "manager" | "admin" | "hrd" | null,
+  rolesEfektif: PeranEfektif[],
 ): TransisiInfo | null {
-  if (!roleEfektif) return null
-  return TRANSISI.find(t => t.dari === dari && t.ke === ke && t.peran.includes(roleEfektif)) ?? null
+  if (!rolesEfektif.length) return null
+  return TRANSISI.find(t => t.dari === dari && t.ke === ke && t.peran.some(p => rolesEfektif.includes(p as PeranEfektif))) ?? null
 }
 
 // ─── getNextActions ────────────────────────────────────────────────
@@ -119,11 +133,11 @@ export async function getNextActions(
   `
   if (!rows[0]) return []
   const { status, id_pegawai } = rows[0]
-  const roleEfektif = await getRoleEfektif(karyawanId, Number(id_pegawai), role)
-  if (!roleEfektif) return []
+  const rolesEfektif = await getRoleEfektif(karyawanId, Number(id_pegawai), role)
+  if (!rolesEfektif.length) return []
 
   return TRANSISI
-    .filter(t => t.dari === status && t.peran.includes(roleEfektif))
+    .filter(t => t.dari === status && t.peran.some(p => rolesEfektif.includes(p as PeranEfektif)))
     .map(t => ({ ke: t.ke, label: t.label, butuh_catatan: t.butuh_catatan }))
 }
 

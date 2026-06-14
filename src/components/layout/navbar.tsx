@@ -203,6 +203,12 @@ const NAV_GROUPS: NavGroup[] = [
           { label: "Inbox Approval",    href: "/dashboard/sdm/penilaian-kinerja/inbox",   icon: <CheckSquare className="h-3.5 w-3.5" />,    desc: "Monitoring & approval penilaian kinerja" },
         ],
       },
+      {
+        section: "Konfigurasi",
+        links: [
+          { label: "Komponen Penilaian", href: "/dashboard/sdm/komponen-penilaian", icon: <Settings className="h-3.5 w-3.5" />, desc: "Kelola komponen & bobot penilaian" },
+        ],
+      },
     ],
   },
   {
