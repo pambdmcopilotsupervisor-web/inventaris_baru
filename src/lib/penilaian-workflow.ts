@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma"
 import { getBawahanIds } from "@/lib/penilaian-target"
 import { getBawahanPenilaianIds } from "@/lib/penilaian-atasan"
+import { assertPeriodePenilaianTerbuka } from "@/lib/penilaian-periode"
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -146,9 +147,9 @@ export async function doTransition(params: {
   if (!Number.isSafeInteger(karyawanId) || karyawanId <= 0) throw new Error("ID karyawan tidak valid")
   if (!isStatusPenilaian(ke)) throw new Error("Status tujuan tidak valid")
 
-  type Row = { id: bigint; status: StatusPenilaian; id_pegawai: bigint }
+  type Row = { id: bigint; id_periode: bigint; status: StatusPenilaian; id_pegawai: bigint }
   const rows = await prisma.$queryRaw<Row[]>`
-    SELECT id, status, id_pegawai FROM penilaian_kinerja WHERE id = ${BigInt(idPenilaian)} LIMIT 1
+    SELECT id, id_periode, status, id_pegawai FROM penilaian_kinerja WHERE id = ${BigInt(idPenilaian)} LIMIT 1
   `
   const penilaian = rows[0]
   if (!penilaian) throw new Error("Data penilaian tidak ditemukan")
@@ -158,6 +159,7 @@ export async function doTransition(params: {
   const transisi = canTransition(dari, ke, roleEfektif)
   if (!transisi) throw new Error(`Transisi dari '${dari}' ke '${ke}' tidak diizinkan untuk peran Anda`)
   if (transisi.butuh_catatan && !catatan.trim()) throw new Error("Catatan alasan wajib diisi untuk transisi ini")
+  await assertPeriodePenilaianTerbuka(penilaian.id_periode, `melakukan transisi ${dari} ke ${ke}`)
 
   if (dari === "draft" && ke === "diajukan") {
     type DraftCheck = {

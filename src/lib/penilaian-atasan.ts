@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma"
 import type { SessionUser } from "@/lib/session"
 import { getBawahanIds } from "@/lib/penilaian-target"
+import { assertPeriodePenilaianTerbuka } from "@/lib/penilaian-periode"
 
 export type PerilakuAspek = "integritas" | "kerjasama" | "inisiatif" | "orientasi_layanan" | "kedisiplinan"
 
@@ -376,6 +377,7 @@ export async function simpanPenilaianAtasan(user: SessionUser, input: SimpanPeni
   if (input.submit && !input.catatan_atasan.trim()) throw new Error("Catatan atasan wajib diisi saat menyelesaikan penilaian")
 
   const detail = await getPenilaianUntukAtasan(user, input.id_penilaian)
+  await assertPeriodePenilaianTerbuka(detail.penilaian.id_periode, input.submit ? "menyelesaikan penilaian atasan" : "menyimpan draft penilaian atasan")
   if (!["diajukan", "diverifikasi"].includes(detail.penilaian.status))
     throw new Error("Penilaian pegawai belum diajukan atau sudah final")
   if (detail.penilaian.status === "diajukan" && detail.penilaian.id_penilai_atasan && !["admin", "hrd"].includes(user.role ?? ""))

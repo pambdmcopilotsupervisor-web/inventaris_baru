@@ -150,6 +150,31 @@ Catatan implementasi:
 - Saat periode dibuat, sistem membuat draft `penilaian_kinerja` untuk pegawai target supaya form target periode tersedia.
 - Karena `target_kerja.uraian_tugas` wajib diisi, sistem tidak membuat row target kosong. Form kosong ditangani di UI.
 
+### Guard Periode Aktif dan Deadline
+
+File:
+
+- `src/lib/penilaian-periode.ts`
+
+Fungsi utama:
+
+- `assertPeriodePenilaianTerbuka(idPeriode, action?)`
+
+Aturan:
+
+- Periode wajib ada.
+- `periode_penilaian.status` wajib `aktif`.
+- Tanggal server hari ini wajib berada dalam rentang `tanggal_buka` sampai `tanggal_tutup` secara inklusif.
+- Jika belum dibuka atau sudah lewat batas, service melempar error dan operasi tulis dibatalkan.
+
+Operasi yang memakai guard ini:
+
+- Simpan target kerja (`saveTargetKerja`).
+- Setujui target kerja, termasuk mode `apply_all`.
+- Simpan draft/kirim penilaian mandiri (`simpanPenilaianMandiri`).
+- Simpan draft/selesaikan penilaian atasan (`simpanPenilaianAtasan`).
+- Semua transisi workflow (`doTransition`), termasuk bulk transisi karena tetap memanggil `doTransition`.
+
 ### API Target Kerja Awal Periode
 
 File endpoint:
@@ -214,6 +239,7 @@ Fungsi utama:
 Guard khusus:
 
 - `doTransition` memvalidasi runtime `idPenilaian`, `karyawanId`, dan status tujuan sebelum query DB.
+- Semua transisi wajib berada pada periode `aktif` dan dalam rentang `tanggal_buka` sampai `tanggal_tutup`.
 - Transisi `draft → diajukan` wajib memiliki target dengan realisasi lengkap, 5 aspek perilaku mandiri, nilai komponen mandiri, dan JSON pengembangan pegawai.
 - Transisi `diajukan → diverifikasi` wajib memiliki `id_penilai_atasan`, `catatan_atasan`, dan 5 aspek `penilaian_perilaku` sumber `atasan`.
 - Transisi `diverifikasi → disetujui` wajib memiliki `id_penilai_atasan`, `tanggal_diverifikasi`, dan `nilai_akhir`.
@@ -368,7 +394,7 @@ npx tsc --noEmit
 Berhasil tanpa error.
 
 ```bash
-npx eslint "src/app/api/penilaian/bulk-transisi/route.ts" "src/lib/penilaian-workflow.ts"
+npx eslint "src/lib/penilaian-periode.ts" "src/lib/penilaian-target.ts" "src/lib/penilaian-mandiri.ts" "src/lib/penilaian-atasan.ts" "src/lib/penilaian-workflow.ts" "src/app/api/target/[id]/setujui/route.ts"
 ```
 
 Berhasil tanpa error.

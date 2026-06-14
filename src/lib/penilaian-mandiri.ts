@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma"
 import type { SessionUser } from "@/lib/session"
 import { hitungNilaiKehadiran } from "@/lib/penilaian-kehadiran"
+import { assertPeriodePenilaianTerbuka } from "@/lib/penilaian-periode"
 
 export type PerilakuAspek = "integritas" | "kerjasama" | "inisiatif" | "orientasi_layanan" | "kedisiplinan"
 
@@ -271,6 +272,7 @@ export async function simpanPenilaianMandiri(user: SessionUser, input: SimpanPen
   if (!user.karyawan_id) throw new Error("Akun belum terhubung ke data karyawan")
   const validation = validatePenilaianMandiri(input)
   if (validation) throw new Error(validation)
+  await assertPeriodePenilaianTerbuka(input.id_periode, input.submit ? "mengirim penilaian mandiri" : "menyimpan draft penilaian mandiri")
 
   const current = await getPenilaianMandiri(user, input.id_periode)
   if (current.penilaian.status !== "draft") throw new Error("Penilaian sudah dikirim dan tidak dapat diedit")

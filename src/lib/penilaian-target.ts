@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma"
 import type { SessionUser } from "@/lib/session"
+import { assertPeriodePenilaianTerbuka } from "@/lib/penilaian-periode"
 
 export type TargetKerjaInput = {
   uraian_tugas: string
@@ -144,6 +145,7 @@ export async function canAccessPegawaiTarget(user: SessionUser, idPegawai: numbe
 }
 
 export async function canApprovePegawaiTarget(user: SessionUser, idPegawai: number | bigint, final = false): Promise<boolean> {
+  void final
   if (isAdminLike(user)) return true
   if (!user.karyawan_id) return false
   const bawahanIds = await getBawahanByJabatanDivisi(user.karyawan_id)
@@ -164,6 +166,8 @@ export async function createPenilaianDraftForEmployees(idPeriode: bigint, employ
 }
 
 export async function saveTargetKerja(idPegawai: bigint, idPeriode: bigint, items: TargetKerjaInput[]): Promise<void> {
+  await assertPeriodePenilaianTerbuka(idPeriode, "menyimpan target kerja")
+
   await prisma.$transaction(async tx => {
     const existing = await tx.$queryRaw<{ status: string }[]>`
       SELECT status
@@ -202,6 +206,15 @@ export async function saveTargetKerja(idPegawai: bigint, idPeriode: bigint, item
 }
 
 export async function approveTargetKerja(idTarget: number | bigint, approverId: number | bigint | null, catatan?: string | null): Promise<void> {
+  const rows = await prisma.$queryRaw<{ id_periode: bigint }[]>`
+    SELECT id_periode
+    FROM target_kerja
+    WHERE id = ${BigInt(idTarget)}
+    LIMIT 1
+  `
+  if (!rows[0]) throw new Error("Target kerja tidak ditemukan")
+  await assertPeriodePenilaianTerbuka(rows[0].id_periode, "menyetujui target kerja")
+
   await prisma.$executeRaw`
     UPDATE target_kerja
     SET status = 'disetujui',

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { requireRole, getClientIp } from "@/lib/auth"
 import { writeAuditLog } from "@/lib/audit"
 import { approveTargetKerja, canApprovePegawaiTarget } from "@/lib/penilaian-target"
+import { assertPeriodePenilaianTerbuka } from "@/lib/penilaian-periode"
 
 type TargetRef = {
   id: bigint
@@ -33,6 +34,7 @@ export async function PUT(
 
     const canApprove = await canApprovePegawaiTarget(auth.user, target.id_pegawai, true)
     if (!canApprove) return NextResponse.json({ error: "Tidak diizinkan menyetujui target pegawai ini" }, { status: 403 })
+    await assertPeriodePenilaianTerbuka(target.id_periode, "menyetujui target kerja")
     const approverId = auth.user.karyawan_id ? BigInt(auth.user.karyawan_id) : null
 
     if (applyAll) {
