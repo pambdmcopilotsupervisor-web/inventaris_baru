@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Modal } from "@/components/ui/modal"
 import { ConfirmDelete } from "@/components/ui/confirm-delete"
 import { TextField, SelectField, TextareaField } from "@/components/ui/form-field"
-import { Plus, Pencil, Trash2, RefreshCw, CalendarOff } from "lucide-react"
+import { Plus, Pencil, Trash2, RefreshCw, CalendarOff, CalendarDays } from "lucide-react"
 import { formatDateLong } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
 
@@ -53,6 +53,15 @@ export default function HariLiburPage() {
   const [saving, setSaving]         = useState(false)
   const [deleting, setDeleting]     = useState(false)
   const [errors, setErrors]         = useState<Record<string, string>>({})
+
+  // ─── State kalender bulk ──────────────────────────────────────
+  const [kalenderOpen, setKalenderOpen] = useState(false)
+  const [kalTahun, setKalTahun]         = useState(tahunSekarang)
+  const [kalBulan, setKalBulan]         = useState(new Date().getMonth()) // 0-11
+  const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set())
+  const [bulkForm, setBulkForm] = useState({ nama_libur: "", tipe_libur: "Nasional", keterangan: "" })
+  const [bulkSaving, setBulkSaving] = useState(false)
+  const [bulkMsg, setBulkMsg]       = useState("")
 
   const set = <K extends keyof HariLibur>(k: K, v: HariLibur[K]) =>
     setForm(f => ({ ...f, [k]: v }))
@@ -165,6 +174,9 @@ export default function HariLiburPage() {
             ))}
           </select>
           <Button variant="outline" size="sm" onClick={refetch}><RefreshCw className="h-3.5 w-3.5" /></Button>
+          <Button variant="outline" size="sm" onClick={() => { setKalenderOpen(true); setSelectedDates(new Set()); setBulkMsg("") }}>
+            <CalendarDays className="h-3.5 w-3.5 mr-1.5" />Pilih dari Kalender
+          </Button>
           <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Tambah Hari Libur</Button>
         </div>
       </div>
@@ -245,6 +257,134 @@ export default function HariLiburPage() {
         onConfirm={handleDelete} loading={deleting}
         description={`Hapus hari libur "${selected?.nama_libur}" tanggal ${selected?.tanggal ? formatDateLong(selected.tanggal) : ""}?`}
       />
+
+      {/* ─── Modal Kalender Bulk ──────────────────────────────── */}
+      <Modal open={kalenderOpen} onClose={() => setKalenderOpen(false)}
+        title="Pilih Tanggal Hari Libur dari Kalender" size="lg"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setKalenderOpen(false)}>Tutup</Button>
+            <Button
+              disabled={selectedDates.size === 0 || !bulkForm.nama_libur.trim() || bulkSaving}
+              onClick={async () => {
+                setBulkSaving(true); setBulkMsg("")
+                try {
+                  const res = await fetch("/api/sdm/hari-libur/bulk", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ tanggals: Array.from(selectedDates), ...bulkForm }),
+                  })
+                  const j = await res.json()
+                  if (!res.ok) { setBulkMsg("Error: " + (j.error ?? "Gagal")); return }
+                  setBulkMsg(j.message ?? "Berhasil")
+                  setSelectedDates(new Set())
+                  refetch()
+                } finally { setBulkSaving(false) }
+              }}
+            >
+              {bulkSaving ? "Menyimpan..." : `Simpan ${selectedDates.size} Tanggal`}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          {/* Navigasi bulan */}
+          <div className="flex items-center justify-between">
+            <button onClick={() => { if (kalBulan === 0) { setKalBulan(11); setKalTahun(y => y-1) } else setKalBulan(b => b-1) }}
+              className="h-8 w-8 rounded-lg flex items-center justify-center hover:opacity-70 transition-opacity"
+              style={{ background: "var(--surface-muted)", color: "var(--text-900)" }}>‹</button>
+            <span className="text-sm font-bold" style={{ color: "var(--text-900)" }}>
+              {["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"][kalBulan]} {kalTahun}
+            </span>
+            <button onClick={() => { if (kalBulan === 11) { setKalBulan(0); setKalTahun(y => y+1) } else setKalBulan(b => b+1) }}
+              className="h-8 w-8 rounded-lg flex items-center justify-center hover:opacity-70 transition-opacity"
+              style={{ background: "var(--surface-muted)", color: "var(--text-900)" }}>›</button>
+          </div>
+
+          {/* Grid hari */}
+          <div className="grid grid-cols-7 gap-1 text-center text-xs font-semibold" style={{ color: "var(--text-subtle)" }}>
+            {["Min","Sen","Sel","Rab","Kam","Jum","Sab"].map(d => <div key={d}>{d}</div>)}
+          </div>
+          {(() => {
+            const firstDay = new Date(kalTahun, kalBulan, 1).getDay()
+            const daysInMonth = new Date(kalTahun, kalBulan + 1, 0).getDate()
+            const existingTanggals = new Set(list.map(h => h.tanggal.slice(0, 10)))
+            const cells: React.ReactNode[] = []
+            for (let i = 0; i < firstDay; i++) cells.push(<div key={`e${i}`} />)
+            for (let d = 1; d <= daysInMonth; d++) {
+              const tgl = `${kalTahun}-${String(kalBulan+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`
+              const isSun = new Date(kalTahun, kalBulan, d).getDay() === 0
+              const isSat = new Date(kalTahun, kalBulan, d).getDay() === 6
+              const already = existingTanggals.has(tgl)
+              const picked  = selectedDates.has(tgl)
+              cells.push(
+                <button key={tgl}
+                  title={already ? "Sudah terdaftar" : tgl}
+                  disabled={already}
+                  onClick={() => {
+                    const next = new Set(selectedDates)
+                    if (next.has(tgl)) next.delete(tgl); else next.add(tgl)
+                    setSelectedDates(next)
+                  }}
+                  className="h-9 rounded-lg text-sm font-medium transition-colors"
+                  style={{
+                    background: already ? "var(--danger-bg,#fef2f2)" : picked ? "var(--primary)" : isSun ? "var(--error-bg,#fff0f0)" : "var(--surface-muted)",
+                    color: already ? "var(--danger,#dc2626)" : picked ? "#fff" : isSun ? "var(--danger,#dc2626)" : isSat ? "var(--primary)" : "var(--text-900)",
+                    opacity: already ? 0.5 : 1,
+                    cursor: already ? "not-allowed" : "pointer",
+                    border: picked ? "2px solid var(--primary)" : "1px solid transparent",
+                  }}
+                >{d}</button>
+              )
+            }
+            return <div className="grid grid-cols-7 gap-1">{cells}</div>
+          })()}
+
+          <p className="text-xs text-center" style={{ color: "var(--text-subtle)" }}>
+            {selectedDates.size > 0
+              ? <><span style={{ color: "var(--primary)", fontWeight: 700 }}>{selectedDates.size}</span> tanggal dipilih</>
+              : "Klik tanggal untuk memilih/batal pilih"}
+            {" · "}<span style={{ color: "var(--danger)" }}>Merah = sudah libur / hari Minggu</span>
+          </p>
+
+          {/* Tombol pilih semua akhir pekan bulan ini */}
+          <div className="flex gap-2">
+            <button className="text-xs px-3 py-1 rounded-md border transition-colors"
+              style={{ borderColor: "var(--border)", color: "var(--text-700)" }}
+              onClick={() => {
+                const next = new Set(selectedDates)
+                const days = new Date(kalTahun, kalBulan + 1, 0).getDate()
+                const existing = new Set(list.map(h => h.tanggal.slice(0, 10)))
+                for (let d = 1; d <= days; d++) {
+                  const tgl = `${kalTahun}-${String(kalBulan+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`
+                  const wd = new Date(kalTahun, kalBulan, d).getDay()
+                  if (wd === 0 && !existing.has(tgl)) next.add(tgl)
+                }
+                setSelectedDates(next)
+              }}>+ Semua Minggu</button>
+            <button className="text-xs px-3 py-1 rounded-md border transition-colors"
+              style={{ borderColor: "var(--border)", color: "var(--text-700)" }}
+              onClick={() => setSelectedDates(new Set())}>Batal Semua</button>
+          </div>
+
+          {/* Form nama & tipe */}
+          <div className="grid grid-cols-2 gap-3 pt-2" style={{ borderTop: "1px solid var(--border)" }}>
+            <TextField label="Nama Hari Libur" required value={bulkForm.nama_libur}
+              placeholder="cth: Hari Raya Idul Fitri"
+              onChange={e => setBulkForm(f => ({ ...f, nama_libur: e.target.value }))} />
+            <SelectField label="Tipe Libur" value={bulkForm.tipe_libur}
+              onChange={e => setBulkForm(f => ({ ...f, tipe_libur: e.target.value }))}
+              options={TIPE_LIBUR} />
+          </div>
+          <TextField label="Keterangan (opsional)" value={bulkForm.keterangan}
+            onChange={e => setBulkForm(f => ({ ...f, keterangan: e.target.value }))} />
+          {bulkMsg && (
+            <div className="rounded-lg px-4 py-3 text-sm" style={{
+              background: bulkMsg.startsWith("Error") ? "var(--danger-bg)" : "var(--success-bg)",
+              color: bulkMsg.startsWith("Error") ? "var(--danger)" : "var(--success)",
+            }}>{bulkMsg}</div>
+          )}
+        </div>
+      </Modal>
     </div>
   )
 }
