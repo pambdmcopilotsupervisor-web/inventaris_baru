@@ -43,21 +43,27 @@ export async function POST(req: NextRequest) {
     const now = new Date()
     const jamMasuk = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
 
-    // Validasi radius lokasi
-    const lokasiConfig = await prisma.absensi_lokasi_configs.findFirst({ where: { aktif: true } })
+    // Validasi radius lokasi — cek semua lokasi aktif, lolos jika dalam radius salah satu
+    const semuaLokasi = await prisma.absensi_lokasi_configs.findMany({ where: { aktif: true } })
     let jarakMeter: number | null = null
-    let lokasiValid = true
-    if (lokasiConfig) {
-      jarakMeter = Math.round(hitungJarakMeter(
+    let lokasiValid = semuaLokasi.length === 0 // jika tidak ada lokasi dikonfigurasi, izinkan
+    let lokasiDipakai: { nama_lokasi: string; jarak: number } | null = null
+    for (const lk of semuaLokasi) {
+      const jarak = Math.round(hitungJarakMeter(
         Number(latitude), Number(longitude),
-        Number(lokasiConfig.latitude), Number(lokasiConfig.longitude),
+        Number(lk.latitude), Number(lk.longitude),
       ))
-      lokasiValid = jarakMeter <= lokasiConfig.radius_meter
+      if (jarakMeter === null || jarak < jarakMeter) jarakMeter = jarak // jarak ke lokasi terdekat
+      if (jarak <= lk.radius_meter) {
+        lokasiValid = true
+        lokasiDipakai = { nama_lokasi: lk.nama_lokasi, jarak }
+        break
+      }
     }
 
-    if (!lokasiValid && lokasiConfig) {
+    if (!lokasiValid) {
       return NextResponse.json({
-        error: `Anda berada di luar radius absensi. Jarak Anda: ${jarakMeter}m, radius maksimum: ${lokasiConfig.radius_meter}m.`,
+        error: `Anda berada di luar radius semua lokasi absensi. Jarak ke lokasi terdekat: ${jarakMeter}m.`,
         jarak_meter: jarakMeter,
       }, { status: 422 })
     }
@@ -149,12 +155,13 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(serialize({
       success:         true,
-      message:         `Absen masuk berhasil pukul ${jamMasuk}`,
+      message:         `Absen masuk berhasil pukul ${jamMasuk}${lokasiDipakai ? ` di ${lokasiDipakai.nama_lokasi}` : ""}`,
       jam_masuk:       jamMasuk,
       status_absensi:  hasil.status_absensi,
       is_terlambat:    hasil.is_terlambat,
       menit_terlambat: hasil.menit_terlambat,
       jarak_meter:     jarakMeter,
+      lokasi_dipakai:  lokasiDipakai?.nama_lokasi ?? null,
       shift:           shift ? { kode_shift: shift.kode_shift, nama_shift: shift.nama_shift, jam_masuk: shift.jam_masuk, jam_pulang: shift.jam_pulang } : null,
       absensi_id:      data.id,
     }))

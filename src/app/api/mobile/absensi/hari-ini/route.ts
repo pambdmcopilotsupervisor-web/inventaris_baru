@@ -34,8 +34,9 @@ export async function GET(req: NextRequest) {
     // Hari libur
     const hariLibur = await prisma.hari_liburs.findFirst({ where: { tanggal: tglDate } })
 
-    // Lokasi config
-    const lokasiConfig = await prisma.absensi_lokasi_configs.findFirst({ where: { aktif: true } })
+    // Lokasi config — ambil semua lokasi aktif
+    const semuaLokasi = await prisma.absensi_lokasi_configs.findMany({ where: { aktif: true } })
+    const lokasiConfig = semuaLokasi[0] ?? null // backward-compat: lokasi utama (terdekat dipilih saat absen)
 
     const bisa_masuk  = !absensi?.jam_masuk && !hariLibur && !!jadwal
     const bisa_pulang = !!absensi?.jam_masuk && !absensi?.jam_pulang && !hariLibur
@@ -74,6 +75,13 @@ export async function GET(req: NextRequest) {
         longitude:    lokasiConfig.longitude,
         radius_meter: lokasiConfig.radius_meter,
       } : null,
+      lokasi_configs: semuaLokasi.map(lk => ({
+        id:           lk.id,
+        nama_lokasi:  lk.nama_lokasi,
+        latitude:     lk.latitude,
+        longitude:    lk.longitude,
+        radius_meter: lk.radius_meter,
+      })),
     }))
   } catch (err) {
     console.error("[mobile absensi hari-ini]", err)

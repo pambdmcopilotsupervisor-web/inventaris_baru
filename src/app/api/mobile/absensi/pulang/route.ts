@@ -41,20 +41,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Belum ada data absen masuk hari ini. Lakukan absen masuk terlebih dahulu." }, { status: 422 })
     }
 
-    // Validasi radius
-    const lokasiConfig = await prisma.absensi_lokasi_configs.findFirst({ where: { aktif: true } })
+    // Validasi radius — cek semua lokasi aktif, lolos jika dalam radius salah satu
+    const semuaLokasi = await prisma.absensi_lokasi_configs.findMany({ where: { aktif: true } })
     let jarakMeter: number | null = null
-    let lokasiValid = true
-    if (lokasiConfig) {
-      jarakMeter = Math.round(hitungJarakMeter(
+    let lokasiValid = semuaLokasi.length === 0
+    let lokasiDipakai: { nama_lokasi: string; jarak: number } | null = null
+    for (const lk of semuaLokasi) {
+      const jarak = Math.round(hitungJarakMeter(
         Number(latitude), Number(longitude),
-        Number(lokasiConfig.latitude), Number(lokasiConfig.longitude),
+        Number(lk.latitude), Number(lk.longitude),
       ))
-      lokasiValid = jarakMeter <= lokasiConfig.radius_meter
+      if (jarakMeter === null || jarak < jarakMeter) jarakMeter = jarak
+      if (jarak <= lk.radius_meter) {
+        lokasiValid = true
+        lokasiDipakai = { nama_lokasi: lk.nama_lokasi, jarak }
+        break
+      }
     }
-    if (!lokasiValid && lokasiConfig) {
+    if (!lokasiValid) {
       return NextResponse.json({
-        error: `Anda berada di luar radius absensi. Jarak: ${jarakMeter}m, maksimum: ${lokasiConfig.radius_meter}m.`,
+        error: `Anda berada di luar radius semua lokasi absensi. Jarak ke lokasi terdekat: ${jarakMeter}m.`,
         jarak_meter: jarakMeter,
       }, { status: 422 })
     }
@@ -110,13 +116,14 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(serialize({
       success:           true,
-      message:           `Absen pulang berhasil pukul ${jamPulang}`,
+      message:           `Absen pulang berhasil pukul ${jamPulang}${lokasiDipakai ? ` di ${lokasiDipakai.nama_lokasi}` : ""}`,
       jam_pulang:        jamPulang,
       status_absensi:    hasil.status_absensi,
       is_pulang_cepat:   hasil.is_pulang_cepat,
       menit_pulang_cepat: hasil.menit_pulang_cepat,
       total_jam_kerja:   `${jam}j ${menit}m`,
       jarak_meter:       jarakMeter,
+      lokasi_dipakai:    lokasiDipakai?.nama_lokasi ?? null,
       absensi_id:        data.id,
     }))
   } catch (err) {
