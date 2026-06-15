@@ -5,10 +5,26 @@
 -- sehingga aplikasi pedami-inventaris (Laravel) tetap berjalan normal
 -- ============================================================
 
-ALTER TABLE users
-  ADD COLUMN `password_baru` VARCHAR(255) NULL
-  COMMENT 'Password khusus aplikasi inventaris_baru (Next.js). NULL = gunakan kolom password lama.'
-  AFTER `password`;
+-- Tambah kolom password_baru jika belum ada (idempotent)
+DROP PROCEDURE IF EXISTS _add_password_baru;
+DELIMITER //
+CREATE PROCEDURE _add_password_baru()
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME   = 'users'
+      AND COLUMN_NAME  = 'password_baru'
+  ) THEN
+    ALTER TABLE users
+      ADD COLUMN `password_baru` VARCHAR(255) NULL
+      COMMENT 'Password khusus aplikasi inventaris_baru (Next.js). NULL = gunakan kolom password lama.'
+      AFTER `password`;
+  END IF;
+END //
+DELIMITER ;
+CALL _add_password_baru();
+DROP PROCEDURE IF EXISTS _add_password_baru;
 
 -- ============================================================
 -- Set password awal untuk akun Riny87@pedami.com

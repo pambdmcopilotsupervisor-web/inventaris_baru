@@ -30,10 +30,19 @@ CREATE TABLE IF NOT EXISTS absensi (
   KEY absensi_jadwal_shift_id_index (jadwal_shift_id),
   KEY absensi_status_index           (status_absensi),
   KEY absensi_tanggal_index          (tanggal_absensi),
-  KEY absensi_created_by_index       (created_by),
-
-  CONSTRAINT absensi_karyawan_id_foreign
-    FOREIGN KEY (karyawan_id)     REFERENCES karyawans   (id) ON DELETE CASCADE  ON UPDATE RESTRICT,
-  CONSTRAINT absensi_jadwal_shift_id_foreign
-    FOREIGN KEY (jadwal_shift_id) REFERENCES jadwal_shifts (id) ON DELETE SET NULL ON UPDATE RESTRICT
+  KEY absensi_created_by_index       (created_by)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Tambahkan foreign key setelah semua tabel referensi dipastikan ada
+-- (dipisah agar tidak gagal jika tabel referensi belum dibuat saat CREATE TABLE)
+SET FOREIGN_KEY_CHECKS=0;
+
+ALTER TABLE absensi
+  ADD CONSTRAINT IF NOT EXISTS absensi_karyawan_id_foreign
+    FOREIGN KEY (karyawan_id) REFERENCES karyawans (id) ON DELETE CASCADE ON UPDATE RESTRICT;
+
+ALTER TABLE absensi
+  ADD CONSTRAINT IF NOT EXISTS absensi_jadwal_shift_id_foreign
+    FOREIGN KEY (jadwal_shift_id) REFERENCES jadwal_shifts (id) ON DELETE SET NULL ON UPDATE RESTRICT;
+
+SET FOREIGN_KEY_CHECKS=1;
