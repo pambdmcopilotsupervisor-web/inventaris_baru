@@ -33,16 +33,36 @@ CREATE TABLE IF NOT EXISTS absensi (
   KEY absensi_created_by_index       (created_by)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Tambahkan foreign key setelah semua tabel referensi dipastikan ada
--- (dipisah agar tidak gagal jika tabel referensi belum dibuat saat CREATE TABLE)
+-- Tambahkan foreign key via stored procedure (IF NOT EXISTS tidak didukung MariaDB untuk CONSTRAINT)
 SET FOREIGN_KEY_CHECKS=0;
 
-ALTER TABLE absensi
-  ADD CONSTRAINT IF NOT EXISTS absensi_karyawan_id_foreign
-    FOREIGN KEY (karyawan_id) REFERENCES karyawans (id) ON DELETE CASCADE ON UPDATE RESTRICT;
-
-ALTER TABLE absensi
-  ADD CONSTRAINT IF NOT EXISTS absensi_jadwal_shift_id_foreign
-    FOREIGN KEY (jadwal_shift_id) REFERENCES jadwal_shifts (id) ON DELETE SET NULL ON UPDATE RESTRICT;
+DROP PROCEDURE IF EXISTS _add_absensi_fk;
+DELIMITER //
+CREATE PROCEDURE _add_absensi_fk()
+BEGIN
+  -- FK karyawan_id
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.TABLE_CONSTRAINTS
+    WHERE CONSTRAINT_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'absensi'
+      AND CONSTRAINT_NAME = 'absensi_karyawan_id_foreign'
+  ) THEN
+    ALTER TABLE absensi ADD CONSTRAINT absensi_karyawan_id_foreign
+      FOREIGN KEY (karyawan_id) REFERENCES karyawans (id) ON DELETE CASCADE ON UPDATE RESTRICT;
+  END IF;
+  -- FK jadwal_shift_id
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.TABLE_CONSTRAINTS
+    WHERE CONSTRAINT_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'absensi'
+      AND CONSTRAINT_NAME = 'absensi_jadwal_shift_id_foreign'
+  ) THEN
+    ALTER TABLE absensi ADD CONSTRAINT absensi_jadwal_shift_id_foreign
+      FOREIGN KEY (jadwal_shift_id) REFERENCES jadwal_shifts (id) ON DELETE SET NULL ON UPDATE RESTRICT;
+  END IF;
+END //
+DELIMITER ;
+CALL _add_absensi_fk();
+DROP PROCEDURE IF EXISTS _add_absensi_fk;
 
 SET FOREIGN_KEY_CHECKS=1;

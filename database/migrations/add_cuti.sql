@@ -3,11 +3,31 @@
 -- Tanggal  : 2026-06-11
 -- ============================================================
 
--- 1. Tambah atasan_id ke karyawans (self-referencing FK)
-ALTER TABLE karyawans
-  ADD COLUMN atasan_id BIGINT UNSIGNED NULL AFTER subdivisi_id,
-  ADD CONSTRAINT karyawans_atasan_id_foreign
-    FOREIGN KEY (atasan_id) REFERENCES karyawans (id) ON DELETE SET NULL ON UPDATE RESTRICT;
+-- 1. Tambah atasan_id ke karyawans (self-referencing FK) — idempotent
+DROP PROCEDURE IF EXISTS _add_cuti_cols;
+DELIMITER //
+CREATE PROCEDURE _add_cuti_cols()
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'karyawans' AND COLUMN_NAME = 'atasan_id'
+  ) THEN
+    ALTER TABLE karyawans ADD COLUMN atasan_id BIGINT UNSIGNED NULL AFTER subdivisi_id;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.TABLE_CONSTRAINTS
+    WHERE CONSTRAINT_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'karyawans'
+      AND CONSTRAINT_NAME = 'karyawans_atasan_id_foreign'
+  ) THEN
+    ALTER TABLE karyawans ADD CONSTRAINT karyawans_atasan_id_foreign
+      FOREIGN KEY (atasan_id) REFERENCES karyawans (id) ON DELETE SET NULL ON UPDATE RESTRICT;
+  END IF;
+END //
+DELIMITER ;
+CALL _add_cuti_cols();
+DROP PROCEDURE IF EXISTS _add_cuti_cols;
 
 -- 2. Master Jenis Cuti
 CREATE TABLE IF NOT EXISTS jenis_cutis (

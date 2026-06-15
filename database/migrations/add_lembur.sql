@@ -21,9 +21,22 @@ CREATE TABLE IF NOT EXISTS overtime_settings (
   updated_at                 TIMESTAMP       NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 2. Tarif Lembur per Pegawai (opsional, fallback ke setting global)
-ALTER TABLE karyawans
-  ADD COLUMN tarif_lembur_per_jam DECIMAL(15,2) NULL AFTER atasan_id;
+-- 2. Tarif Lembur per Pegawai — idempotent
+DROP PROCEDURE IF EXISTS _add_lembur_col;
+DELIMITER //
+CREATE PROCEDURE _add_lembur_col()
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'karyawans' AND COLUMN_NAME = 'tarif_lembur_per_jam'
+  ) THEN
+    ALTER TABLE karyawans ADD COLUMN tarif_lembur_per_jam DECIMAL(15,2) NULL AFTER atasan_id;
+  END IF;
+END //
+DELIMITER ;
+CALL _add_lembur_col();
+DROP PROCEDURE IF EXISTS _add_lembur_col;
 
 -- 3. Pengajuan Lembur
 CREATE TABLE IF NOT EXISTS overtime_requests (

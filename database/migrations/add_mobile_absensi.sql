@@ -3,16 +3,39 @@
 -- Tanggal  : 2026-06-12
 -- ============================================================
 
--- 1. Tambah kolom mobile ke tabel absensi
-ALTER TABLE absensi
-  ADD COLUMN foto_masuk        VARCHAR(255)   NULL AFTER attachment_path,
-  ADD COLUMN foto_pulang       VARCHAR(255)   NULL AFTER foto_masuk,
-  ADD COLUMN lokasi_masuk_lat  DECIMAL(10,7)  NULL AFTER foto_pulang,
-  ADD COLUMN lokasi_masuk_lng  DECIMAL(10,7)  NULL AFTER lokasi_masuk_lat,
-  ADD COLUMN lokasi_pulang_lat DECIMAL(10,7)  NULL AFTER lokasi_masuk_lng,
-  ADD COLUMN lokasi_pulang_lng DECIMAL(10,7)  NULL AFTER lokasi_pulang_lat,
-  ADD COLUMN metode_input      VARCHAR(20)    NOT NULL DEFAULT 'system' AFTER lokasi_pulang_lng,
-  ADD COLUMN perangkat_info    VARCHAR(255)   NULL AFTER metode_input;
+-- 1. Tambah kolom mobile ke tabel absensi (idempotent)
+DROP PROCEDURE IF EXISTS _add_mobile_absensi_cols;
+DELIMITER //
+CREATE PROCEDURE _add_mobile_absensi_cols()
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='absensi' AND COLUMN_NAME='foto_masuk') THEN
+    ALTER TABLE absensi ADD COLUMN foto_masuk VARCHAR(255) NULL AFTER attachment_path;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='absensi' AND COLUMN_NAME='foto_pulang') THEN
+    ALTER TABLE absensi ADD COLUMN foto_pulang VARCHAR(255) NULL AFTER foto_masuk;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='absensi' AND COLUMN_NAME='lokasi_masuk_lat') THEN
+    ALTER TABLE absensi ADD COLUMN lokasi_masuk_lat DECIMAL(10,7) NULL AFTER foto_pulang;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='absensi' AND COLUMN_NAME='lokasi_masuk_lng') THEN
+    ALTER TABLE absensi ADD COLUMN lokasi_masuk_lng DECIMAL(10,7) NULL AFTER lokasi_masuk_lat;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='absensi' AND COLUMN_NAME='lokasi_pulang_lat') THEN
+    ALTER TABLE absensi ADD COLUMN lokasi_pulang_lat DECIMAL(10,7) NULL AFTER lokasi_masuk_lng;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='absensi' AND COLUMN_NAME='lokasi_pulang_lng') THEN
+    ALTER TABLE absensi ADD COLUMN lokasi_pulang_lng DECIMAL(10,7) NULL AFTER lokasi_pulang_lat;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='absensi' AND COLUMN_NAME='metode_input') THEN
+    ALTER TABLE absensi ADD COLUMN metode_input VARCHAR(20) NOT NULL DEFAULT 'system' AFTER lokasi_pulang_lng;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='absensi' AND COLUMN_NAME='perangkat_info') THEN
+    ALTER TABLE absensi ADD COLUMN perangkat_info VARCHAR(255) NULL AFTER metode_input;
+  END IF;
+END //
+DELIMITER ;
+CALL _add_mobile_absensi_cols();
+DROP PROCEDURE IF EXISTS _add_mobile_absensi_cols;
 
 -- 2. Mobile Sessions (API token untuk mobile app)
 CREATE TABLE IF NOT EXISTS mobile_sessions (
