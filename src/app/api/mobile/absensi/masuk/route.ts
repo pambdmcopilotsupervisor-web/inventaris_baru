@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
 
     const { tglDate } = getTodayWIB()
     const jamMasuk = getNowWIBJam()
+    const now = new Date() // UTC timestamp untuk created_at/updated_at di DB
 
     // Validasi radius lokasi — cek semua lokasi aktif, lolos jika dalam radius salah satu
     const semuaLokasi = await prisma.absensi_lokasi_configs.findMany({ where: { aktif: true } })

@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
 
     const { tglDate } = getTodayWIB()
     const jamPulang = getNowWIBJam()
+    const now = new Date() // UTC timestamp untuk updated_at di DB
 
     // Cek apakah sudah absen masuk
     const existing = await prisma.absensi.findFirst({
