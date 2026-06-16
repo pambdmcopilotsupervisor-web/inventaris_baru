@@ -10,7 +10,7 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-      - TZ=Asia/Jakarta
+      - TZ=Asia/Makassar
       # Wajib diisi di Dokploy → Environment Variables:
       - DATABASE_URL=${DATABASE_URL}
       - SESSION_SECRET=${SESSION_SECRET}
