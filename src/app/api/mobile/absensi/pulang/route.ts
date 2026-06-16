@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma, serialize } from "@/lib/prisma"
-import { requireMobileAuth, hitungJarakMeter, getTodayWIB } from "@/lib/mobile-auth"
+import { requireMobileAuth, hitungJarakMeter, getTodayWIB, getNowWIBJam } from "@/lib/mobile-auth"
 import { writeAuditLog } from "@/lib/audit"
 import { hitungAbsensi, resolveLeaveStatus } from "@/lib/attendance"
 
@@ -27,8 +27,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { tglDate } = getTodayWIB()
-    const now = new Date()
-    const jamPulang = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
+    const jamPulang = getNowWIBJam()
 
     // Cek apakah sudah absen masuk
     const existing = await prisma.absensi.findFirst({

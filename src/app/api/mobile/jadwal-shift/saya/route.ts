@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma, serialize } from "@/lib/prisma"
-import { requireMobileAuth } from "@/lib/mobile-auth"
+import { requireMobileAuth, getTodayWIB } from "@/lib/mobile-auth"
 
 // GET /api/mobile/jadwal-shift/saya
 // Query: tgl_mulai, tgl_selesai (default: 7 hari ke depan dari hari ini)
@@ -24,9 +24,9 @@ export async function GET(req: NextRequest) {
       dtMulai   = new Date(tglMulai)
       dtSelesai = new Date(tglSelesai)
     } else {
-      // Default: 7 hari ke depan
-      const now = new Date()
-      dtMulai   = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      // Default: 7 hari ke depan (gunakan tanggal WITA agar tidak salah hari sebelum jam 08:00)
+      const { tglStr } = getTodayWIB()
+      dtMulai   = new Date(tglStr)
       dtSelesai = new Date(dtMulai.getTime() + 6 * 24 * 60 * 60 * 1000)
     }
 

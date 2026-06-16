@@ -9,20 +9,36 @@ import { NextRequest, NextResponse } from "next/server"
 import { randomBytes, createHash } from "crypto"
 
 /**
- * Dapatkan tanggal hari ini dalam format YYYY-MM-DD di timezone WIB (Asia/Jakarta UTC+7).
- * Aman digunakan di lingkungan server UTC maupun UTC+7.
+ * Dapatkan tanggal hari ini dalam format YYYY-MM-DD di timezone WITA (Asia/Makassar UTC+8).
+ * Aman digunakan di lingkungan server UTC maupun UTC+8.
  * Menghindari bug timezone: `now.getDate()` bergantung pada server TZ,
- * sedangkan user di WIB (UTC+7) sebelum jam 07:00 pagi masih di hari sebelumnya di UTC.
+ * sedangkan user di WITA (UTC+8) sebelum jam 08:00 pagi masih di hari sebelumnya di UTC.
  */
 export function getTodayWIB(): { tglStr: string; tglDate: Date } {
   const wibDateStr = new Intl.DateTimeFormat("sv-SE", {
-    timeZone: "Asia/Jakarta",
+    timeZone: "Asia/Makassar",
     year: "numeric", month: "2-digit", day: "2-digit",
   }).format(new Date()) // format: "2026-06-13"
   return {
     tglStr: wibDateStr,
     tglDate: new Date(wibDateStr), // UTC midnight — benar untuk query Prisma ↔ MySQL DATE
   }
+}
+
+/**
+ * Dapatkan jam & menit saat ini dalam format HH:mm di timezone WITA (Asia/Makassar UTC+8).
+ * Aman digunakan di server UTC — menghindari bug getHours()/getMinutes() yang bergantung TZ server.
+ */
+export function getNowWIBJam(): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Makassar",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date())
+  const hour   = parts.find(p => p.type === "hour")?.value   ?? "00"
+  const minute = parts.find(p => p.type === "minute")?.value ?? "00"
+  return `${hour}:${minute}`
 }
 
 export interface MobileUser {
