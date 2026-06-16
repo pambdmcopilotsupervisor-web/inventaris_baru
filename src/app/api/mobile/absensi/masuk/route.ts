@@ -72,7 +72,15 @@ export async function POST(req: NextRequest) {
     const existing = await prisma.absensi.findFirst({
       where: { karyawan_id: BigInt(karyawanId), tanggal_absensi: tglDate },
     })
-    // Tidak ada cek 409 — absen masuk bisa diulang untuk koreksi jam
+
+    // Jika sudah absen masuk, tolak — pertahankan jam masuk paling awal
+    if (existing?.jam_masuk) {
+      return NextResponse.json({
+        error: `Anda sudah absen masuk hari ini pada pukul ${existing.jam_masuk}`,
+        jam_masuk: existing.jam_masuk,
+        absensi_id: existing.id,
+      }, { status: 409 })
+    }
 
     // Ambil jadwal shift
     const jadwal = await prisma.jadwal_shifts.findFirst({
