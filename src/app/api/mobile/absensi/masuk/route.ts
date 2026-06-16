@@ -75,11 +75,11 @@ export async function POST(req: NextRequest) {
 
     // Jika sudah absen masuk, tolak — pertahankan jam masuk paling awal
     if (existing?.jam_masuk) {
-      return NextResponse.json({
-        error: `Anda sudah absen masuk hari ini pada pukul ${existing.jam_masuk}`,
+      return NextResponse.json(serialize({
+        error: `Anda sudah absen masuk hari ini pada pukul ${existing.jam_masuk}. Jam masuk tidak dapat diubah.`,
         jam_masuk: existing.jam_masuk,
         absensi_id: existing.id,
-      }, { status: 409 })
+      }), { status: 409 })
     }
 
     // Ambil jadwal shift
