@@ -38,8 +38,9 @@ export async function GET(req: NextRequest) {
     const semuaLokasi = await prisma.absensi_lokasi_configs.findMany({ where: { aktif: true } })
     const lokasiConfig = semuaLokasi[0] ?? null // backward-compat: lokasi utama (terdekat dipilih saat absen)
 
-    const bisa_masuk  = !absensi?.jam_masuk && !hariLibur && !!jadwal
-    const bisa_pulang = !!absensi?.jam_masuk && !absensi?.jam_pulang && !hariLibur
+    // Jika ada shift hari ini, karyawan tetap bisa absen meski hari libur
+    const bisa_masuk  = !absensi?.jam_masuk && !!jadwal
+    const bisa_pulang = !!absensi?.jam_masuk && !absensi?.jam_pulang
 
     return NextResponse.json(serialize({
       tanggal:    tglDate,
