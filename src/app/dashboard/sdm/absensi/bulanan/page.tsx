@@ -4,9 +4,10 @@ import React, { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { SearchableSelect } from "@/components/ui/searchable-select"
+import { Modal } from "@/components/ui/modal"
 import { useApi } from "@/hooks/useApi"
 import { STATUS_ABSENSI_BADGE, STATUS_ABSENSI_LABELS, StatusAbsensi } from "@/lib/attendance"
-import { ChevronLeft, ChevronRight, CalendarDays, Table2, RefreshCw } from "lucide-react"
+import { ChevronLeft, ChevronRight, CalendarDays, Table2, RefreshCw, Camera } from "lucide-react"
 
 interface Karyawan {
   id: number
@@ -31,6 +32,8 @@ interface DetailAbsensiBulanan {
   total_jam_kerja_menit: number
   alasan_manual: string | null
   catatan_manual: string | null
+  foto_masuk?: string | null
+  foto_pulang?: string | null
   sumber_rekap?: string
   hari_libur?: { nama_libur: string; tipe_libur: string } | null
   jadwal_shifts?: { shift_kerjas?: { kode_shift: string; nama_shift: string; jam_masuk: string; jam_pulang: string } | null } | null
@@ -169,8 +172,10 @@ export default function AbsensiBulananPage() {
 
   const prevBulan = () => { if (bulan === 1) { setBulan(12); setTahun(y => y - 1) } else setBulan(b => b - 1) }
   const nextBulan = () => { if (bulan === 12) { setBulan(1); setTahun(y => y + 1) } else setBulan(b => b + 1) }
+  const [fotoRow, setFotoRow] = useState<DetailAbsensiBulanan | null>(null)
 
   return (
+    <>
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
@@ -248,7 +253,7 @@ export default function AbsensiBulananPage() {
                 <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
                   <thead style={{ background: "var(--surface-muted)" }}>
                     <tr>
-                      {["Tanggal", "Shift", "Masuk", "Pulang", "Status", "Keterangan", "Jam Kerja"].map(head => (
+                      {["Tanggal", "Shift", "Masuk", "Pulang", "Status", "Keterangan", "Jam Kerja", "Foto"].map(head => (
                         <th key={head} className="px-3 py-2 text-left text-[11px] uppercase tracking-wide" style={{ color: "var(--text-muted)", borderBottom: "1px solid var(--border)" }}>{head}</th>
                       ))}
                     </tr>
@@ -279,6 +284,13 @@ export default function AbsensiBulananPage() {
                             </div>
                           </td>
                           <td className="px-3 py-2 font-mono text-xs">{formatMenit(row.total_jam_kerja_menit)}</td>
+                          <td className="px-3 py-2">
+                            {(row.foto_masuk || row.foto_pulang) && (
+                              <button onClick={() => setFotoRow(row)} className="rounded p-1 transition-colors" style={{ color: "var(--primary)", background: "var(--surface-muted)" }} title="Lihat foto selfie">
+                                <Camera size={14} />
+                              </button>
+                            )}
+                          </td>
                         </tr>
                       )
                     })}
@@ -305,6 +317,9 @@ export default function AbsensiBulananPage() {
                         <div className="flex flex-wrap gap-1">
                           {getFlagLabels(cell.row).slice(0, 2).map(flag => <Badge key={flag} variant="secondary" className="text-[9px] px-1">{flag}</Badge>)}
                           {cell.row.sumber_rekap === "kalender" && <Badge variant="info" className="text-[9px] px-1">Kalender</Badge>}
+                          {(cell.row.foto_masuk || cell.row.foto_pulang) && (
+                            <button onClick={() => setFotoRow(cell.row!)} className="ml-auto" title="Lihat foto selfie" style={{ color: "var(--primary)" }}><Camera size={12} /></button>
+                          )}
                         </div>
                       </div>
                     )}
@@ -316,5 +331,33 @@ export default function AbsensiBulananPage() {
         </div>
       )}
     </div>
+
+      {/* ── Modal Foto Selfie ────────────────────────────────────── */}
+      <Modal open={!!fotoRow} onClose={() => setFotoRow(null)} title="Foto Selfie Absensi Mobile" size="md"
+        footer={<Button onClick={() => setFotoRow(null)}>Tutup</Button>}
+      >
+        {fotoRow && (
+          <div className="space-y-4">
+            <p className="text-sm" style={{ color: "var(--text-subtle)" }}>
+              {formatTanggal(fotoRow.tanggal_absensi)} — {fotoRow.jam_masuk?.slice(0,5) ?? ""} s/d {fotoRow.jam_pulang?.slice(0,5) ?? "—"}
+            </p>
+            <div className={`grid gap-3 ${fotoRow.foto_masuk && fotoRow.foto_pulang ? "grid-cols-2" : "grid-cols-1"}`}>
+              {fotoRow.foto_masuk && (
+                <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+                  <p className="text-[10px] font-semibold px-2 py-1" style={{ background: "var(--surface-muted)", color: "var(--text-subtle)" }}>Foto Masuk — {fotoRow.jam_masuk?.slice(0,5) ?? ""}</p>
+                  <img src={fotoRow.foto_masuk} alt="Foto Masuk" className="w-full object-cover" style={{ maxHeight: 240 }} />
+                </div>
+              )}
+              {fotoRow.foto_pulang && (
+                <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+                  <p className="text-[10px] font-semibold px-2 py-1" style={{ background: "var(--surface-muted)", color: "var(--text-subtle)" }}>Foto Pulang — {fotoRow.jam_pulang?.slice(0,5) ?? ""}</p>
+                  <img src={fotoRow.foto_pulang} alt="Foto Pulang" className="w-full object-cover" style={{ maxHeight: 240 }} />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
+    </>
   )
 }

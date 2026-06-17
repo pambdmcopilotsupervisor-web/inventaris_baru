@@ -23,7 +23,8 @@ interface AbsensiRow {
   status_absensi: string; menit_terlambat: number; menit_pulang_cepat: number
   is_terlambat?: boolean; is_pulang_cepat?: boolean; is_tidak_absen_masuk?: boolean; is_tidak_absen_pulang?: boolean
   total_jam_kerja_menit: number; is_manual: boolean; alasan_manual: string | null
-  catatan_manual: string | null
+  catatan_manual: string | null; foto_masuk?: string | null; foto_pulang?: string | null
+  metode_input?: string | null
   karyawans?: { id: number; nik: string; nama_karyawan: string; jabatan: string; divisi_id: number | null }
   jadwal_shifts?: { shift_kerjas?: { kode_shift: string; nama_shift: string; jam_masuk: string; jam_pulang: string } | null } | null
 }
@@ -487,7 +488,7 @@ export default function AbsensiPage() {
       </Modal>
 
       {/* ── Modal: Detail ────────────────────────────────────────── */}
-      <Modal open={detailOpen} onClose={() => setDetailOpen(false)} title="Detail Absensi" size="md"
+      <Modal open={detailOpen} onClose={() => setDetailOpen(false)} title="Detail Absensi" size="lg"
         footer={<Button onClick={() => setDetailOpen(false)}>Tutup</Button>}
       >
         {selected && (
@@ -530,6 +531,25 @@ export default function AbsensiPage() {
               <div className="rounded-lg p-3" style={{ background: "var(--surface-muted)", border: "1px solid var(--border)" }}>
                 {selected.alasan_manual && <p className="text-xs"><strong>Alasan:</strong> {selected.alasan_manual}</p>}
                 {selected.catatan_manual && <p className="text-xs mt-1"><strong>Catatan:</strong> {selected.catatan_manual}</p>}
+              </div>
+            )}
+            {(selected.foto_masuk || selected.foto_pulang) && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>Foto Selfie Mobile</p>
+                <div className={`grid gap-3 ${selected.foto_masuk && selected.foto_pulang ? "grid-cols-2" : "grid-cols-1"}`}>
+                  {selected.foto_masuk && (
+                    <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+                      <p className="text-[10px] font-semibold px-2 py-1" style={{ background: "var(--surface-muted)", color: "var(--text-subtle)" }}>Foto Masuk — {selected.jam_masuk?.slice(0,5) ?? ""}</p>
+                      <img src={selected.foto_masuk} alt="Foto Masuk" className="w-full object-cover" style={{ maxHeight: 220 }} />
+                    </div>
+                  )}
+                  {selected.foto_pulang && (
+                    <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+                      <p className="text-[10px] font-semibold px-2 py-1" style={{ background: "var(--surface-muted)", color: "var(--text-subtle)" }}>Foto Pulang — {selected.jam_pulang?.slice(0,5) ?? ""}</p>
+                      <img src={selected.foto_pulang} alt="Foto Pulang" className="w-full object-cover" style={{ maxHeight: 220 }} />
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
