@@ -14,6 +14,12 @@ services:
       # Wajib diisi di Dokploy → Environment Variables:
       - DATABASE_URL=${DATABASE_URL}
       - SESSION_SECRET=${SESSION_SECRET}
+      # MinIO / S3-compatible storage untuk foto absensi mobile
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
+      - MINIO_ACCESS_KEY_ID=${MINIO_ACCESS_KEY_ID}
+      - MINIO_SECRET_ACCESS_KEY=${MINIO_SECRET_ACCESS_KEY}
+      - MINIO_BUCKET=${MINIO_BUCKET}
+      - MINIO_REGION=${MINIO_REGION}
     volumes:
       # Volume persisten untuk foto selfie absensi mobile dan foto sakit
       - inventaris_uploads:/app/public/uploads
