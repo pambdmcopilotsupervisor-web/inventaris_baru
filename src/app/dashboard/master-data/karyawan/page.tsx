@@ -9,7 +9,7 @@ import { Modal } from "@/components/ui/modal"
 import { ConfirmDelete } from "@/components/ui/confirm-delete"
 import { TextField, SelectField, TextareaField } from "@/components/ui/form-field"
 import { SearchableSelect } from "@/components/ui/searchable-select"
-import { Plus, Pencil, Trash2, Eye, RefreshCw, Users, IdCard } from "lucide-react"
+import { Plus, Pencil, Trash2, Eye, RefreshCw, Users, IdCard, Wallet } from "lucide-react"
 import { formatDate } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
 
@@ -17,7 +17,7 @@ import { useApi } from "@/hooks/useApi"
 interface Karyawan {
   id: number; nik: string; nama_karyawan: string; jabatan: string
   subdivisi_id: number | null; jkel: string; status_karyawan: string | null
-  tanggal_masuk_kerja: string | null; tanggal_lahir: string | null
+  tanggal_masuk_kerja: string | null; tanggal_keluar: string | null; tanggal_lahir: string | null
   no_hp: string | null; no_ktp: string | null; alamat: string | null
   tempat_lahir: string | null; agama: string | null
   pendidikan_terakhir: string | null; no_bpjs_ketenagakerjaan: string | null
@@ -226,6 +226,7 @@ export default function KaryawanPage() {
           <div className="flex items-center justify-center gap-1">
             <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--info)" }}    onClick={() => { setSelected(row); setViewOpen(true) }}><Eye className="h-3.5 w-3.5" /></Button>
             <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "#166534" }} title="Cetak ID Card" onClick={() => window.open(`/cetak-id-karyawan/${row.id}`, "_blank")}><IdCard className="h-3.5 w-3.5" /></Button>
+            <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--primary)" }} title="Komponen Gaji" onClick={() => { window.location.href = `/dashboard/payroll/employees/${row.id}/salary` }}><Wallet className="h-3.5 w-3.5" /></Button>
             <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--warning)" }} onClick={() => openEdit(row)}><Pencil className="h-3.5 w-3.5" /></Button>
             <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--danger)" }}  onClick={() => { setSelected(row); setDeleteOpen(true) }}><Trash2 className="h-3.5 w-3.5" /></Button>
           </div>
@@ -314,6 +315,11 @@ export default function KaryawanPage() {
               {masaKerja || <span className="italic" style={{ color: "var(--text-subtle)" }}>Otomatis dihitung dari tanggal masuk</span>}
             </div>
           </div>
+
+          {/* Tanggal Keluar (resign/pensiun) — untuk prorata gaji bulan terakhir */}
+          <TextField label="Tanggal Keluar (hari kerja terakhir)" type="date"
+            value={form.tanggal_keluar?.split("T")[0] ?? ""}
+            onChange={e => set("tanggal_keluar", e.target.value)} />
 
           <TextField label="No HP" value={form.no_hp ?? ""} onChange={e => set("no_hp", e.target.value)} />
           <TextField label="No KTP" value={form.no_ktp ?? ""} onChange={e => set("no_ktp", e.target.value)} />

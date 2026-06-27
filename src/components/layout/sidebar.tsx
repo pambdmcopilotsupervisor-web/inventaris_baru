@@ -10,7 +10,7 @@ import {
   Wrench, AirVent, CreditCard, ShoppingCart, UserX, BarChart3,
   TrendingUp, Receipt, ChevronDown, ChevronRight, Package, X,
     Clock, CalendarDays, CalendarOff, CalendarCheck, AlertTriangle, CalendarX,
-    MapPin,
+    MapPin, Banknote, Settings2, ClipboardList, PlayCircle, Wallet,
 } from "lucide-react"
 
 interface NavItem { label: string; href: string; icon: React.ReactNode }
@@ -62,6 +62,18 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
+    group: "Penggajian",
+    items: [
+      { label: "Komponen Gaji",     href: "/dashboard/payroll/components",     icon: <Settings2 className="h-4 w-4" /> },
+      { label: "Komponen per Jabatan", href: "/dashboard/payroll/positions",    icon: <Banknote className="h-4 w-4" /> },
+      { label: "Aturan Potongan",   href: "/dashboard/payroll/deduction-rules", icon: <ClipboardList className="h-4 w-4" /> },
+      { label: "Pajak & BPJS",      href: "/dashboard/payroll/tax-settings",    icon: <Receipt className="h-4 w-4" /> },
+      { label: "Penyesuaian Massal", href: "/dashboard/payroll/bulk-adjust",     icon: <TrendingUp className="h-4 w-4" /> },
+      { label: "Pinjaman Karyawan", href: "/dashboard/payroll/loans",            icon: <Wallet className="h-4 w-4" /> },
+      { label: "Payroll Run",       href: "/dashboard/payroll/run",             icon: <PlayCircle className="h-4 w-4" /> },
+    ],
+  },
+  {
     group: "Laporan",
     items: [
       { label: "Tagihan Sewa", href: "/dashboard/laporan/tagihan-sewa", icon: <Receipt className="h-4 w-4" /> },
@@ -74,7 +86,7 @@ const navGroups: NavGroup[] = [
 export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
   const pathname = usePathname()
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
-    "Master Data": true, "SDM": true, "Transaksi": true, "Laporan": true,
+    "Master Data": true, "SDM": true, "Transaksi": true, "Penggajian": true, "Laporan": true,
   })
 
   const toggleGroup = (g: string) =>

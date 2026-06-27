@@ -34,6 +34,10 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
+    // Normalisasi field tanggal: string kosong → null (hindari error Prisma @db.Date)
+    for (const k of ["tanggal_masuk_kerja", "tanggal_keluar", "tanggal_lahir"]) {
+      if (k in body && (body[k] === "" || body[k] === undefined)) body[k] = null
+    }
     const karyawan = await prisma.karyawans.create({ data: body })
     return NextResponse.json(serialize(karyawan), { status: 201 })
   } catch (err) {

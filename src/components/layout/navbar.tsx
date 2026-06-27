@@ -13,7 +13,7 @@ import {
   CreditCard, ShoppingCart, Receipt, TrendingUp, ChevronRight,
   Menu, X, Layers, Clock, CalendarDays, CalendarOff, CalendarX, ClipboardList,
   Umbrella, CheckSquare, Wallet, ClipboardCheck, LogIn, Stethoscope, Timer, AlertTriangle,
-  MapPin, Shield, History,
+  MapPin, Shield, History, Banknote, Settings2, PlayCircle,
 } from "lucide-react"
 
 /* ────────────────────────────────────────────
@@ -183,6 +183,36 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    key: "penggajian",
+    label: "Penggajian",
+    icon: <Banknote className="h-4 w-4" />,
+    items: [
+      {
+        section: "Master Konfigurasi",
+        links: [
+          { label: "Komponen Gaji",   href: "/dashboard/payroll/components",      icon: <Settings2 className="h-3.5 w-3.5" />,    desc: "Definisi komponen pendapatan & potongan" },
+          { label: "Komponen per Jabatan", href: "/dashboard/payroll/positions",  icon: <Banknote className="h-3.5 w-3.5" />,     desc: "Set tunjangan/potongan berdasarkan jabatan" },
+          { label: "Aturan Potongan", href: "/dashboard/payroll/deduction-rules", icon: <ClipboardList className="h-3.5 w-3.5" />, desc: "Konfigurasi potongan absensi dinamis" },
+          { label: "Pajak & BPJS",    href: "/dashboard/payroll/tax-settings",     icon: <Receipt className="h-3.5 w-3.5" />,      desc: "Tarif BPJS, PTKP & lapisan PPh21" },
+          { label: "Penyesuaian Gaji Massal", href: "/dashboard/payroll/bulk-adjust", icon: <TrendingUp className="h-3.5 w-3.5" />, desc: "Naikkan komponen gaji untuk banyak karyawan sekaligus" },
+        ],
+      },
+      {
+        section: "Proses Gaji",
+        links: [
+          { label: "Payroll Run", href: "/dashboard/payroll/run", icon: <PlayCircle className="h-3.5 w-3.5" />, desc: "Hitung & kelola periode gaji bulanan, THR, dan Bonus" },
+        ],
+      },
+      {
+        section: "Per Karyawan",
+        links: [
+          { label: "Pinjaman Karyawan", href: "/dashboard/payroll/loans", icon: <Wallet className="h-3.5 w-3.5" />, desc: "Kelola pinjaman & cicilan, dipotong otomatis saat payroll" },
+          { label: "Struktur Gaji Karyawan", href: "/dashboard/master-data/karyawan", icon: <Users className="h-3.5 w-3.5" />, desc: "Buka Data Karyawan → ikon Wallet untuk atur gaji per orang" },
+        ],
+      },
+    ],
+  },
+  {
     key: "dashboard-kinerja",
     label: "Dashboard Kinerja",
     icon: <BarChart3 className="h-4 w-4" />,
@@ -285,7 +315,7 @@ const NAV_GROUPS: NavGroup[] = [
 /* ────────────────────────────────────────
    Dropdown Menu
    ──────────────────────────────────────── */
-function DropdownMenu({ group, pathname }: { group: NavGroup; pathname: string }) {
+function DropdownMenu({ group, pathname, onClose }: { group: NavGroup; pathname: string; onClose?: () => void }) {
   return (
     <div className="space-y-4">
       {group.items.map((section) => (
@@ -299,8 +329,7 @@ function DropdownMenu({ group, pathname }: { group: NavGroup; pathname: string }
               return (
                 <Link
                   key={link.href}
-                  href={link.href}
-                  className="flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors duration-150 cursor-pointer group/item"
+                  href={link.href}                  onClick={onClose}                  className="flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors duration-150 cursor-pointer group/item"
                   style={isActive ? { background: "var(--primary-light)" } : {}}
                   onMouseEnter={(e) => {
                     if (!isActive) (e.currentTarget as HTMLElement).style.background = "var(--surface-muted)"
@@ -337,10 +366,12 @@ export function Navbar() {
   const pathname = usePathname()
   const { user, logout, loading: authLoading } = useAuth()
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
+  const [dropdownLeft, setDropdownLeft] = useState(0)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [userOpen, setUserOpen] = useState(false)
   const [modul, setModul] = useState<AppModul | null>(null)
   const navRef = useRef<HTMLDivElement>(null)
+  const triggerRefs = useRef<Record<string, HTMLButtonElement | null>>({})
 
   // Baca localStorage setelah hydration selesai agar SSR dan client match
   useEffect(() => {
@@ -359,7 +390,7 @@ export function Navbar() {
   const activeGroups = NAV_GROUPS.filter(g => {
     if (!modul) return true // tampilkan semua jika belum pilih
     if (modul === "aset") return ["dashboard", "aset", "kendaraan", "laporan"].includes(g.key)
-    if (modul === "sdm")  return ["dashboard", "sdm", "jadwal-kerja", "absensi", "pengajuan", "lembur", "master"].includes(g.key)
+    if (modul === "sdm")  return ["dashboard", "sdm", "jadwal-kerja", "absensi", "pengajuan", "lembur", "penggajian", "master"].includes(g.key)
     if (modul === "kinerja") return ["dashboard-kinerja", "penilaian"].includes(g.key)
     return true
   }).map((g) => {
@@ -412,42 +443,55 @@ export function Navbar() {
         </Link>
 
         {/* Nav items — desktop */}
-        <nav className="hidden lg:flex items-center gap-1 flex-1">
-          {authLoading ? (
-            /* Placeholder selama loading — cegah flash semua menu */
-            <div className="flex gap-1">
-              {[1,2,3].map((i) => (
-                <div key={i} className="h-7 w-20 rounded-lg animate-pulse" style={{ background: "rgba(255,255,255,0.08)" }} />
-              ))}
-            </div>
-          ) : activeGroups.map((group) => {
-            const isActive = group.href
-              ? pathname === group.href
-              : group.items.some((s) => s.links.some((l) => pathname.startsWith(l.href)))
-            const isOpen = openDropdown === group.key
+        <nav className="hidden lg:flex flex-1 min-w-0 overflow-x-auto scrollbar-none">
+          <div className="flex items-center gap-1 py-0.5">
+            {authLoading ? (
+              /* Placeholder selama loading — cegah flash semua menu */
+              <div className="flex gap-1">
+                {[1,2,3].map((i) => (
+                  <div key={i} className="h-7 w-20 rounded-lg animate-pulse shrink-0" style={{ background: "rgba(255,255,255,0.08)" }} />
+                ))}
+              </div>
+            ) : activeGroups.map((group) => {
+              const isActive = group.href
+                ? pathname === group.href
+                : group.items.some((s) => s.links.some((l) => pathname.startsWith(l.href)))
+              const isOpen = openDropdown === group.key
 
-            return group.items.length === 0 ? (
-              /* Direct link (Dashboard) */
-              <Link
-                key={group.key}
-                href={group.href!}
-                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all duration-150 cursor-pointer"
-                style={isActive
-                  ? { background: "rgba(255,255,255,0.12)", color: "#fff" }
-                  : { color: "var(--sb-fg)" }
-                }
-                onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "var(--sb-hover-bg)" }}
-                onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent" }}
-              >
-                {group.icon}
-                {group.label}
-              </Link>
-            ) : (
-              /* Dropdown trigger */
-              <div key={group.key} className="relative">
+              return group.items.length === 0 ? (
+                /* Direct link (Dashboard) */
+                <Link
+                  key={group.key}
+                  href={group.href!}
+                  className="shrink-0 flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all duration-150 cursor-pointer"
+                  style={isActive
+                    ? { background: "rgba(255,255,255,0.12)", color: "#fff" }
+                    : { color: "var(--sb-fg)" }
+                  }
+                  onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "var(--sb-hover-bg)" }}
+                  onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent" }}
+                >
+                  {group.icon}
+                  {group.label}
+                </Link>
+              ) : (
+                /* Dropdown trigger — panel is rendered at header level, not here */
                 <button
-                  onClick={() => setOpenDropdown(isOpen ? null : group.key)}
-                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all duration-150 cursor-pointer"
+                  key={group.key}
+                  ref={(el) => { triggerRefs.current[group.key] = el }}
+                  onClick={() => {
+                    if (openDropdown === group.key) {
+                      setOpenDropdown(null)
+                    } else {
+                      const el = triggerRefs.current[group.key]
+                      if (el) {
+                        const rect = el.getBoundingClientRect()
+                        setDropdownLeft(rect.left)
+                      }
+                      setOpenDropdown(group.key)
+                    }
+                  }}
+                  className="shrink-0 flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all duration-150 cursor-pointer"
                   style={isActive || isOpen
                     ? { background: "rgba(255,255,255,0.12)", color: "#fff" }
                     : { color: "var(--sb-fg)" }
@@ -459,20 +503,25 @@ export function Navbar() {
                   {group.label}
                   <ChevronDown className={cn("h-3 w-3 transition-transform duration-150", isOpen && "rotate-180")} />
                 </button>
-
-                {/* Dropdown panel */}
-                {isOpen && (
-                  <div
-                    className="absolute top-full left-0 mt-2 w-72 rounded-xl shadow-2xl p-4"
-                    style={{ background: "var(--surface)", border: "1px solid var(--border)", zIndex: 60 }}
-                  >
-                    <DropdownMenu group={group} pathname={pathname} />
-                  </div>
-                )}
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
         </nav>
+
+        {/* Dropdown panel — rendered at header level, not inside nav, so overflow-x:auto doesn't clip it */}
+        {openDropdown && (() => {
+          const group = activeGroups.find((g) => g.key === openDropdown)
+          if (!group || group.items.length === 0) return null
+          const safeLeft = Math.min(dropdownLeft, (typeof window !== "undefined" ? window.innerWidth : 1024) - 288 - 16)
+          return (
+            <div
+              className="absolute mt-1 w-72 rounded-xl shadow-2xl p-4"
+              style={{ top: "56px", left: safeLeft, background: "var(--surface)", border: "1px solid var(--border)", zIndex: 60 }}
+            >
+              <DropdownMenu group={group} pathname={pathname} onClose={() => setOpenDropdown(null)} />
+            </div>
+          )
+        })()}
 
         {/* Right actions */}
         <div className="flex items-center gap-1.5 ml-auto shrink-0">

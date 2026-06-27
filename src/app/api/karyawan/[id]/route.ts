@@ -42,6 +42,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const body = await req.json()
     // Hapus field computed yang tidak ada di db
     const { divisi_id: _d, nama_divisi: _nd, nama_subdivisi: _ns, ...data } = body
+    // Normalisasi field tanggal: string kosong → null (hindari error Prisma @db.Date)
+    for (const k of ["tanggal_masuk_kerja", "tanggal_keluar", "tanggal_lahir"]) {
+      if (k in data && (data[k] === "" || data[k] === undefined)) data[k] = null
+    }
     const updated = await prisma.karyawans.update({ where: { id: BigInt(id) }, data })
     return NextResponse.json(serialize(updated))
   } catch (err) {

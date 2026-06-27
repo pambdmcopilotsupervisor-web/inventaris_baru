@@ -162,46 +162,53 @@ model jobs {
 }
 
 model karyawans {
-  id                      BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
-  nik                     String              @db.VarChar(255)
-  nama_karyawan           String              @db.VarChar(255)
-  divisi_id               Int?
-  jabatan                 String              @db.VarChar(255)
-  subdivisi_id            Int?
-  atasan_id               BigInt?             @db.UnsignedBigInt
-  tarif_lembur_per_jam    Decimal?            @db.Decimal(15, 2)
-  jkel                    String              @db.VarChar(15)
-  created_at              DateTime?           @db.Timestamp(0)
-  updated_at              DateTime?           @db.Timestamp(0)
-  no_ktp                  String?             @db.VarChar(255)
-  no_hp                   String?             @db.VarChar(255)
-  no_rekening             String?             @db.VarChar(255)
-  alamat                  String?             @db.VarChar(255)
-  tanggal_lahir           DateTime?           @db.Date
-  tanggal_masuk_kerja     DateTime?           @db.Date
-  tempat_lahir            String?             @db.VarChar(100)
-  nama_bank               String?             @db.VarChar(100)
-  kontak_darurat          String?             @db.VarChar(255)
-  status_karyawan         String?             @db.VarChar(100)
-  masa_kerja              Int?
-  no_bpjs_ketenagakerjaan String?             @db.VarChar(255)
-  no_bpjs_kesehatan       String?             @db.VarChar(255)
-  pendidikan_terakhir     String?             @db.VarChar(100)
-  umur                    Int?
-  agama                   String?             @db.VarChar(50)
-  foto                    String?             @db.VarChar(100)
+  id                         BigInt                       @id @default(autoincrement()) @db.UnsignedBigInt
+  nik                        String                       @db.VarChar(255)
+  nama_karyawan              String                       @db.VarChar(255)
+  divisi_id                  Int?
+  jabatan                    String                       @db.VarChar(255)
+  subdivisi_id               Int?
+  atasan_id                  BigInt?                      @db.UnsignedBigInt
+  tarif_lembur_per_jam       Decimal?                     @db.Decimal(15, 2)
+  jkel                       String                       @db.VarChar(15)
+  created_at                 DateTime?                    @db.Timestamp(0)
+  updated_at                 DateTime?                    @db.Timestamp(0)
+  no_ktp                     String?                      @db.VarChar(255)
+  no_hp                      String?                      @db.VarChar(255)
+  no_rekening                String?                      @db.VarChar(255)
+  alamat                     String?                      @db.VarChar(255)
+  tanggal_lahir              DateTime?                    @db.Date
+  tanggal_masuk_kerja        DateTime?                    @db.Date
+  tanggal_keluar             DateTime?                    @db.Date
+  tempat_lahir               String?                      @db.VarChar(100)
+  nama_bank                  String?                      @db.VarChar(100)
+  kontak_darurat             String?                      @db.VarChar(255)
+  status_karyawan            String?                      @db.VarChar(100)
+  masa_kerja                 Int?
+  no_bpjs_ketenagakerjaan    String?                      @db.VarChar(255)
+  no_bpjs_kesehatan          String?                      @db.VarChar(255)
+  pendidikan_terakhir        String?                      @db.VarChar(100)
+  umur                       Int?
+  agama                      String?                      @db.VarChar(50)
+  foto                       String?                      @db.VarChar(100)
+  status_ptkp                String                       @default("TK/0") @db.VarChar(10)
+  punya_npwp                 Boolean                      @default(true)
   // Self-relation: atasan langsung
-  atasan                  karyawans?          @relation("KaryawanAtasan", fields: [atasan_id], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "karyawans_atasan_id_foreign")
-  bawahan                 karyawans[]         @relation("KaryawanAtasan")
-  mutasi_karyawans        mutasi_karyawans[]
-  pensiun_karyawans       pensiun_karyawans[]
-  jadwal_shifts           jadwal_shifts[]
-  absensi                 absensi[]
-  pengajuan_cutis         pengajuan_cutis[]
-  saldo_cutis             saldo_cutis[]
-  pengajuan_izins         pengajuan_izins[]
-  pengajuan_sakits        pengajuan_sakits[]
-  overtime_requests       overtime_requests[]
+  atasan                     karyawans?                   @relation("KaryawanAtasan", fields: [atasan_id], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "karyawans_atasan_id_foreign")
+  bawahan                    karyawans[]                  @relation("KaryawanAtasan")
+  mutasi_karyawans           mutasi_karyawans[]
+  pensiun_karyawans          pensiun_karyawans[]
+  jadwal_shifts              jadwal_shifts[]
+  absensi                    absensi[]
+  pengajuan_cutis            pengajuan_cutis[]
+  saldo_cutis                saldo_cutis[]
+  pengajuan_izins            pengajuan_izins[]
+  pengajuan_sakits           pengajuan_sakits[]
+  overtime_requests          overtime_requests[]
+  employee_salary_components employee_salary_components[]
+  payroll_slips              payroll_slips[]
+  employee_loans             employee_loans[]
+  payroll_adjustments        payroll_adjustments[]
 }
 
 model kontrak_details {
@@ -448,7 +455,7 @@ model users {
   email             String?   @unique(map: "users_email_unique") @db.VarChar(255)
   email_verified_at DateTime? @db.Timestamp(0)
   password          String    @db.VarChar(255)
-  password_baru     String?   @db.VarChar(255)  // Khusus inventaris_baru — tidak mengubah kolom password lama
+  password_baru     String?   @db.VarChar(255) // Khusus inventaris_baru — tidak mengubah kolom password lama
   remember_token    String?   @db.VarChar(100)
   created_at        DateTime? @db.Timestamp(0)
   updated_at        DateTime? @db.Timestamp(0)
@@ -497,13 +504,13 @@ model hari_liburs {
 }
 
 model jadwal_shifts {
-  id          BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
-  karyawan_id BigInt       @db.UnsignedBigInt
-  shift_id    BigInt       @db.UnsignedBigInt
-  tanggal     DateTime     @db.Date
-  keterangan  String?      @db.VarChar(255)
-  created_at  DateTime?    @db.Timestamp(0)
-  updated_at  DateTime?    @db.Timestamp(0)
+  id           BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
+  karyawan_id  BigInt       @db.UnsignedBigInt
+  shift_id     BigInt       @db.UnsignedBigInt
+  tanggal      DateTime     @db.Date
+  keterangan   String?      @db.VarChar(255)
+  created_at   DateTime?    @db.Timestamp(0)
+  updated_at   DateTime?    @db.Timestamp(0)
   karyawans    karyawans    @relation(fields: [karyawan_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "jadwal_shifts_karyawan_id_foreign")
   shift_kerjas shift_kerjas @relation(fields: [shift_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "jadwal_shifts_shift_id_foreign")
   absensi      absensi[]
@@ -591,39 +598,39 @@ model jenis_cutis {
 }
 
 model saldo_cutis {
-  id                     BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
-  karyawan_id            BigInt       @db.UnsignedBigInt
-  jenis_cuti_id          BigInt       @db.UnsignedBigInt
+  id                     BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
+  karyawan_id            BigInt      @db.UnsignedBigInt
+  jenis_cuti_id          BigInt      @db.UnsignedBigInt
   tahun                  Int
-  saldo_awal             Int          @default(0)
-  saldo_terpakai         Int          @default(0)
-  saldo_penyesuaian      Int          @default(0)
-  keterangan_penyesuaian String?      @db.VarChar(255)
-  created_at             DateTime?    @db.Timestamp(0)
-  updated_at             DateTime?    @db.Timestamp(0)
-  karyawans              karyawans    @relation(fields: [karyawan_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "saldo_cutis_karyawan_id_foreign")
-  jenis_cutis            jenis_cutis  @relation(fields: [jenis_cuti_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "saldo_cutis_jenis_cuti_id_foreign")
+  saldo_awal             Int         @default(0)
+  saldo_terpakai         Int         @default(0)
+  saldo_penyesuaian      Int         @default(0)
+  keterangan_penyesuaian String?     @db.VarChar(255)
+  created_at             DateTime?   @db.Timestamp(0)
+  updated_at             DateTime?   @db.Timestamp(0)
+  karyawans              karyawans   @relation(fields: [karyawan_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "saldo_cutis_karyawan_id_foreign")
+  jenis_cutis            jenis_cutis @relation(fields: [jenis_cuti_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "saldo_cutis_jenis_cuti_id_foreign")
 
   @@unique([karyawan_id, jenis_cuti_id, tahun], map: "saldo_cutis_karyawan_jenis_tahun_unique")
   @@index([jenis_cuti_id], map: "saldo_cutis_jenis_cuti_id_index")
 }
 
 model pengajuan_cutis {
-  id                 BigInt                   @id @default(autoincrement()) @db.UnsignedBigInt
-  karyawan_id        BigInt                   @db.UnsignedBigInt
-  jenis_cuti_id      BigInt                   @db.UnsignedBigInt
-  tanggal_mulai      DateTime                 @db.Date
-  tanggal_selesai    DateTime                 @db.Date
-  jumlah_hari        Int                      @default(0)
-  alasan             String                   @db.Text
-  alamat_selama_cuti String?                  @db.VarChar(255)
-  lampiran           String?                  @db.VarChar(255)
-  status             String                   @default("draft") @db.VarChar(30)
-  dibuat_oleh        BigInt?                  @db.UnsignedBigInt
-  created_at         DateTime?                @db.Timestamp(0)
-  updated_at         DateTime?                @db.Timestamp(0)
-  karyawans          karyawans                @relation(fields: [karyawan_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "pengajuan_cutis_karyawan_id_foreign")
-  jenis_cutis        jenis_cutis              @relation(fields: [jenis_cuti_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "pengajuan_cutis_jenis_cuti_id_foreign")
+  id                 BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
+  karyawan_id        BigInt                    @db.UnsignedBigInt
+  jenis_cuti_id      BigInt                    @db.UnsignedBigInt
+  tanggal_mulai      DateTime                  @db.Date
+  tanggal_selesai    DateTime                  @db.Date
+  jumlah_hari        Int                       @default(0)
+  alasan             String                    @db.Text
+  alamat_selama_cuti String?                   @db.VarChar(255)
+  lampiran           String?                   @db.VarChar(255)
+  status             String                    @default("draft") @db.VarChar(30)
+  dibuat_oleh        BigInt?                   @db.UnsignedBigInt
+  created_at         DateTime?                 @db.Timestamp(0)
+  updated_at         DateTime?                 @db.Timestamp(0)
+  karyawans          karyawans                 @relation(fields: [karyawan_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "pengajuan_cutis_karyawan_id_foreign")
+  jenis_cutis        jenis_cutis               @relation(fields: [jenis_cuti_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "pengajuan_cutis_jenis_cuti_id_foreign")
   approvals          leave_request_approvals[]
 
   @@index([karyawan_id], map: "pengajuan_cutis_karyawan_id_index")
@@ -632,18 +639,18 @@ model pengajuan_cutis {
 }
 
 model leave_request_approvals {
-  id                BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
-  pengajuan_cuti_id BigInt           @db.UnsignedBigInt
-  approver_id       BigInt?          @db.UnsignedBigInt
-  approver_user_id  BigInt?          @db.UnsignedBigInt
-  approver_role     String           @db.VarChar(50)
+  id                BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
+  pengajuan_cuti_id BigInt          @db.UnsignedBigInt
+  approver_id       BigInt?         @db.UnsignedBigInt
+  approver_user_id  BigInt?         @db.UnsignedBigInt
+  approver_role     String          @db.VarChar(50)
   approval_level    Int
-  status            String           @default("pending") @db.VarChar(20)
-  note              String?          @db.Text
-  approved_at       DateTime?        @db.Timestamp(0)
-  created_at        DateTime?        @db.Timestamp(0)
-  updated_at        DateTime?        @db.Timestamp(0)
-  pengajuan_cutis   pengajuan_cutis  @relation(fields: [pengajuan_cuti_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "lra_pengajuan_cuti_id_foreign")
+  status            String          @default("pending") @db.VarChar(20)
+  note              String?         @db.Text
+  approved_at       DateTime?       @db.Timestamp(0)
+  created_at        DateTime?       @db.Timestamp(0)
+  updated_at        DateTime?       @db.Timestamp(0)
+  pengajuan_cutis   pengajuan_cutis @relation(fields: [pengajuan_cuti_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "lra_pengajuan_cuti_id_foreign")
 
   @@index([pengajuan_cuti_id], map: "lra_pengajuan_id_index")
   @@index([approver_id], map: "lra_approver_id_index")
@@ -668,23 +675,23 @@ model jenis_izins {
 }
 
 model pengajuan_izins {
-  id              BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
-  karyawan_id     BigInt            @db.UnsignedBigInt
-  jenis_izin_id   BigInt            @db.UnsignedBigInt
-  tanggal_mulai   DateTime          @db.Date
-  tanggal_selesai DateTime          @db.Date
-  jam_mulai       String?           @db.VarChar(8)
-  jam_selesai     String?           @db.VarChar(8)
-  durasi          Decimal           @default(0) @db.Decimal(5, 2)
-  satuan_durasi   String            @default("hari") @db.VarChar(5)
-  alasan          String            @db.Text
-  lampiran        String?           @db.VarChar(255)
-  status          String            @default("draft") @db.VarChar(30)
-  dibuat_oleh     BigInt?           @db.UnsignedBigInt
-  created_at      DateTime?         @db.Timestamp(0)
-  updated_at      DateTime?         @db.Timestamp(0)
-  karyawans       karyawans         @relation(fields: [karyawan_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "pengajuan_izins_karyawan_id_foreign")
-  jenis_izins     jenis_izins       @relation(fields: [jenis_izin_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "pengajuan_izins_jenis_izin_id_foreign")
+  id              BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
+  karyawan_id     BigInt           @db.UnsignedBigInt
+  jenis_izin_id   BigInt           @db.UnsignedBigInt
+  tanggal_mulai   DateTime         @db.Date
+  tanggal_selesai DateTime         @db.Date
+  jam_mulai       String?          @db.VarChar(8)
+  jam_selesai     String?          @db.VarChar(8)
+  durasi          Decimal          @default(0) @db.Decimal(5, 2)
+  satuan_durasi   String           @default("hari") @db.VarChar(5)
+  alasan          String           @db.Text
+  lampiran        String?          @db.VarChar(255)
+  status          String           @default("draft") @db.VarChar(30)
+  dibuat_oleh     BigInt?          @db.UnsignedBigInt
+  created_at      DateTime?        @db.Timestamp(0)
+  updated_at      DateTime?        @db.Timestamp(0)
+  karyawans       karyawans        @relation(fields: [karyawan_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "pengajuan_izins_karyawan_id_foreign")
+  jenis_izins     jenis_izins      @relation(fields: [jenis_izin_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "pengajuan_izins_jenis_izin_id_foreign")
   izin_approvals  izin_approvals[]
 
   @@index([karyawan_id], map: "pengajuan_izins_karyawan_id_index")
@@ -693,18 +700,18 @@ model pengajuan_izins {
 }
 
 model izin_approvals {
-  id                BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
-  pengajuan_izin_id BigInt           @db.UnsignedBigInt
-  approver_id       BigInt?          @db.UnsignedBigInt
-  approver_user_id  BigInt?          @db.UnsignedBigInt
-  approver_role     String           @db.VarChar(50)
+  id                BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
+  pengajuan_izin_id BigInt          @db.UnsignedBigInt
+  approver_id       BigInt?         @db.UnsignedBigInt
+  approver_user_id  BigInt?         @db.UnsignedBigInt
+  approver_role     String          @db.VarChar(50)
   approval_level    Int
-  status            String           @default("pending") @db.VarChar(20)
-  note              String?          @db.Text
-  approved_at       DateTime?        @db.Timestamp(0)
-  created_at        DateTime?        @db.Timestamp(0)
-  updated_at        DateTime?        @db.Timestamp(0)
-  pengajuan_izins   pengajuan_izins  @relation(fields: [pengajuan_izin_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "izin_approvals_pengajuan_izin_id_foreign")
+  status            String          @default("pending") @db.VarChar(20)
+  note              String?         @db.Text
+  approved_at       DateTime?       @db.Timestamp(0)
+  created_at        DateTime?       @db.Timestamp(0)
+  updated_at        DateTime?       @db.Timestamp(0)
+  pengajuan_izins   pengajuan_izins @relation(fields: [pengajuan_izin_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "izin_approvals_pengajuan_izin_id_foreign")
 
   @@index([pengajuan_izin_id], map: "izin_approvals_pengajuan_id_index")
   @@index([approver_id], map: "izin_approvals_approver_id_index")
@@ -738,18 +745,18 @@ model pengajuan_sakits {
 }
 
 model sakit_approvals {
-  id                   BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
-  pengajuan_sakit_id   BigInt            @db.UnsignedBigInt
-  approver_id          BigInt?           @db.UnsignedBigInt
-  approver_user_id     BigInt?           @db.UnsignedBigInt
-  approver_role        String            @db.VarChar(50)
-  approval_level       Int
-  status               String            @default("pending") @db.VarChar(20)
-  note                 String?           @db.Text
-  approved_at          DateTime?         @db.Timestamp(0)
-  created_at           DateTime?         @db.Timestamp(0)
-  updated_at           DateTime?         @db.Timestamp(0)
-  pengajuan_sakits     pengajuan_sakits  @relation(fields: [pengajuan_sakit_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "sakit_approvals_pengajuan_sakit_id_foreign")
+  id                 BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
+  pengajuan_sakit_id BigInt           @db.UnsignedBigInt
+  approver_id        BigInt?          @db.UnsignedBigInt
+  approver_user_id   BigInt?          @db.UnsignedBigInt
+  approver_role      String           @db.VarChar(50)
+  approval_level     Int
+  status             String           @default("pending") @db.VarChar(20)
+  note               String?          @db.Text
+  approved_at        DateTime?        @db.Timestamp(0)
+  created_at         DateTime?        @db.Timestamp(0)
+  updated_at         DateTime?        @db.Timestamp(0)
+  pengajuan_sakits   pengajuan_sakits @relation(fields: [pengajuan_sakit_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "sakit_approvals_pengajuan_sakit_id_foreign")
 
   @@index([pengajuan_sakit_id], map: "sakit_approvals_pengajuan_id_index")
   @@index([approver_id], map: "sakit_approvals_approver_id_index")
@@ -777,32 +784,32 @@ model overtime_settings {
 }
 
 model overtime_requests {
-  id                     BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
-  karyawan_id            BigInt             @db.UnsignedBigInt
-  tanggal_lembur         DateTime           @db.Date
-  jam_mulai_rencana      String             @db.VarChar(8)
-  jam_selesai_rencana    String             @db.VarChar(8)
-  durasi_rencana_menit   Int                @default(0)
-  jam_mulai_aktual       String?            @db.VarChar(8)
-  jam_selesai_aktual     String?            @db.VarChar(8)
+  id                     BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  karyawan_id            BigInt               @db.UnsignedBigInt
+  tanggal_lembur         DateTime             @db.Date
+  jam_mulai_rencana      String               @db.VarChar(8)
+  jam_selesai_rencana    String               @db.VarChar(8)
+  durasi_rencana_menit   Int                  @default(0)
+  jam_mulai_aktual       String?              @db.VarChar(8)
+  jam_selesai_aktual     String?              @db.VarChar(8)
   durasi_aktual_menit    Int?
   durasi_disetujui_menit Int?
-  alasan_lembur          String             @db.Text
-  pekerjaan_lembur       String?            @db.Text
-  lampiran               String?            @db.VarChar(255)
-  status                 String             @default("draft") @db.VarChar(30)
-  total_uang_lembur      Decimal?           @db.Decimal(15, 2)
+  alasan_lembur          String               @db.Text
+  pekerjaan_lembur       String?              @db.Text
+  lampiran               String?              @db.VarChar(255)
+  status                 String               @default("draft") @db.VarChar(30)
+  total_uang_lembur      Decimal?             @db.Decimal(15, 2)
   calculation_detail     Json?
-  catatan_realisasi      String?            @db.Text
-  is_lintas_hari         Boolean            @default(false)
-  overtime_setting_id    BigInt?            @db.UnsignedBigInt
-  submitted_at           DateTime?          @db.Timestamp(0)
-  realized_at            DateTime?          @db.Timestamp(0)
-  dibuat_oleh            BigInt?            @db.UnsignedBigInt
-  created_at             DateTime?          @db.Timestamp(0)
-  updated_at             DateTime?          @db.Timestamp(0)
-  karyawans              karyawans          @relation(fields: [karyawan_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "overtime_requests_karyawan_id_foreign")
-  overtime_settings      overtime_settings? @relation(fields: [overtime_setting_id], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "overtime_requests_setting_id_foreign")
+  catatan_realisasi      String?              @db.Text
+  is_lintas_hari         Boolean              @default(false)
+  overtime_setting_id    BigInt?              @db.UnsignedBigInt
+  submitted_at           DateTime?            @db.Timestamp(0)
+  realized_at            DateTime?            @db.Timestamp(0)
+  dibuat_oleh            BigInt?              @db.UnsignedBigInt
+  created_at             DateTime?            @db.Timestamp(0)
+  updated_at             DateTime?            @db.Timestamp(0)
+  karyawans              karyawans            @relation(fields: [karyawan_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "overtime_requests_karyawan_id_foreign")
+  overtime_settings      overtime_settings?   @relation(fields: [overtime_setting_id], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "overtime_requests_setting_id_foreign")
   overtime_approvals     overtime_approvals[]
 
   @@index([karyawan_id], map: "overtime_requests_karyawan_id_index")
@@ -867,4 +874,415 @@ model user_menu_permissions {
 
   @@unique([user_id, menu_href], map: "uq_user_menu")
   @@index([user_id], map: "idx_user_id")
+}
+
+// ─── Payroll (Penggajian) ────────────────────────────────────────
+// Prinsip: komponen dinamis/configurable, setiap payroll = snapshot immutable
+// (kode/nama/nilai komponen dibekukan di payroll_slip_details), nilai mengacu
+// pada data periode berjalan.
+
+// ─── Enums Payroll ───────────────────────────────────────────────
+enum PayrollComponentType {
+  EARNING
+  DEDUCTION
+}
+
+enum PayrollCalcMethod {
+  FIXED
+  PERCENT
+  FORMULA
+}
+
+enum AttendanceTriggerType {
+  ALFA
+  LATE
+  EARLY_LEAVE
+  SICK_NO_CERT
+}
+
+enum AttendanceDeductionMethod {
+  PER_DAY
+  PER_HOUR
+  PER_MINUTE
+  FLAT
+  PERCENT
+}
+
+enum LateTierDeductionType {
+  FIXED
+  PERCENT
+  PER_HOUR
+}
+
+enum PayrollPeriodStatus {
+  DRAFT
+  CALCULATED
+  APPROVED
+  PAID
+  CLOSED
+}
+
+enum PayrollSlipStatus {
+  PENDING
+  REVIEWED
+  APPROVED
+}
+
+enum PayrollRunType {
+  REGULER
+  THR
+  BONUS
+}
+
+enum PayrollDetailCategory {
+  SALARY
+  ATTENDANCE_DEDUCTION
+  TAX
+  BPJS
+  LOAN
+  OTHER
+}
+
+/// Master komponen gaji — dinamis & configurable (tidak hardcode).
+/// calc_method:
+///   FIXED   → nilai dari employee_salary_components.value
+///   PERCENT → persentase dari basis_component_id; rate default di formula_expression,
+///             dapat di-override per karyawan via employee_salary_components.value
+///   FORMULA → ekspresi matematika di formula_expression (mis. "GAJI_POKOK * 0.0424")
+model salary_components {
+  id                 BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  code               String               @unique @db.VarChar(40)
+  name               String               @db.VarChar(150)
+  type               PayrollComponentType @default(EARNING)
+  calc_method        PayrollCalcMethod    @default(FIXED)
+  formula_expression String?              @db.Text
+  default_rate       Decimal?             @db.Decimal(15, 4)
+  basis_component_id BigInt?              @db.UnsignedBigInt
+  calc_order         Int                  @default(0)
+  is_taxable         Boolean              @default(false)
+  is_active          Boolean              @default(true)
+  is_statutory       Boolean              @default(false)
+  is_prorata         Boolean              @default(false)
+  is_thr_basis       Boolean              @default(false)
+  created_at         DateTime?            @db.Timestamp(0)
+  updated_at         DateTime?            @db.Timestamp(0)
+
+  basis_component     salary_components?           @relation("SalaryComponentBasis", fields: [basis_component_id], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "salary_components_basis_id_foreign")
+  derived_components  salary_components[]          @relation("SalaryComponentBasis")
+  employee_components employee_salary_components[]
+  jabatan_components  jabatan_salary_components[]
+  deduction_rules     attendance_deduction_rules[]
+  slip_details        payroll_slip_details[]
+
+  @@index([type], map: "salary_components_type_index")
+  @@index([calc_order], map: "salary_components_calc_order_index")
+  @@index([is_active], map: "salary_components_is_active_index")
+  @@index([basis_component_id], map: "salary_components_basis_id_index")
+}
+
+/// Komponen gaji per karyawan (effective-dated). value = nominal (FIXED) atau persentase (PERCENT).
+model employee_salary_components {
+  id             BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  employee_id    BigInt    @db.UnsignedBigInt
+  component_id   BigInt    @db.UnsignedBigInt
+  value          Decimal   @default(0.0000) @db.Decimal(15, 4)
+  effective_date DateTime  @db.Date
+  end_date       DateTime? @db.Date
+  created_at     DateTime? @db.Timestamp(0)
+  updated_at     DateTime? @db.Timestamp(0)
+
+  karyawans         karyawans         @relation(fields: [employee_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "esc_employee_id_foreign")
+  salary_components salary_components @relation(fields: [component_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "esc_component_id_foreign")
+
+  @@index([employee_id], map: "esc_employee_id_index")
+  @@index([component_id], map: "esc_component_id_index")
+  @@index([effective_date, end_date], map: "esc_effective_index")
+}
+
+/// Komponen gaji per JABATAN (effective-dated). Dipakai bila karyawan tidak
+/// memiliki override per individu (employee_salary_components menang).
+model jabatan_salary_components {
+  id             BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  jabatan        String    @db.VarChar(255)
+  component_id   BigInt    @db.UnsignedBigInt
+  value          Decimal   @default(0.0000) @db.Decimal(15, 4)
+  effective_date DateTime  @db.Date
+  end_date       DateTime? @db.Date
+  created_at     DateTime? @db.Timestamp(0)
+  updated_at     DateTime? @db.Timestamp(0)
+
+  salary_components salary_components @relation(fields: [component_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "jsc_component_id_foreign")
+
+  @@index([jabatan], map: "jsc_jabatan_index")
+  @@index([component_id], map: "jsc_component_id_index")
+  @@index([effective_date, end_date], map: "jsc_effective_index")
+}
+
+/// Aturan potongan absensi (configurable). basis_component_id biasanya GAJI_POKOK.
+model attendance_deduction_rules {
+  id                      BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
+  name                    String                    @db.VarChar(150)
+  trigger_type            AttendanceTriggerType
+  calc_method             AttendanceDeductionMethod
+  basis_component_id      BigInt?                   @db.UnsignedBigInt
+  value                   Decimal                   @default(0.0000) @db.Decimal(15, 4)
+  working_days            Int                       @default(22)
+  tolerance_minutes       Int?
+  max_deduction_per_month Decimal?                  @db.Decimal(15, 2)
+  is_active               Boolean                   @default(true)
+  created_at              DateTime?                 @db.Timestamp(0)
+  updated_at              DateTime?                 @db.Timestamp(0)
+
+  basis_component salary_components?      @relation(fields: [basis_component_id], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "adr_basis_component_id_foreign")
+  late_tiers      attendance_late_tiers[]
+
+  @@index([trigger_type], map: "adr_trigger_type_index")
+  @@index([is_active], map: "adr_is_active_index")
+  @@index([basis_component_id], map: "adr_basis_component_id_index")
+}
+
+/// Tier keterlambatan progresif untuk aturan potongan absensi (trigger_type = LATE).
+model attendance_late_tiers {
+  id                BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  rule_id           BigInt                @db.UnsignedBigInt
+  late_from_minutes Int
+  late_to_minutes   Int?
+  deduction_type    LateTierDeductionType
+  deduction_value   Decimal               @default(0.0000) @db.Decimal(15, 4)
+  created_at        DateTime?             @db.Timestamp(0)
+  updated_at        DateTime?             @db.Timestamp(0)
+
+  rule attendance_deduction_rules @relation(fields: [rule_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "alt_rule_id_foreign")
+
+  @@index([rule_id], map: "alt_rule_id_index")
+  @@index([late_from_minutes], map: "alt_late_from_index")
+}
+
+/// Periode payroll (per bulan). Satu periode unik per (bulan, tahun).
+model payroll_periods {
+  id           BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  period_month Int                 @db.UnsignedTinyInt
+  period_year  Int                 @db.UnsignedSmallInt
+  // Rentang tanggal aktual periode (untuk absensi, komponen efektif, prorata).
+  // NULL = pakai 1 s.d. akhir bulan (period_month/period_year) sebagai default.
+  period_start_date DateTime?      @db.Date
+  period_end_date   DateTime?      @db.Date
+  run_type     PayrollRunType      @default(REGULER)
+  thr_min_masa_bulan Int            @default(12)
+  bonus_multiplier   Decimal       @default(1.00) @db.Decimal(6, 2)
+  run_label    String?             @db.VarChar(150)
+  status       PayrollPeriodStatus @default(DRAFT)
+  notes        String?             @db.Text
+  created_by   BigInt?             @db.UnsignedBigInt
+  approved_by  BigInt?             @db.UnsignedBigInt
+  tanggal_bayar DateTime?          @db.Date
+  paid_by      BigInt?             @db.UnsignedBigInt
+  paid_at      DateTime?           @db.Timestamp(0)
+  closed_at    DateTime?           @db.Timestamp(0)
+  created_at   DateTime?           @db.Timestamp(0)
+  updated_at   DateTime?           @db.Timestamp(0)
+
+  payroll_slips payroll_slips[]
+  payroll_adjustments payroll_adjustments[]
+  employee_loan_payments employee_loan_payments[]
+
+  @@unique([period_month, period_year, run_type], map: "payroll_periods_month_year_type_unique")
+  @@index([status], map: "payroll_periods_status_index")
+}
+
+/// Header payroll per karyawan — SNAPSHOT (working_days & total dibekukan).
+model payroll_slips {
+  id                BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  payroll_period_id BigInt            @db.UnsignedBigInt
+  employee_id       BigInt            @db.UnsignedBigInt
+  slip_number       String?           @db.VarChar(40)
+  working_days      Int               @default(0)
+  total_earnings    Decimal           @default(0.00) @db.Decimal(18, 2)
+  total_deductions  Decimal           @default(0.00) @db.Decimal(18, 2)
+  net_salary        Decimal           @default(0.00) @db.Decimal(18, 2)
+  status            PayrollSlipStatus @default(PENDING)
+  tax_detail        Json?
+  attendance_snapshot Json?
+  created_at        DateTime?         @db.Timestamp(0)
+  updated_at        DateTime?         @db.Timestamp(0)
+
+  payroll_periods payroll_periods        @relation(fields: [payroll_period_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "ps_payroll_period_id_foreign")
+  karyawans       karyawans              @relation(fields: [employee_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "ps_employee_id_foreign")
+  details         payroll_slip_details[]
+  loan_payments   employee_loan_payments[]
+
+  @@unique([payroll_period_id, employee_id], map: "payroll_slips_period_employee_unique")
+  @@index([employee_id], map: "payroll_slips_employee_id_index")
+  @@index([status], map: "payroll_slips_status_index")
+}
+
+/// Detail payroll per komponen — SNAPSHOT baris (kode/nama komponen & nilai dibekukan).
+model payroll_slip_details {
+  id              BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  payroll_slip_id BigInt                @db.UnsignedBigInt
+  component_id    BigInt?               @db.UnsignedBigInt
+  component_code  String                @db.VarChar(40)
+  component_name  String                @db.VarChar(150)
+  type            PayrollComponentType
+  category        PayrollDetailCategory @default(OTHER)
+  basis_value     Decimal               @default(0.00) @db.Decimal(18, 2)
+  quantity        Decimal               @default(1.00) @db.Decimal(10, 2)
+  amount          Decimal               @default(0.00) @db.Decimal(18, 2)
+  notes           String?               @db.VarChar(255)
+  sort_order      Int                   @default(0)
+  created_at      DateTime?             @db.Timestamp(0)
+  updated_at      DateTime?             @db.Timestamp(0)
+
+  payroll_slips     payroll_slips      @relation(fields: [payroll_slip_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "psd_payroll_slip_id_foreign")
+  salary_components salary_components? @relation(fields: [component_id], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "psd_component_id_foreign")
+
+  @@index([payroll_slip_id], map: "payroll_slip_details_slip_id_index")
+  @@index([component_id], map: "payroll_slip_details_component_id_index")
+}
+
+enum LoanStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+/// Pinjaman/cicilan karyawan. Potongan cicilan otomatis tiap payroll REGULER
+/// sampai sisa pokok habis. Snapshot potongan dicatat di employee_loan_payments.
+model employee_loans {
+  id                 BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
+  employee_id        BigInt     @db.UnsignedBigInt
+  loan_number        String?    @db.VarChar(40)
+  title              String     @db.VarChar(150)
+  principal_amount   Decimal    @default(0.00) @db.Decimal(18, 2)
+  installment_amount Decimal    @default(0.00) @db.Decimal(18, 2)
+  tenor_months       Int        @default(0)
+  start_month        Int        @db.UnsignedTinyInt
+  start_year         Int        @db.UnsignedSmallInt
+  status             LoanStatus @default(ACTIVE)
+  notes              String?    @db.Text
+  created_at         DateTime?  @db.Timestamp(0)
+  updated_at         DateTime?  @db.Timestamp(0)
+
+  karyawans karyawans                @relation(fields: [employee_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "loan_employee_id_foreign")
+  payments  employee_loan_payments[]
+
+  @@index([employee_id], map: "employee_loans_employee_id_index")
+  @@index([status], map: "employee_loans_status_index")
+}
+
+/// Riwayat potongan cicilan per periode payroll (snapshot, idempotent per slip).
+model employee_loan_payments {
+  id              BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  loan_id         BigInt    @db.UnsignedBigInt
+  payroll_slip_id BigInt?   @db.UnsignedBigInt
+  payroll_period_id BigInt? @db.UnsignedBigInt
+  period_month    Int       @db.UnsignedTinyInt
+  period_year     Int       @db.UnsignedSmallInt
+  amount          Decimal   @default(0.00) @db.Decimal(18, 2)
+  created_at      DateTime? @db.Timestamp(0)
+  updated_at      DateTime? @db.Timestamp(0)
+
+  loan          employee_loans @relation(fields: [loan_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "loanpay_loan_id_foreign")
+  payroll_slips payroll_slips? @relation(fields: [payroll_slip_id], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "loanpay_slip_id_foreign")
+  payroll_periods payroll_periods? @relation(fields: [payroll_period_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "loanpay_period_id_foreign")
+
+  @@index([loan_id], map: "employee_loan_payments_loan_id_index")
+  @@index([payroll_slip_id], map: "employee_loan_payments_slip_id_index")
+  @@index([payroll_period_id], map: "employee_loan_payments_period_id_index")
+  @@index([period_year, period_month], map: "employee_loan_payments_period_index")
+}
+
+/// Penyesuaian sekali jalan (one-time) per periode payroll & karyawan.
+/// Disuntik sebagai komponen FIXED saat kalkulasi (mis. bonus proyek, denda).
+model payroll_adjustments {
+  id                BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  payroll_period_id BigInt               @db.UnsignedBigInt
+  employee_id       BigInt               @db.UnsignedBigInt
+  type              PayrollComponentType @default(EARNING)
+  label             String               @db.VarChar(150)
+  amount            Decimal              @default(0.00) @db.Decimal(18, 2)
+  is_taxable        Boolean              @default(false)
+  notes             String?              @db.VarChar(255)
+  created_at        DateTime?            @db.Timestamp(0)
+  updated_at        DateTime?            @db.Timestamp(0)
+
+  payroll_periods payroll_periods @relation(fields: [payroll_period_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "padj_period_id_foreign")
+  karyawans       karyawans       @relation(fields: [employee_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "padj_employee_id_foreign")
+
+  @@index([payroll_period_id], map: "payroll_adjustments_period_id_index")
+  @@index([employee_id], map: "payroll_adjustments_employee_id_index")
+}
+
+// ─── Compliance Pajak (PPh21) & BPJS ─────────────────────────────
+
+/// Pengaturan BPJS per jenis (KES, JHT, JP, JKK, JKM) — configurable.
+model bpjs_settings {
+  id                   BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  kode                 String    @unique @db.VarChar(20)
+  nama                 String    @db.VarChar(100)
+  rate_karyawan        Decimal   @default(0.0000) @db.Decimal(7, 4)
+  rate_perusahaan      Decimal   @default(0.0000) @db.Decimal(7, 4)
+  batas_atas_upah      Decimal?  @db.Decimal(15, 2)
+  basis_component_code String    @default("GAJI_POKOK") @db.VarChar(40)
+  menambah_bruto_pajak Boolean   @default(false)
+  pengurang_pajak      Boolean   @default(false)
+  is_active            Boolean   @default(true)
+  urutan               Int       @default(0)
+  keterangan           String?   @db.VarChar(255)
+  created_at           DateTime? @db.Timestamp(0)
+  updated_at           DateTime? @db.Timestamp(0)
+}
+
+/// PTKP + kategori TER (configurable).
+model ptkp_settings {
+  id              BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  kode            String    @unique @db.VarChar(10)
+  nama            String    @db.VarChar(100)
+  nominal_setahun Decimal   @db.Decimal(15, 2)
+  kategori_ter    String    @default("A") @db.VarChar(1)
+  is_active       Boolean   @default(true)
+  urutan          Int       @default(0)
+  created_at      DateTime? @db.Timestamp(0)
+  updated_at      DateTime? @db.Timestamp(0)
+}
+
+/// Lapisan tarif progresif PPh21 (UU HPP).
+model pph21_brackets {
+  id           BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  urutan       Int       @default(0)
+  batas_bawah  Decimal   @default(0.00) @db.Decimal(18, 2)
+  batas_atas   Decimal?  @db.Decimal(18, 2)
+  tarif_persen Decimal   @default(0.00) @db.Decimal(5, 2)
+  created_at   DateTime? @db.Timestamp(0)
+  updated_at   DateTime? @db.Timestamp(0)
+}
+
+/// Tarif Efektif Rata-rata (TER) PPh21 bulanan — PP 58/2023.
+model pph21_ter_rates {
+  id           BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  kategori     String    @db.VarChar(1)
+  bruto_min    Decimal   @default(0.00) @db.Decimal(18, 2)
+  bruto_max    Decimal?  @db.Decimal(18, 2)
+  tarif_persen Decimal   @default(0.000) @db.Decimal(6, 3)
+  urutan       Int       @default(0)
+  created_at   DateTime? @db.Timestamp(0)
+  updated_at   DateTime? @db.Timestamp(0)
+
+  @@unique([kategori, bruto_min], map: "pph21_ter_rates_kategori_min_unique")
+  @@index([kategori, bruto_min], map: "pph21_ter_rates_kategori_index")
+}
+
+/// Konfigurasi pajak global (single row).
+model payroll_tax_configs {
+  id                       BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  biaya_jabatan_persen     Decimal   @default(5.00) @db.Decimal(5, 2)
+  biaya_jabatan_maks_bulan Decimal   @default(500000.00) @db.Decimal(15, 2)
+  metode_pph21             String    @default("PROGRESIF") @db.VarChar(20)
+  npwp_surcharge_persen    Decimal   @default(20.00) @db.Decimal(5, 2)
+  pembulatan_pph           Int       @default(0)
+  pembulatan_gaji          Int       @default(0)
+  bpjs_enabled             Boolean   @default(true)
+  pph21_enabled            Boolean   @default(true)
+  created_at               DateTime? @db.Timestamp(0)
+  updated_at               DateTime? @db.Timestamp(0)
 }
