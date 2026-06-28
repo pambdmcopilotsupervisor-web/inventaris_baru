@@ -13,12 +13,18 @@ import { formatCurrency } from "@/lib/utils"
 import {
   getPayrollPeriodDetail,
   getPayrollPeriodSummary,
-  calculatePayrollPeriod,
+  getPayrollCalcTargets,
+  calculatePayrollChunk,
+  finalizePayrollCalculation,
   validatePayrollPeriod,
   recalculateEmployeePayroll,
+  reviewPayrollSlip,
+  reviewAllPayrollSlips,
   approvePayrollPeriod,
+  cancelPayrollApproval,
   markPayrollPaid,
   closePayrollPeriod,
+  deletePayrollPeriod,
 } from "@/actions/payroll-run"
 import {
   getPeriodAdjustments,
@@ -37,6 +43,7 @@ interface SlipRow {
   id: number; employee_id: number; nama: string; nik: string; jabatan: string; department: string
   working_days: number; total_earnings: number; total_deductions: number; net_salary: number
   status: "PENDING" | "REVIEWED" | "APPROVED"
+  detail_count: number
 }
 interface Summary {
   total_karyawan: number; total_earnings: number; total_deductions: number; total_net: number
@@ -44,6 +51,7 @@ interface Summary {
   loan_total?: number; loan_count?: number
   adjustment_earning_total?: number; adjustment_deduction_total?: number; adjustment_count?: number
 }
+interface RunLog { id: number; employee_id: number | null; level: "ERROR" | "WARNING" | "INFO"; message: string; context: { nama?: string } | null; created_at: string | null }
 
 export default function PayrollPeriodDetailPage() {
   const params = useParams<{ id: string }>()
@@ -52,6 +60,7 @@ export default function PayrollPeriodDetailPage() {
 
   const [period, setPeriod] = useState<PeriodInfo | null>(null)
   const [slips, setSlips] = useState<SlipRow[]>([])
+  const [logs, setLogs] = useState<RunLog[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -59,6 +68,15 @@ export default function PayrollPeriodDetailPage() {
   const [processing, setProcessing] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [recalcId, setRecalcId] = useState<number | null>(null)
+  const [reviewId, setReviewId] = useState<number | null>(null)
+  const [reviewingAll, setReviewingAll] = useState(false)
+
+  // Progress kalkulasi bertahap
+  const [calcProgress, setCalcProgress] = useState<{ done: number; total: number; failed: number } | null>(null)
+
+  // Hapus periode
+  const [deleteModal, setDeleteModal] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const [deptFilter, setDeptFilter] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
@@ -81,12 +99,15 @@ export default function PayrollPeriodDetailPage() {
   const [adjSaving, setAdjSaving] = useState(false)
   const [adjError, setAdjError] = useState<string | null>(null)
   const [adjForm, setAdjForm] = useState<{ employee_id: string; type: "EARNING" | "DEDUCTION"; label: string; amount: string; is_taxable: boolean; notes: string }>({ employee_id: "", type: "EARNING", label: "", amount: "", is_taxable: false, notes: "" })
+  const [adjEmpSearch, setAdjEmpSearch] = useState("")
+  const [adjEmpOpen, setAdjEmpOpen] = useState(false)
 
   const load = useCallback(async () => {
     const [detail, sum] = await Promise.all([getPayrollPeriodDetail(periodId), getPayrollPeriodSummary(periodId)])
     if (detail.success) {
       setPeriod(detail.data.period as unknown as PeriodInfo)
       setSlips(detail.data.slips as SlipRow[])
+      setLogs((detail.data.logs ?? []) as unknown as RunLog[])
     } else setLoadError(detail.error)
     if (sum.success) setSummary(sum.data as Summary)
     setLoading(false)
@@ -96,7 +117,7 @@ export default function PayrollPeriodDetailPage() {
     let active = true
     Promise.all([getPayrollPeriodDetail(periodId), getPayrollPeriodSummary(periodId)]).then(([detail, sum]) => {
       if (!active) return
-      if (detail.success) { setPeriod(detail.data.period as unknown as PeriodInfo); setSlips(detail.data.slips as SlipRow[]) }
+      if (detail.success) { setPeriod(detail.data.period as unknown as PeriodInfo); setSlips(detail.data.slips as SlipRow[]); setLogs((detail.data.logs ?? []) as unknown as RunLog[]) }
       else setLoadError(detail.error)
       if (sum.success) setSummary(sum.data as Summary)
       setLoading(false)
@@ -120,6 +141,7 @@ export default function PayrollPeriodDetailPage() {
   const openAdjustments = async () => {
     setAdjModal(true); setAdjLoading(true); setAdjError(null)
     setAdjForm({ employee_id: "", type: "EARNING", label: "", amount: "", is_taxable: false, notes: "" })
+    setAdjEmpSearch(""); setAdjEmpOpen(false)
     const [adj, emps] = await Promise.all([getPeriodAdjustments(periodId), getAdjustmentEmployees()])
     if (adj.success) setAdjRows(adj.data as AdjRow[])
     if (emps.success) setAdjEmps(emps.data as AdjEmp[])
@@ -148,13 +170,44 @@ export default function PayrollPeriodDetailPage() {
 
   const handleCalculate = async () => {
     setProcessing(true); setNotice(null)
-    const res = await calculatePayrollPeriod(periodId)
-    setProcessing(false)
-    if (!res.success) { setNotice(res.error); return }
-    const d = res.data as { success_count: number; failed_count: number; errors: { nama: string; error: string }[]; warnings: { nama: string; warning: string }[] }
-    let msg = `Selesai: ${d.success_count} berhasil, ${d.failed_count} gagal`
-    if (d.failed_count) msg += " — gagal: " + d.errors.map((e) => e.nama).join(", ")
-    if (d.warnings?.length) msg += ` • ${d.warnings.length} peringatan: ` + d.warnings.slice(0, 5).map((w) => `${w.nama} (${w.warning})`).join("; ") + (d.warnings.length > 5 ? "…" : "")
+    // 1) Ambil daftar karyawan yang akan dihitung
+    const tg = await getPayrollCalcTargets(periodId)
+    if (!tg.success) { setProcessing(false); setNotice(tg.error); return }
+    const targets = (tg.data as { targets: { id: number; nama: string }[] }).targets
+    const total = targets.length
+    setCalcProgress({ done: 0, total, failed: 0 })
+
+    // 2) Proses bertahap per chunk + update progress
+    const CHUNK = 10
+    let successCount = 0
+    let failedCount = 0
+    const errors: { nama: string; error: string }[] = []
+    const warnings: { nama: string; warning: string }[] = []
+    try {
+      for (let i = 0; i < targets.length; i += CHUNK) {
+        const ids = targets.slice(i, i + CHUNK).map((t) => t.id)
+        const res = await calculatePayrollChunk(periodId, ids)
+        if (!res.success) {
+          setProcessing(false); setCalcProgress(null); setNotice(res.error); return
+        }
+        const d = res.data as { processed: number; success_count: number; errors: { nama: string; error: string }[]; warnings: { nama: string; warning: string }[] }
+        successCount += d.success_count
+        failedCount += d.errors.length
+        errors.push(...d.errors)
+        warnings.push(...d.warnings)
+        setCalcProgress({ done: Math.min(i + ids.length, total), total, failed: failedCount })
+      }
+
+      // 3) Finalisasi (set status + nomor slip)
+      await finalizePayrollCalculation(periodId, failedCount > 0, successCount, failedCount)
+    } finally {
+      setProcessing(false)
+      setCalcProgress(null)
+    }
+
+    let msg = `Selesai: ${successCount} berhasil, ${failedCount} gagal`
+    if (failedCount) msg += " — gagal: " + errors.map((e) => e.nama).join(", ")
+    if (warnings.length) msg += ` • ${warnings.length} peringatan: ` + warnings.slice(0, 5).map((w) => `${w.nama} (${w.warning})`).join("; ") + (warnings.length > 5 ? "…" : "")
     setNotice(msg)
     load()
   }
@@ -167,12 +220,42 @@ export default function PayrollPeriodDetailPage() {
     load()
   }
 
+  const handleReview = async (row: SlipRow) => {
+    setReviewId(row.id)
+    const res = await reviewPayrollSlip(row.id)
+    setReviewId(null)
+    if (!res.success) { setNotice(res.error); return }
+    load()
+  }
+
+  const handleReviewAll = async () => {
+    const pendingCount = slips.filter((s) => s.status !== "REVIEWED").length
+    if (pendingCount === 0) return
+    if (!confirm(`Review semua ${pendingCount} slip yang belum direview?`)) return
+    setReviewingAll(true)
+    const res = await reviewAllPayrollSlips(periodId)
+    setReviewingAll(false)
+    if (!res.success) { setNotice(res.error); return }
+    setNotice(`${res.data.count} slip berhasil direview`)
+    load()
+  }
+
   const handleApprove = async () => {
     if (!confirm("Approve periode ini? Setelah disetujui, slip tidak dapat dihitung ulang.")) return
     setProcessing(true)
     const res = await approvePayrollPeriod(periodId)
     setProcessing(false)
     if (!res.success) { setNotice(res.error); return }
+    load()
+  }
+
+  const handleCancelApproval = async () => {
+    if (!confirm("Batalkan approve periode ini? Status akan kembali ke Terhitung dan semua slip kembali ke Reviewed.")) return
+    setProcessing(true)
+    const res = await cancelPayrollApproval(periodId)
+    setProcessing(false)
+    if (!res.success) { setNotice(res.error); return }
+    setNotice("Approve periode berhasil dibatalkan")
     load()
   }
 
@@ -193,10 +276,21 @@ export default function PayrollPeriodDetailPage() {
     load()
   }
 
+  const handleDelete = async () => {
+    setDeleting(true)
+    const res = await deletePayrollPeriod(periodId)
+    setDeleting(false)
+    if (!res.success) { setDeleteModal(false); setNotice(res.error); return }
+    router.replace("/dashboard/payroll/run")
+  }
+
   const exportExcel = () => window.open(`/api/payroll/period/${periodId}/export`, "_blank")
   const exportBank = () => window.open(`/api/payroll/period/${periodId}/bank-transfer`, "_blank")
 
   const departments = useMemo(() => Array.from(new Set(slips.map((s) => s.department))).filter(Boolean), [slips])
+  const emptySlipRows = useMemo(() => slips.filter((s) => s.detail_count === 0 || (s.total_earnings === 0 && s.total_deductions === 0 && s.net_salary === 0)), [slips])
+  const negativeSlipRows = useMemo(() => slips.filter((s) => s.net_salary < 0), [slips])
+  const unreviewedSlipRows = useMemo(() => slips.filter((s) => s.status !== "REVIEWED"), [slips])
   const filtered = useMemo(() => slips.filter((s) => {
     if (deptFilter && s.department !== deptFilter) return false
     if (statusFilter && s.status !== statusFilter) return false
@@ -238,14 +332,17 @@ export default function PayrollPeriodDetailPage() {
             <>
               <Button variant="outline" size="sm" onClick={openAdjustments} disabled={processing}><SlidersHorizontal className="h-3.5 w-3.5 mr-1.5" />Penyesuaian</Button>
               <Button variant="outline" size="sm" onClick={handleValidate} disabled={processing}><ClipboardCheck className="h-3.5 w-3.5 mr-1.5" />Validasi</Button>
-              <Button size="sm" onClick={handleCalculate} disabled={processing}><Calculator className="h-3.5 w-3.5 mr-1.5" />{processing ? "Menghitung..." : "Hitung Semua"}</Button>
+              <Button variant="outline" size="sm" onClick={() => setDeleteModal(true)} disabled={processing} style={{ color: "var(--danger)", borderColor: "var(--danger)" }}><Trash2 className="h-3.5 w-3.5 mr-1.5" />Hapus Periode</Button>
+              <Button size="sm" onClick={handleCalculate} disabled={processing}><Calculator className="h-3.5 w-3.5 mr-1.5" />{calcProgress ? `Menghitung ${calcProgress.total > 0 ? Math.round((calcProgress.done / calcProgress.total) * 100) : 0}%` : (processing ? "Menghitung..." : "Hitung Semua")}</Button>
             </>
           )}
           {status === "CALCULATED" && (
             <>
               <Button variant="outline" size="sm" onClick={openAdjustments} disabled={processing}><SlidersHorizontal className="h-3.5 w-3.5 mr-1.5" />Penyesuaian</Button>
               <Button variant="outline" size="sm" onClick={handleValidate} disabled={processing}><ClipboardCheck className="h-3.5 w-3.5 mr-1.5" />Validasi</Button>
-              <Button variant="outline" size="sm" onClick={handleCalculate} disabled={processing}><RotateCw className="h-3.5 w-3.5 mr-1.5" />{processing ? "Menghitung..." : "Hitung Ulang"}</Button>
+              <Button variant="outline" size="sm" onClick={() => setDeleteModal(true)} disabled={processing} style={{ color: "var(--danger)", borderColor: "var(--danger)" }}><Trash2 className="h-3.5 w-3.5 mr-1.5" />Hapus Periode</Button>
+              <Button variant="outline" size="sm" onClick={handleCalculate} disabled={processing}><RotateCw className="h-3.5 w-3.5 mr-1.5" />{calcProgress ? `Menghitung ${calcProgress.total > 0 ? Math.round((calcProgress.done / calcProgress.total) * 100) : 0}%` : (processing ? "Menghitung..." : "Hitung Ulang")}</Button>
+              <Button variant="outline" size="sm" onClick={handleReviewAll} disabled={reviewingAll || slips.length === 0 || slips.every((s) => s.status === "REVIEWED")}><CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />{reviewingAll ? "Reviewing..." : "Review Semua"}</Button>
               <Button variant="outline" size="sm" onClick={exportExcel}><Download className="h-3.5 w-3.5 mr-1.5" />Export</Button>
               <Button size="sm" onClick={handleApprove} disabled={processing}><CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />Approve</Button>
             </>
@@ -254,6 +351,7 @@ export default function PayrollPeriodDetailPage() {
             <>
               <Button variant="outline" size="sm" onClick={exportBank}><Landmark className="h-3.5 w-3.5 mr-1.5" />Transfer Bank</Button>
               <Button variant="outline" size="sm" onClick={exportExcel}><Download className="h-3.5 w-3.5 mr-1.5" />Export Excel</Button>
+              <Button variant="outline" size="sm" onClick={handleCancelApproval} disabled={processing} style={{ color: "var(--danger)", borderColor: "var(--danger)" }}><XCircle className="h-3.5 w-3.5 mr-1.5" />Batalkan Approve</Button>
               <Button size="sm" onClick={() => setPayModal(true)} disabled={processing}><Banknote className="h-3.5 w-3.5 mr-1.5" />Tandai Dibayar</Button>
             </>
           )}
@@ -275,6 +373,51 @@ export default function PayrollPeriodDetailPage() {
 
       {loadError && <div className="rounded-lg px-4 py-3 text-sm" style={{ background: "var(--danger-bg)", color: "var(--danger)" }}>{loadError}</div>}
       {notice && <div className="rounded-lg px-4 py-3 text-sm" style={{ background: "var(--surface-hover)", color: "var(--text-muted)" }}>{notice}</div>}
+
+      {status === "CALCULATED" && (emptySlipRows.length > 0 || negativeSlipRows.length > 0 || unreviewedSlipRows.length > 0) && (
+        <div className="rounded-lg px-4 py-3 space-y-2" style={{ background: "var(--danger-bg)", border: "1px solid var(--danger)", color: "var(--text-900)" }}>
+          <p className="text-sm font-semibold" style={{ color: "var(--danger)" }}>Perlu diperbaiki sebelum approve</p>
+          {emptySlipRows.length > 0 && <IssueList title={`${emptySlipRows.length} slip kosong`} rows={emptySlipRows} />}
+          {negativeSlipRows.length > 0 && <IssueList title={`${negativeSlipRows.length} slip gaji bersih negatif`} rows={negativeSlipRows} />}
+          {unreviewedSlipRows.length > 0 && <IssueList title={`${unreviewedSlipRows.length} slip belum direview`} rows={unreviewedSlipRows} />}
+        </div>
+      )}
+
+      {logs.length > 0 && (
+        <div className="rounded-lg px-4 py-3 space-y-2" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold" style={{ color: "var(--text-900)" }}>Log kalkulasi payroll</p>
+            <Badge variant={logs.some((l) => l.level === "ERROR") ? "destructive" : "warning"}>{logs.length} catatan</Badge>
+          </div>
+          <div className="space-y-1 max-h-40 overflow-y-auto">
+            {logs.slice(0, 20).map((l) => (
+              <div key={l.id} className="flex items-start gap-2 text-xs">
+                <span className="mt-0.5 shrink-0" style={{ color: l.level === "ERROR" ? "var(--danger)" : "var(--warning)" }}>{l.level}</span>
+                <span style={{ color: "var(--text-muted)" }}>{l.context?.nama ? `${l.context.nama}: ` : ""}{l.message}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Progress bar kalkulasi */}
+      {calcProgress && (
+        <div className="rounded-lg px-4 py-3.5" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+          <div className="flex items-center justify-between text-sm mb-2">
+            <span className="font-medium" style={{ color: "var(--text-900)" }}>
+              Menghitung gaji… {calcProgress.done} / {calcProgress.total} karyawan
+              {calcProgress.failed > 0 && <span style={{ color: "var(--danger)" }}> · {calcProgress.failed} gagal</span>}
+            </span>
+            <span className="font-mono font-semibold" style={{ color: "var(--primary)" }}>
+              {calcProgress.total > 0 ? Math.round((calcProgress.done / calcProgress.total) * 100) : 0}%
+            </span>
+          </div>
+          <div className="h-2.5 rounded-full overflow-hidden" style={{ background: "var(--surface-hover)" }}>
+            <div className="h-full rounded-full transition-all duration-300"
+              style={{ width: `${calcProgress.total > 0 ? (calcProgress.done / calcProgress.total) * 100 : 0}%`, background: "var(--primary)" }} />
+          </div>
+        </div>
+      )}
 
       {/* Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -330,9 +473,14 @@ export default function PayrollPeriodDetailPage() {
                 <FileText className="h-3.5 w-3.5 mr-1" />Slip
               </Button>
               {status === "CALCULATED" && (
-                <Button variant="ghost" size="sm" disabled={recalcId === r.employee_id} onClick={() => handleRecalc(r)}>
-                  <RotateCw className={`h-3.5 w-3.5 mr-1 ${recalcId === r.employee_id ? "animate-spin" : ""}`} />Hitung Ulang
-                </Button>
+                <>
+                  <Button variant="ghost" size="sm" disabled={reviewId === r.id || r.status === "REVIEWED"} onClick={() => handleReview(r)}>
+                    <CheckCircle2 className="h-3.5 w-3.5 mr-1" />{r.status === "REVIEWED" ? "Reviewed" : "Review"}
+                  </Button>
+                  <Button variant="ghost" size="sm" disabled={recalcId === r.employee_id} onClick={() => handleRecalc(r)}>
+                    <RotateCw className={`h-3.5 w-3.5 mr-1 ${recalcId === r.employee_id ? "animate-spin" : ""}`} />Hitung Ulang
+                  </Button>
+                </>
               )}
             </div>
           )
@@ -399,8 +547,49 @@ export default function PayrollPeriodDetailPage() {
           <div className="rounded-lg p-3 space-y-3" style={{ border: "1px solid var(--border)", background: "var(--surface-hover)" }}>
             {adjError && <div className="rounded-lg px-3 py-2 text-sm" style={{ background: "var(--danger-bg)", color: "var(--danger)" }}>{adjError}</div>}
             <div className="grid grid-cols-2 gap-3">
-              <SelectField label="Karyawan" value={adjForm.employee_id} onChange={(e) => setAdjForm({ ...adjForm, employee_id: e.target.value })}
-                options={[{ value: "", label: "Pilih karyawan…" }, ...adjEmps.map((e) => ({ value: String(e.id), label: `${e.nama_karyawan} — ${e.jabatan}` }))]} />
+              {/* Combobox karyawan dengan pencarian */}
+              <div className="space-y-1.5 relative">
+                <label className="block text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Karyawan</label>
+                <input
+                  value={adjEmpOpen
+                    ? adjEmpSearch
+                    : (adjEmps.find((e) => String(e.id) === adjForm.employee_id)?.nama_karyawan ?? "")
+                  }
+                  onFocus={() => { setAdjEmpOpen(true); setAdjEmpSearch("") }}
+                  onChange={(e) => { setAdjEmpSearch(e.target.value); setAdjEmpOpen(true) }}
+                  onBlur={() => setTimeout(() => setAdjEmpOpen(false), 150)}
+                  placeholder="Cari nama atau jabatan…"
+                  autoComplete="off"
+                  className="flex h-9 w-full rounded-lg px-3 text-sm"
+                  style={{ border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--text-900)" }}
+                />
+                {adjEmpOpen && (
+                  <div className="absolute z-50 w-full mt-1 rounded-lg shadow-xl overflow-hidden overflow-y-auto max-h-52 scrollbar-thin"
+                    style={{ border: "1px solid var(--border)", background: "var(--surface)" }}>
+                    {adjEmps
+                      .filter((e) => {
+                        const q = adjEmpSearch.toLowerCase()
+                        return !q || e.nama_karyawan.toLowerCase().includes(q) || e.jabatan.toLowerCase().includes(q) || e.nik.toLowerCase().includes(q)
+                      })
+                      .slice(0, 50)
+                      .map((e) => (
+                        <button key={e.id} type="button"
+                          className="flex w-full items-start gap-2 px-3 py-2 text-left text-sm hover:bg-[var(--surface-hover)] transition-colors"
+                          style={{ color: "var(--text-900)" }}
+                          onMouseDown={(ev) => { ev.preventDefault(); setAdjForm({ ...adjForm, employee_id: String(e.id) }); setAdjEmpSearch(""); setAdjEmpOpen(false) }}>
+                          <div className="min-w-0">
+                            <p className="font-medium truncate">{e.nama_karyawan}</p>
+                            <p className="text-xs truncate" style={{ color: "var(--text-subtle)" }}>{e.jabatan}{e.nik ? ` · ${e.nik}` : ""}</p>
+                          </div>
+                        </button>
+                      ))
+                    }
+                    {adjEmps.filter((e) => { const q = adjEmpSearch.toLowerCase(); return !q || e.nama_karyawan.toLowerCase().includes(q) || e.jabatan.toLowerCase().includes(q) || e.nik.toLowerCase().includes(q) }).length === 0 && (
+                      <p className="px-3 py-2 text-sm" style={{ color: "var(--text-subtle)" }}>Tidak ditemukan</p>
+                    )}
+                  </div>
+                )}
+              </div>
               <SelectField label="Jenis" value={adjForm.type} onChange={(e) => setAdjForm({ ...adjForm, type: e.target.value as "EARNING" | "DEDUCTION" })}
                 options={[{ value: "EARNING", label: "Pendapatan" }, { value: "DEDUCTION", label: "Potongan" }]} />
             </div>
@@ -452,6 +641,45 @@ export default function PayrollPeriodDetailPage() {
           )}
         </div>
       </Modal>
+
+      <Modal open={deleteModal} onClose={() => setDeleteModal(false)} title="Hapus Periode Payroll" size="sm"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setDeleteModal(false)} disabled={deleting}>Batal</Button>
+            <Button onClick={handleDelete} disabled={deleting} style={{ background: "var(--danger)", color: "#fff" }}>
+              {deleting ? "Menghapus..." : "Ya, Hapus Periode"}
+            </Button>
+          </>
+        }>
+        <div className="space-y-3">
+          <div className="flex items-start gap-3 rounded-lg p-3" style={{ background: "var(--danger-bg)" }}>
+            <Trash2 className="h-5 w-5 shrink-0 mt-0.5" style={{ color: "var(--danger)" }} />
+            <div>
+              <p className="text-sm font-semibold" style={{ color: "var(--danger)" }}>Tindakan ini tidak dapat dibatalkan</p>
+              <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+                Semua slip gaji, detail komponen, penyesuaian, dan catatan cicilan pinjaman dalam periode ini akan ikut terhapus.
+              </p>
+            </div>
+          </div>
+          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+            Yakin ingin menghapus periode <span className="font-semibold" style={{ color: "var(--text-900)" }}>
+              {period ? `${["", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"][period.period_month]} ${period.period_year}` : "ini"}
+              {period?.run_type !== "REGULER" ? ` (${period?.run_type})` : ""}
+            </span>?
+          </p>
+        </div>
+      </Modal>
+    </div>
+  )
+}
+
+function IssueList({ title, rows }: { title: string; rows: SlipRow[] }) {
+  const shown = rows.slice(0, 8)
+  const more = rows.length - shown.length
+  return (
+    <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+      <span className="font-semibold" style={{ color: "var(--text-900)" }}>{title}: </span>
+      {shown.map((r) => r.nama).join(", ")}{more > 0 ? ` +${more} lainnya` : ""}
     </div>
   )
 }

@@ -58,6 +58,18 @@ function evaluateFormula(expression: string, scope: Record<string, number>): { v
   }
 }
 
+export function validatePayrollFormula(expression: string): string | null {
+  if (/\b(import|createUnit|evaluate|parse|simplify|derivative)\s*\(/i.test(expression)) {
+    return "formula memakai fungsi yang tidak diizinkan"
+  }
+  try {
+    parseFormula(expression)
+    return null
+  } catch (e) {
+    return e instanceof Error ? e.message : "formula tidak dapat diparse"
+  }
+}
+
 /** Pembulatan ke rupiah utuh (IDR tanpa pecahan). Hindari float drift pada akumulasi. */
 function roundRp(n: number): number {
   return Math.round(n)

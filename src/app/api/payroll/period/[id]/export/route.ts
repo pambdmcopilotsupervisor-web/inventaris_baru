@@ -8,6 +8,12 @@ export const runtime = "nodejs"
 const MONTHS = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
 const RP_FMT = '"Rp"#,##0'
 
+interface EmployeeSnapshot {
+  nik?: string
+  nama?: string
+  department?: string
+}
+
 async function resolveDepartments(employeeIds: bigint[]): Promise<Map<string, string>> {
   if (employeeIds.length === 0) return new Map()
   const karyawans = await prisma.karyawans.findMany({
@@ -83,11 +89,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       ["No", "NIK", "Nama", "Departemen", "Hari Kerja", "Total Pendapatan", "Total Potongan", "Gaji Bersih"],
     ]
     slips.forEach((s, i) => {
+      const emp = (s.employee_snapshot as EmployeeSnapshot | null) ?? null
       aoa1.push([
         i + 1,
-        s.karyawans.nik,
-        s.karyawans.nama_karyawan,
-        deptMap.get(s.employee_id.toString()) ?? "—",
+        emp?.nik ?? s.karyawans.nik,
+        emp?.nama ?? s.karyawans.nama_karyawan,
+        emp?.department ?? deptMap.get(s.employee_id.toString()) ?? "—",
         s.working_days,
         Number(s.total_earnings),
         Number(s.total_deductions),
@@ -123,10 +130,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const header2 = ["No", "NIK", "Nama", "Departemen", ...compOrder.map((c) => c.name), "Total Pendapatan", "Total Potongan", "Gaji Bersih"]
     const aoa2: (string | number)[][] = [header2]
     slips.forEach((s, i) => {
+      const emp = (s.employee_snapshot as EmployeeSnapshot | null) ?? null
       const amountByCode = new Map<string, number>()
       for (const d of s.details) amountByCode.set(d.component_code, (amountByCode.get(d.component_code) ?? 0) + Number(d.amount))
       const row: (string | number)[] = [
-        i + 1, s.karyawans.nik, s.karyawans.nama_karyawan, deptMap.get(s.employee_id.toString()) ?? "—",
+        i + 1, emp?.nik ?? s.karyawans.nik, emp?.nama ?? s.karyawans.nama_karyawan, emp?.department ?? deptMap.get(s.employee_id.toString()) ?? "—",
       ]
       for (const c of compOrder) row.push(amountByCode.get(c.code) ?? 0)
       row.push(Number(s.total_earnings), Number(s.total_deductions), Number(s.net_salary))

@@ -71,6 +71,7 @@ const navGroups: NavGroup[] = [
       { label: "Penyesuaian Massal", href: "/dashboard/payroll/bulk-adjust",     icon: <TrendingUp className="h-4 w-4" /> },
       { label: "Pinjaman Karyawan", href: "/dashboard/payroll/loans",            icon: <Wallet className="h-4 w-4" /> },
       { label: "Payroll Run",       href: "/dashboard/payroll/run",             icon: <PlayCircle className="h-4 w-4" /> },
+      { label: "Laporan Pajak (1721-A1)", href: "/dashboard/payroll/tax-report", icon: <FileText className="h-4 w-4" /> },
     ],
   },
   {

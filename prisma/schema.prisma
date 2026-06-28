@@ -209,6 +209,7 @@ model karyawans {
   payroll_slips              payroll_slips[]
   employee_loans             employee_loans[]
   payroll_adjustments        payroll_adjustments[]
+  payroll_run_logs           payroll_run_logs[]
 }
 
 model kontrak_details {
@@ -1085,6 +1086,7 @@ model payroll_periods {
   payroll_slips payroll_slips[]
   payroll_adjustments payroll_adjustments[]
   employee_loan_payments employee_loan_payments[]
+  payroll_run_logs payroll_run_logs[]
 
   @@unique([period_month, period_year, run_type], map: "payroll_periods_month_year_type_unique")
   @@index([status], map: "payroll_periods_status_index")
@@ -1103,6 +1105,10 @@ model payroll_slips {
   status            PayrollSlipStatus @default(PENDING)
   tax_detail        Json?
   attendance_snapshot Json?
+  employee_snapshot Json?
+  bank_snapshot     Json?
+  reviewed_by       BigInt?           @db.UnsignedBigInt
+  reviewed_at       DateTime?         @db.Timestamp(0)
   created_at        DateTime?         @db.Timestamp(0)
   updated_at        DateTime?         @db.Timestamp(0)
 
@@ -1110,10 +1116,33 @@ model payroll_slips {
   karyawans       karyawans              @relation(fields: [employee_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "ps_employee_id_foreign")
   details         payroll_slip_details[]
   loan_payments   employee_loan_payments[]
+  payroll_run_logs payroll_run_logs[]
 
   @@unique([payroll_period_id, employee_id], map: "payroll_slips_period_employee_unique")
   @@index([employee_id], map: "payroll_slips_employee_id_index")
   @@index([status], map: "payroll_slips_status_index")
+}
+
+/// Log hasil kalkulasi payroll per periode/karyawan (error/warning/info), agar
+/// hasil validasi tetap bisa dilihat setelah halaman di-refresh.
+model payroll_run_logs {
+  id                BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  payroll_period_id BigInt    @db.UnsignedBigInt
+  payroll_slip_id   BigInt?   @db.UnsignedBigInt
+  employee_id       BigInt?   @db.UnsignedBigInt
+  level             String    @db.VarChar(20)
+  message           String    @db.VarChar(255)
+  context           Json?
+  created_at        DateTime? @db.Timestamp(0)
+
+  payroll_periods payroll_periods @relation(fields: [payroll_period_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "prl_period_id_foreign")
+  payroll_slips   payroll_slips?  @relation(fields: [payroll_slip_id], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "prl_slip_id_foreign")
+  karyawans       karyawans?      @relation(fields: [employee_id], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "prl_employee_id_foreign")
+
+  @@index([payroll_period_id], map: "payroll_run_logs_period_id_index")
+  @@index([payroll_slip_id], map: "payroll_run_logs_slip_id_index")
+  @@index([employee_id], map: "payroll_run_logs_employee_id_index")
+  @@index([level], map: "payroll_run_logs_level_index")
 }
 
 /// Detail payroll per komponen — SNAPSHOT baris (kode/nama komponen & nilai dibekukan).

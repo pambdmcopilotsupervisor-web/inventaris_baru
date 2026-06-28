@@ -18,6 +18,7 @@ import {
   CALC_METHOD_VALUES,
   type SalaryComponentInput,
 } from "@/lib/validations/salary-component"
+import { validatePayrollFormula } from "@/lib/payroll/engine"
 
 export type { SalaryComponentInput }
 
@@ -176,6 +177,10 @@ export async function createSalaryComponent(input: SalaryComponentInput) {
     }
 
     const { formula_expression, default_rate } = resolveStoredValues(d.calc_method, d.percent, d.formula_expression)
+    if (d.calc_method === "FORMULA" && formula_expression) {
+      const formulaError = validatePayrollFormula(formula_expression)
+      if (formulaError) return fail(`Formula tidak valid: ${formulaError}`)
+    }
 
     // Validasi formula melingkar / referensi diri sendiri.
     if (d.calc_method === "FORMULA") {
@@ -255,6 +260,10 @@ export async function updateSalaryComponent(id: number, input: SalaryComponentIn
     }
 
     const { formula_expression, default_rate } = resolveStoredValues(d.calc_method, d.percent, d.formula_expression)
+    if (d.calc_method === "FORMULA" && formula_expression) {
+      const formulaError = validatePayrollFormula(formula_expression)
+      if (formulaError) return fail(`Formula tidak valid: ${formulaError}`)
+    }
     const orderChanged = existing.calc_order !== d.calc_order
 
     // Validasi formula melingkar / referensi diri sendiri (abaikan record ini sendiri).

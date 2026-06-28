@@ -12,6 +12,9 @@ function csv(value: string | number): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
+interface EmployeeSnapshot { nik?: string; nama?: string }
+interface BankSnapshot { nama_bank?: string | null; no_rekening?: string | null }
+
 // GET /api/payroll/period/[id]/bank-transfer → file CSV disbursement transfer bank
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireRole(req, ["admin", "hrd"])
@@ -36,18 +39,34 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       orderBy: { id: "asc" },
     })
 
+    const invalid = slips
+      .map((s) => {
+        const emp = (s.employee_snapshot as EmployeeSnapshot | null) ?? null
+        const bank = (s.bank_snapshot as BankSnapshot | null) ?? null
+        const nama = emp?.nama ?? s.karyawans.nama_karyawan
+        const namaBank = bank?.nama_bank ?? s.karyawans.nama_bank ?? ""
+        const noRekening = bank?.no_rekening ?? s.karyawans.no_rekening ?? ""
+        return { nama, namaBank, noRekening }
+      })
+      .filter((r) => !r.namaBank.trim() || !r.noRekening.trim())
+    if (invalid.length > 0) {
+      return NextResponse.json({ error: `Data rekening belum lengkap untuk ${invalid.length} karyawan`, invalid: invalid.slice(0, 20) }, { status: 422 })
+    }
+
     const header = ["No", "NIK", "Nama", "Bank", "No Rekening", "Nominal", "Keterangan"]
     const lines = [header.map(csv).join(",")]
     let total = 0
     slips.forEach((s, i) => {
+      const emp = (s.employee_snapshot as EmployeeSnapshot | null) ?? null
+      const bank = (s.bank_snapshot as BankSnapshot | null) ?? null
       const net = Math.round(Number(s.net_salary))
       total += net
       lines.push([
         i + 1,
-        s.karyawans.nik,
-        s.karyawans.nama_karyawan,
-        s.karyawans.nama_bank ?? "",
-        s.karyawans.no_rekening ?? "",
+        emp?.nik ?? s.karyawans.nik,
+        emp?.nama ?? s.karyawans.nama_karyawan,
+        bank?.nama_bank ?? s.karyawans.nama_bank ?? "",
+        bank?.no_rekening ?? s.karyawans.no_rekening ?? "",
         net,
         `Gaji ${MONTHS[period.period_month - 1]} ${period.period_year}`,
       ].map(csv).join(","))

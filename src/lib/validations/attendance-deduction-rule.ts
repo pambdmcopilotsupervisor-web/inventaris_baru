@@ -10,9 +10,11 @@ export const TIER_TYPES = ["FIXED", "PERCENT", "PER_HOUR"] as const
 
 export const lateTierSchema = z.object({
   late_from_minutes: z.coerce.number().int().min(0, "Menit awal tidak boleh negatif"),
-  late_to_minutes: z
-    .preprocess((v) => (v === "" || v === null ? undefined : v), z.coerce.number().int().positive())
-    .nullish(),
+  late_to_minutes: z.preprocess(
+    // String kosong, null, undefined → null (tier tanpa batas akhir)
+    (v) => (v === "" || v === null || v === undefined ? null : Number(v)),
+    z.number().int().positive().nullable(),
+  ),
   deduction_type: z.enum(TIER_TYPES),
   deduction_value: z.coerce.number().min(0, "Nilai tidak boleh negatif"),
 })

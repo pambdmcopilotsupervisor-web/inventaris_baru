@@ -201,6 +201,7 @@ const NAV_GROUPS: NavGroup[] = [
         section: "Proses Gaji",
         links: [
           { label: "Payroll Run", href: "/dashboard/payroll/run", icon: <PlayCircle className="h-3.5 w-3.5" />, desc: "Hitung & kelola periode gaji bulanan, THR, dan Bonus" },
+          { label: "Laporan Pajak (1721-A1)", href: "/dashboard/payroll/tax-report", icon: <FileText className="h-3.5 w-3.5" />, desc: "Rekap PPh21 tahunan & cetak Bukti Potong 1721-A1" },
         ],
       },
       {

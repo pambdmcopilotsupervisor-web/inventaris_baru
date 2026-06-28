@@ -58,9 +58,85 @@ async function requirePayrollAdmin(): Promise<{ user: SessionUser } | { error: s
 
 /** Rentang tanggal aktual periode. Fallback ke 1..akhir bulan bila kolom kustom kosong (periode lama). */
 function resolvePeriodRange(p: { period_month: number; period_year: number; period_start_date: Date | null; period_end_date: Date | null }): { start: Date; end: Date } {
-  const start = p.period_start_date ? new Date(p.period_start_date) : new Date(p.period_year, p.period_month - 1, 1)
-  const end = p.period_end_date ? new Date(p.period_end_date) : new Date(p.period_year, p.period_month, 0)
+  // Gunakan Date.UTC agar konsisten di semua timezone — MySQL @db.Date pakai UTC.
+  const start = p.period_start_date ? new Date(p.period_start_date) : new Date(Date.UTC(p.period_year, p.period_month - 1, 1))
+  const end = p.period_end_date ? new Date(p.period_end_date) : new Date(Date.UTC(p.period_year, p.period_month, 0))
   return { start, end }
+}
+
+type PayrollEmployee = {
+  id: bigint
+  nik: string
+  nama_karyawan: string
+  jabatan: string
+  status_ptkp: string
+  punya_npwp: boolean
+  tanggal_masuk_kerja: Date | null
+  tanggal_keluar: Date | null
+  divisi_id: number | null
+  subdivisi_id: number | null
+  nama_bank: string | null
+  no_rekening: string | null
+}
+
+function eligibleEmployeeWhere(periodStart: Date, periodEnd: Date) {
+  return {
+    OR: [
+      { status_karyawan: "Aktif" },
+      { tanggal_keluar: { gte: periodStart, lte: periodEnd } },
+    ],
+  }
+}
+
+const payrollEmployeeSelect = {
+  id: true,
+  nik: true,
+  nama_karyawan: true,
+  jabatan: true,
+  status_ptkp: true,
+  punya_npwp: true,
+  tanggal_masuk_kerja: true,
+  tanggal_keluar: true,
+  divisi_id: true,
+  subdivisi_id: true,
+  nama_bank: true,
+  no_rekening: true,
+} as const
+
+function employeeSnapshot(employee: PayrollEmployee, department: string) {
+  return {
+    id: Number(employee.id),
+    nik: employee.nik,
+    nama: employee.nama_karyawan,
+    jabatan: employee.jabatan,
+    department,
+    status_ptkp: employee.status_ptkp,
+    punya_npwp: employee.punya_npwp,
+    tanggal_masuk_kerja: employee.tanggal_masuk_kerja ? employee.tanggal_masuk_kerja.toISOString().slice(0, 10) : null,
+    tanggal_keluar: employee.tanggal_keluar ? employee.tanggal_keluar.toISOString().slice(0, 10) : null,
+  }
+}
+
+function bankSnapshot(employee: PayrollEmployee) {
+  return {
+    nama_bank: employee.nama_bank ?? null,
+    no_rekening: employee.no_rekening ?? null,
+  }
+}
+
+async function writePayrollRunLogs(periodId: bigint, logs: { slip_id?: bigint | null; employee_id?: bigint | null; level: "ERROR" | "WARNING" | "INFO"; message: string; context?: object | null }[]) {
+  if (logs.length === 0) return
+  await prisma.payroll_run_logs.createMany({
+    data: logs.map((l) => ({
+      payroll_period_id: periodId,
+      payroll_slip_id: l.slip_id ?? null,
+      employee_id: l.employee_id ?? null,
+      level: l.level,
+      message: l.message.slice(0, 255),
+      context: l.context ? (JSON.parse(JSON.stringify(l.context)) as object) : undefined,
+      created_at: new Date(),
+    })),
+  })
 }
 
 // ─── Helper: komponen efektif per karyawan (merge jabatan + individu) ────
@@ -112,33 +188,57 @@ async function loadActiveDeductionRules(): Promise<EngineDeductionRule[]> {
 }
 
 // ─── Helper: rekap absensi dari tabel `absensi` ──────────────────
-async function buildAttendanceRecap(employeeId: bigint, periodStart: Date, periodEnd: Date): Promise<{ recap: AttendanceRecap; summary: AttendanceSummary }> {
+async function buildAttendanceRecap(employeeId: bigint, periodStart: Date, periodEnd: Date): Promise<{ recap: AttendanceRecap; summary: AttendanceSummary; hasSchedule: boolean }> {
   const firstDay = new Date(periodStart.getFullYear(), periodStart.getMonth(), periodStart.getDate())
   const lastDay = new Date(periodEnd.getFullYear(), periodEnd.getMonth(), periodEnd.getDate(), 23, 59, 59)
+  const pad = (n: number) => String(n).padStart(2, "0")
+  const dateKey = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 
-  const rows = await prisma.absensi.findMany({
-    where: { karyawan_id: employeeId, tanggal_absensi: { gte: firstDay, lte: lastDay } },
-    select: { status_absensi: true, menit_terlambat: true, menit_pulang_cepat: true, is_terlambat: true },
-  })
+  // Hari kerja diturunkan dari JADWAL SHIFT (bukan sekadar record absensi yang ada),
+  // sehingga hari terjadwal yang tidak ada absensinya tetap terhitung sebagai ALPHA.
+  const [schedules, absensiRows, holidays, ot] = await Promise.all([
+    prisma.jadwal_shifts.findMany({ where: { karyawan_id: employeeId, tanggal: { gte: firstDay, lte: lastDay } }, select: { tanggal: true } }),
+    prisma.absensi.findMany({
+      where: { karyawan_id: employeeId, tanggal_absensi: { gte: firstDay, lte: lastDay } },
+      select: { tanggal_absensi: true, status_absensi: true, menit_terlambat: true, menit_pulang_cepat: true, is_terlambat: true },
+    }),
+    prisma.hari_liburs.findMany({ where: { tanggal: { gte: firstDay, lte: lastDay } }, select: { tanggal: true } }),
+    prisma.overtime_requests.aggregate({
+      where: { karyawan_id: employeeId, status: "realized", tanggal_lembur: { gte: firstDay, lte: lastDay } },
+      _sum: { durasi_disetujui_menit: true, total_uang_lembur: true },
+    }),
+  ])
 
-  let working = 0, present = 0, alpha = 0, late = 0, early = 0, sick = 0
-  for (const r of rows) {
-    const s = (r.status_absensi ?? "").toLowerCase()
-    if (s === "libur") continue // bukan hari kerja terjadwal
-    working++
-    if (s === "alpha") alpha++
-    else if (s === "sakit") sick++ // pendekatan: sakit tanpa surat
-    else present++
-    late += r.menit_terlambat ?? 0
-    early += r.menit_pulang_cepat ?? 0
+  const holidaySet = new Set(holidays.map((h) => dateKey(new Date(h.tanggal))))
+  const absByDate = new Map(absensiRows.map((r) => [dateKey(new Date(r.tanggal_absensi)), r]))
+  const scheduledDates = new Set(schedules.map((s) => dateKey(new Date(s.tanggal))))
+
+  // Tanggal yang dievaluasi = hari terjadwal (non-libur) ∪ hari yang punya absensi (non-libur).
+  const evalDates = new Set<string>()
+  for (const d of scheduledDates) if (!holidaySet.has(d)) evalDates.add(d)
+  for (const [d, r] of absByDate) {
+    if (holidaySet.has(d)) continue
+    if ((r.status_absensi ?? "").toLowerCase() === "libur") continue
+    evalDates.add(d)
   }
 
-  // Lembur terealisasi pada periode.
-  const ot = await prisma.overtime_requests.aggregate({
-    where: { karyawan_id: employeeId, status: "realized", tanggal_lembur: { gte: firstDay, lte: lastDay } },
-    _sum: { durasi_disetujui_menit: true, total_uang_lembur: true },
-  })
+  let working = 0, present = 0, alpha = 0, late = 0, early = 0, sick = 0
+  const effectiveRows: { status_absensi: string; is_terlambat: boolean }[] = []
+  for (const d of evalDates) {
+    const r = absByDate.get(d)
+    // Tidak ada record di hari terjadwal → ALPHA (tidak absen sama sekali).
+    const status = (r?.status_absensi ?? "alpha").toLowerCase()
+    if (status === "libur") continue
+    working++
+    if (status === "alpha") alpha++
+    else if (status === "sakit") sick++ // pendekatan: sakit tanpa surat
+    else present++ // hadir/terlambat/izin/cuti → bukan alpha (tidak kena potongan alpha)
+    late += r?.menit_terlambat ?? 0
+    early += r?.menit_pulang_cepat ?? 0
+    effectiveRows.push({ status_absensi: status, is_terlambat: r?.is_terlambat ?? false })
+  }
 
+  const hasSchedule = scheduledDates.size > 0
   const workingDays = working || DEFAULT_WORKING_DAYS
   const recap: AttendanceRecap = {
     working_days: workingDays,
@@ -150,8 +250,8 @@ async function buildAttendanceRecap(employeeId: bigint, periodStart: Date, perio
     overtime_minutes: ot._sum.durasi_disetujui_menit ?? 0,
     overtime_amount: Number(ot._sum.total_uang_lembur ?? 0),
   }
-  const summary = summarizeAbsensi(rows, workingDays)
-  return { recap, summary }
+  const summary = summarizeAbsensi(effectiveRows, workingDays)
+  return { recap, summary, hasSchedule }
 }
 
 // ─── Helper: konteks pajak & BPJS (dimuat sekali per run) ────────
@@ -420,11 +520,11 @@ async function loadEmployeeAdjustments(periodId: bigint, employeeId: bigint): Pr
 // ─── Helper: hitung & simpan slip untuk 1 karyawan (atomik) ──────
 async function computeAndSaveEmployee(
   periodId: bigint,
-  employee: { id: bigint; nik: string; nama_karyawan: string; jabatan: string; status_ptkp: string; punya_npwp: boolean; tanggal_masuk_kerja: Date | null; tanggal_keluar: Date | null },
+  employee: PayrollEmployee,
   run: RunInfo,
   deductionRules: EngineDeductionRule[],
   taxCtx: TaxContext,
-): Promise<{ warnings: string[] }> {
+): Promise<{ warnings: string[]; slip_id: bigint }> {
   const { month, year } = run
   const periodStart = run.period_start
   const periodEnd = run.period_end
@@ -469,6 +569,8 @@ async function computeAndSaveEmployee(
 
     if (components.length === 0) warnings.push("Tidak ada komponen gaji yang berlaku")
     else if (!components.some((c) => c.code === "GAJI_POKOK")) warnings.push("Tanpa komponen GAJI_POKOK")
+    if (!recapData.hasSchedule) warnings.push("Tidak ada jadwal shift pada periode — hari kerja default 22, potongan alpha tidak terhitung")
+    else if (recap.alpha_days > 0) warnings.push(`${recap.alpha_days} hari alpha (tidak absen) terdeteksi dari jadwal`)
     if (result.total_earnings === 0) warnings.push("Total pendapatan Rp0")
     if (result.net_salary < 0) warnings.push("Gaji bersih negatif (potongan + cicilan melebihi pendapatan)")
     warnings.push(...result.warnings)
@@ -512,6 +614,8 @@ async function computeAndSaveEmployee(
 
   // Susun semua line item menjadi payroll_slip_details (snapshot).
   const allItems: PayrollLineItem[] = [...result.earnings, ...result.deductions, ...result.attendance_deductions]
+  const department = (await resolveDepartments([employee.id])).get(employee.id.toString()) ?? "—"
+  let savedSlipId: bigint | null = null
 
   await prisma.$transaction(async (tx) => {
     // Pertahankan nomor slip lama (untuk recalculate satu karyawan).
@@ -534,10 +638,13 @@ async function computeAndSaveEmployee(
         status: "PENDING",
         tax_detail: result.tax_breakdown ? (JSON.parse(JSON.stringify(result.tax_breakdown)) as object) : undefined,
         attendance_snapshot: attendanceSnapshot,
+        employee_snapshot: employeeSnapshot(employee, department),
+        bank_snapshot: bankSnapshot(employee),
         created_at: new Date(),
         updated_at: new Date(),
       },
     })
+    savedSlipId = slip.id
 
     if (allItems.length > 0) {
       await tx.payroll_slip_details.createMany({
@@ -582,7 +689,8 @@ async function computeAndSaveEmployee(
     }
   })
 
-  return { warnings }
+  if (!savedSlipId) throw new Error("Slip payroll gagal dibuat")
+  return { warnings, slip_id: savedSlipId }
 }
 
 // ─── 1. Buat periode ─────────────────────────────────────────────
@@ -607,8 +715,9 @@ export async function createPayrollPeriod(month: number, year: number, options: 
   const bonusMult = options.bonus_multiplier != null && options.bonus_multiplier >= 0 ? options.bonus_multiplier : 1
 
   // Rentang tanggal: default 1..akhir bulan; bisa di-override dengan tanggal kustom.
-  let startDate = new Date(year, month - 1, 1)
-  let endDate = new Date(year, month, 0)
+  // Gunakan Date.UTC agar MySQL DATE menyimpan tanggal yang benar di semua timezone.
+  let startDate = new Date(Date.UTC(year, month - 1, 1))
+  let endDate = new Date(Date.UTC(year, month, 0))
   if (options.start_date || options.end_date) {
     const s = options.start_date ? new Date(options.start_date) : startDate
     const e = options.end_date ? new Date(options.end_date) : endDate
@@ -666,14 +775,12 @@ export async function calculatePayrollPeriod(periodId: number) {
     const year = period.period_year
     const { start: periodStart, end: periodEnd } = resolvePeriodRange(period)
     // Sertakan karyawan aktif + karyawan yang keluar dalam rentang periode ini (untuk gaji prorata terakhir).
+    await prisma.payroll_run_logs.deleteMany({ where: { payroll_period_id: BigInt(periodId) } })
+
     const employees = await prisma.karyawans.findMany({
-      where: {
-        OR: [
-          { status_karyawan: "Aktif" },
-          { tanggal_keluar: { gte: periodStart, lte: periodEnd } },
-        ],
-      },
-      select: { id: true, nik: true, nama_karyawan: true, jabatan: true, status_ptkp: true, punya_npwp: true, tanggal_masuk_kerja: true, tanggal_keluar: true },
+      where: eligibleEmployeeWhere(periodStart, periodEnd),
+      select: payrollEmployeeSelect,
+      orderBy: { id: "asc" },
     })
     if (employees.length === 0) return fail("Tidak ada karyawan aktif")
 
@@ -688,31 +795,33 @@ export async function calculatePayrollPeriod(periodId: number) {
       run_label: period.run_label,
     }
 
-    // Proses bertahap (batch) agar tidak menjenuhkan connection pool DB.
-    const BATCH_SIZE = 20
-    const settled: PromiseSettledResult<{ warnings: string[] }>[] = []
-    for (let i = 0; i < employees.length; i += BATCH_SIZE) {
-      const batch = employees.slice(i, i + BATCH_SIZE)
-      const batchResults = await Promise.allSettled(
-        batch.map((emp) => computeAndSaveEmployee(BigInt(periodId), emp, runInfo, deductionRules, taxCtx)),
-      )
-      settled.push(...batchResults)
-    }
-
+    // Proses sequential + retry deadlock agar tidak ada konflik transaksi.
     const errors: { employee_id: number; nama: string; error: string }[] = []
     const warnings: { employee_id: number; nama: string; warning: string }[] = []
     let successCount = 0
-    settled.forEach((res, i) => {
-      const emp = employees[i]
-      if (res.status === "fulfilled") {
-        successCount++
-        for (const w of res.value.warnings) warnings.push({ employee_id: Number(emp.id), nama: emp.nama_karyawan, warning: w })
-      } else {
-        const msg = res.reason instanceof Error ? res.reason.message : "Gagal menghitung"
-        console.error(`[payroll] Gagal hitung karyawan ${emp.nama_karyawan} (${emp.id}):`, res.reason)
-        errors.push({ employee_id: Number(emp.id), nama: emp.nama_karyawan, error: msg })
+    for (const emp of employees) {
+      let done = false
+      for (let attempt = 0; attempt < 3 && !done; attempt++) {
+        try {
+          const result = await computeAndSaveEmployee(BigInt(periodId), emp, runInfo, deductionRules, taxCtx)
+          successCount++
+          for (const w of result.warnings) warnings.push({ employee_id: Number(emp.id), nama: emp.nama_karyawan, warning: w })
+          await writePayrollRunLogs(BigInt(periodId), result.warnings.map((w) => ({ slip_id: result.slip_id, employee_id: emp.id, level: "WARNING", message: w, context: { nama: emp.nama_karyawan } })))
+          done = true
+        } catch (e) {
+          const isDeadlock = e instanceof Error && /deadlock|write conflict/i.test(e.message)
+          if (!isDeadlock || attempt === 2) {
+            const msg = e instanceof Error ? e.message : "Gagal menghitung"
+            console.error(`[payroll] Gagal hitung karyawan ${emp.nama_karyawan} (${emp.id}):`, e)
+            errors.push({ employee_id: Number(emp.id), nama: emp.nama_karyawan, error: msg })
+            await writePayrollRunLogs(BigInt(periodId), [{ employee_id: emp.id, level: "ERROR", message: msg, context: { nama: emp.nama_karyawan } }])
+            done = true
+          } else {
+            await new Promise((r) => setTimeout(r, 50 * (attempt + 1)))
+          }
+        }
       }
-    })
+    }
 
     if (errors.length === 0) {
       await prisma.payroll_periods.update({
@@ -735,6 +844,129 @@ export async function calculatePayrollPeriod(periodId: number) {
     return ok({ success_count: successCount, failed_count: errors.length, errors, warnings })
   } catch {
     return fail("Gagal menjalankan kalkulasi payroll")
+  }
+}
+
+// ─── 2-progress. Kalkulasi bertahap (untuk progress bar di UI) ──────
+// Alur: getPayrollCalcTargets → calculatePayrollChunk (berulang) → finalizePayrollCalculation
+
+/** Ambil daftar karyawan yang akan dihitung (tanpa mengubah status). */
+export async function getPayrollCalcTargets(periodId: number) {
+  const auth = await requirePayrollAdmin()
+  if ("error" in auth) return fail(auth.error)
+  if (!periodId || periodId <= 0) return fail("ID periode tidak valid")
+  try {
+    const period = await prisma.payroll_periods.findUnique({ where: { id: BigInt(periodId) } })
+    if (!period) return fail("Periode tidak ditemukan")
+    if (!["DRAFT", "CALCULATED"].includes(period.status)) return fail("Periode tidak dapat dihitung pada status saat ini")
+
+    const { start: periodStart, end: periodEnd } = resolvePeriodRange(period)
+    await prisma.payroll_run_logs.deleteMany({ where: { payroll_period_id: BigInt(periodId) } })
+
+    const employees = await prisma.karyawans.findMany({
+      where: eligibleEmployeeWhere(periodStart, periodEnd),
+      select: { id: true, nama_karyawan: true },
+      orderBy: { id: "asc" },
+    })
+    if (employees.length === 0) return fail("Tidak ada karyawan aktif")
+    return ok({ targets: employees.map((e) => ({ id: Number(e.id), nama: e.nama_karyawan })) })
+  } catch {
+    return fail("Gagal memuat daftar karyawan")
+  }
+}
+
+/** Hitung satu chunk karyawan (idempotent). Tidak mengubah status periode. */
+export async function calculatePayrollChunk(periodId: number, employeeIds: number[]) {
+  const auth = await requirePayrollAdmin()
+  if ("error" in auth) return fail(auth.error)
+  if (!periodId || periodId <= 0) return fail("ID periode tidak valid")
+  if (!Array.isArray(employeeIds) || employeeIds.length === 0) return fail("Daftar karyawan kosong")
+
+  try {
+    const period = await prisma.payroll_periods.findUnique({ where: { id: BigInt(periodId) } })
+    if (!period) return fail("Periode tidak ditemukan")
+    if (!["DRAFT", "CALCULATED"].includes(period.status)) return fail("Periode tidak dapat dihitung pada status saat ini")
+
+    const { start: periodStart, end: periodEnd } = resolvePeriodRange(period)
+    const ids = employeeIds.map((n) => BigInt(n))
+    const employees = await prisma.karyawans.findMany({
+      where: { id: { in: ids } },
+      select: payrollEmployeeSelect,
+      orderBy: { id: "asc" },
+    })
+
+    const [deductionRules, taxCtx] = await Promise.all([loadActiveDeductionRules(), loadTaxContext()])
+    const runInfo: RunInfo = {
+      run_type: period.run_type,
+      month: period.period_month,
+      year: period.period_year,
+      period_start: periodStart,
+      period_end: periodEnd,
+      thr_min_masa_bulan: period.thr_min_masa_bulan,
+      bonus_multiplier: Number(period.bonus_multiplier),
+      run_label: period.run_label,
+    }
+
+    const errors: { employee_id: number; nama: string; error: string }[] = []
+    const warnings: { employee_id: number; nama: string; warning: string }[] = []
+    let successCount = 0
+
+    // Proses SEQUENTIAL dalam chunk agar tidak ada deadlock antar transaksi.
+    for (const emp of employees) {
+      let ok2 = false
+      for (let attempt = 0; attempt < 3 && !ok2; attempt++) {
+        try {
+          await prisma.payroll_run_logs.deleteMany({ where: { payroll_period_id: BigInt(periodId), employee_id: emp.id } })
+          const result = await computeAndSaveEmployee(BigInt(periodId), emp, runInfo, deductionRules, taxCtx)
+          for (const w of result.warnings) warnings.push({ employee_id: Number(emp.id), nama: emp.nama_karyawan, warning: w })
+          await writePayrollRunLogs(BigInt(periodId), result.warnings.map((w) => ({ slip_id: result.slip_id, employee_id: emp.id, level: "WARNING", message: w, context: { nama: emp.nama_karyawan } })))
+          successCount++
+          ok2 = true
+        } catch (e) {
+          const isDeadlock = e instanceof Error && /deadlock|write conflict/i.test(e.message)
+          if (!isDeadlock || attempt === 2) {
+            const msg = e instanceof Error ? e.message : "Gagal menghitung"
+            console.error(`[payroll] Gagal hitung karyawan ${emp.nama_karyawan} (${emp.id}):`, e)
+            errors.push({ employee_id: Number(emp.id), nama: emp.nama_karyawan, error: msg })
+            await writePayrollRunLogs(BigInt(periodId), [{ employee_id: emp.id, level: "ERROR", message: msg, context: { nama: emp.nama_karyawan } }])
+            ok2 = true // keluar dari retry loop
+          } else {
+            await new Promise((r) => setTimeout(r, 50 * (attempt + 1)))
+          }
+        }
+      }
+    }
+
+    return ok({ processed: employees.length, success_count: successCount, errors, warnings })
+  } catch {
+    return fail("Gagal menghitung sebagian karyawan")
+  }
+}
+
+/** Finalisasi: set status periode & tetapkan nomor slip bila tidak ada error. */
+export async function finalizePayrollCalculation(periodId: number, hadErrors: boolean, successCount: number, failedCount: number) {
+  const auth = await requirePayrollAdmin()
+  if ("error" in auth) return fail(auth.error)
+  if (!periodId || periodId <= 0) return fail("ID periode tidak valid")
+
+  try {
+    const period = await prisma.payroll_periods.findUnique({ where: { id: BigInt(periodId) } })
+    if (!period) return fail("Periode tidak ditemukan")
+    if (!["DRAFT", "CALCULATED"].includes(period.status)) return fail("Periode tidak dapat difinalisasi pada status saat ini")
+
+    if (!hadErrors) {
+      await prisma.payroll_periods.update({ where: { id: BigInt(periodId) }, data: { status: "CALCULATED", updated_at: new Date() } })
+      await assignSlipNumbers(BigInt(periodId), period.period_month, period.period_year)
+    } else {
+      await prisma.payroll_periods.update({ where: { id: BigInt(periodId) }, data: { status: "DRAFT", updated_at: new Date() } })
+    }
+
+    await writeAuditLog({ user: auth.user, action: "UPDATE", modelType: "payroll_periods", modelId: BigInt(periodId), dataBaru: { status: hadErrors ? "DRAFT" : "CALCULATED", success: successCount, failed: failedCount } })
+    revalidatePath(PAGE_PATH)
+    revalidatePath(`${PAGE_PATH}/${periodId}`)
+    return ok({ status: hadErrors ? "DRAFT" : "CALCULATED" })
+  } catch {
+    return fail("Gagal memfinalisasi kalkulasi")
   }
 }
 
@@ -773,12 +1005,7 @@ export async function validatePayrollPeriod(periodId: number) {
 
     // 2. Karyawan yang akan diproses
     const employees = await prisma.karyawans.findMany({
-      where: {
-        OR: [
-          { status_karyawan: "Aktif" },
-          { tanggal_keluar: { gte: periodStart, lte: periodEnd } },
-        ],
-      },
+      where: eligibleEmployeeWhere(periodStart, periodEnd),
       select: { id: true, nama_karyawan: true, jabatan: true, status_ptkp: true, no_rekening: true },
     })
     if (employees.length === 0) {
@@ -846,7 +1073,7 @@ export async function recalculateEmployeePayroll(periodId: number, employeeId: n
     }
     const employee = await prisma.karyawans.findUnique({
       where: { id: BigInt(employeeId) },
-      select: { id: true, nik: true, nama_karyawan: true, jabatan: true, status_ptkp: true, punya_npwp: true, tanggal_masuk_kerja: true, tanggal_keluar: true },
+      select: payrollEmployeeSelect,
     })
     if (!employee) return fail("Karyawan tidak ditemukan")
 
@@ -869,7 +1096,9 @@ export async function recalculateEmployeePayroll(periodId: number, employeeId: n
       select: { total_earnings: true, total_deductions: true, net_salary: true },
     })
 
-    await computeAndSaveEmployee(BigInt(periodId), employee, runInfo, deductionRules, taxCtx)
+    await prisma.payroll_run_logs.deleteMany({ where: { payroll_period_id: BigInt(periodId), employee_id: BigInt(employeeId) } })
+    const computeResult = await computeAndSaveEmployee(BigInt(periodId), employee, runInfo, deductionRules, taxCtx)
+    await writePayrollRunLogs(BigInt(periodId), computeResult.warnings.map((w) => ({ slip_id: computeResult.slip_id, employee_id: employee.id, level: "WARNING", message: w, context: { nama: employee.nama_karyawan, recalculated: true } })))
 
     const after = await prisma.payroll_slips.findFirst({
       where: { payroll_period_id: BigInt(periodId), employee_id: BigInt(employeeId) },
@@ -892,7 +1121,111 @@ export async function recalculateEmployeePayroll(periodId: number, employeeId: n
   }
 }
 
+// ─── 3b. Hapus periode ───────────────────────────────────────────
+export async function deletePayrollPeriod(periodId: number) {
+  const auth = await requirePayrollAdmin()
+  if ("error" in auth) return fail(auth.error)
+  if (!periodId || periodId <= 0) return fail("ID periode tidak valid")
+
+  try {
+    const period = await prisma.payroll_periods.findUnique({
+      where: { id: BigInt(periodId) },
+      select: { id: true, status: true, period_month: true, period_year: true, run_type: true },
+    })
+    if (!period) return fail("Periode tidak ditemukan")
+    if (!["DRAFT", "CALCULATED"].includes(period.status)) {
+      return fail("Periode hanya dapat dihapus selama berstatus DRAFT atau CALCULATED (belum disetujui)")
+    }
+
+    await writeAuditLog({
+      user: auth.user,
+      action: "DELETE",
+      modelType: "payroll_periods",
+      modelId: BigInt(periodId),
+      dataLama: { id: periodId, period_month: period.period_month, period_year: period.period_year, run_type: period.run_type, status: period.status },
+    })
+
+    // Kumpulkan pinjaman yang punya potongan cicilan di periode ini (sebelum cascade delete).
+    const affectedLoanPayments = await prisma.employee_loan_payments.findMany({
+      where: { payroll_period_id: BigInt(periodId) },
+      select: { loan_id: true },
+    })
+    const affectedLoanIds = Array.from(new Set(affectedLoanPayments.map((p) => p.loan_id.toString()))).map((s) => BigInt(s))
+
+    // Cascade: payroll_slips → details, adjustments, loan_payments ikut terhapus via FK cascade.
+    await prisma.payroll_periods.delete({ where: { id: BigInt(periodId) } })
+
+    // Pulihkan status pinjaman: bila masih ada sisa pokok setelah pembayaran periode ini hilang,
+    // kembalikan ke ACTIVE (kecuali pinjaman yang sudah dibatalkan).
+    for (const loanId of affectedLoanIds) {
+      const loan = await prisma.employee_loans.findUnique({
+        where: { id: loanId },
+        select: { id: true, status: true, principal_amount: true, payments: { select: { amount: true } } },
+      })
+      if (!loan || loan.status === "CANCELLED") continue
+      const paid = loan.payments.reduce((s, p) => s + Number(p.amount), 0)
+      const remaining = Number(loan.principal_amount) - paid
+      const newStatus = remaining > 0.005 ? "ACTIVE" : "COMPLETED"
+      if (newStatus !== loan.status) {
+        await prisma.employee_loans.update({ where: { id: loanId }, data: { status: newStatus, updated_at: new Date() } })
+      }
+    }
+
+    revalidatePath(PAGE_PATH)
+    return ok({ id: periodId })
+  } catch {
+    return fail("Gagal menghapus periode")
+  }
+}
+
 // ─── 4. Approve periode ──────────────────────────────────────────
+export async function reviewPayrollSlip(slipId: number) {
+  const auth = await requirePayrollAdmin()
+  if ("error" in auth) return fail(auth.error)
+  if (!slipId || slipId <= 0) return fail("ID slip tidak valid")
+
+  try {
+    const slip = await prisma.payroll_slips.findUnique({
+      where: { id: BigInt(slipId) },
+      select: { id: true, payroll_period_id: true, payroll_periods: { select: { status: true } } },
+    })
+    if (!slip) return fail("Slip tidak ditemukan")
+    if (slip.payroll_periods.status !== "CALCULATED") return fail("Review slip hanya untuk periode CALCULATED")
+
+    const updated = await prisma.payroll_slips.update({
+      where: { id: BigInt(slipId) },
+      data: { status: "REVIEWED", reviewed_by: BigInt(auth.user.id), reviewed_at: new Date(), updated_at: new Date() },
+    })
+    await writeAuditLog({ user: auth.user, action: "UPDATE", modelType: "payroll_slips", modelId: updated.id, dataBaru: { status: "REVIEWED" } })
+    revalidatePath(`${PAGE_PATH}/${Number(slip.payroll_period_id)}`)
+    return ok({ id: slipId, status: "REVIEWED" })
+  } catch {
+    return fail("Gagal mereview slip")
+  }
+}
+
+export async function reviewAllPayrollSlips(periodId: number) {
+  const auth = await requirePayrollAdmin()
+  if ("error" in auth) return fail(auth.error)
+  if (!periodId || periodId <= 0) return fail("ID periode tidak valid")
+
+  try {
+    const period = await prisma.payroll_periods.findUnique({ where: { id: BigInt(periodId) }, select: { status: true } })
+    if (!period) return fail("Periode tidak ditemukan")
+    if (period.status !== "CALCULATED") return fail("Review semua slip hanya untuk periode CALCULATED")
+
+    const result = await prisma.payroll_slips.updateMany({
+      where: { payroll_period_id: BigInt(periodId), status: { not: "REVIEWED" } },
+      data: { status: "REVIEWED", reviewed_by: BigInt(auth.user.id), reviewed_at: new Date(), updated_at: new Date() },
+    })
+    await writeAuditLog({ user: auth.user, action: "UPDATE", modelType: "payroll_slips", modelId: BigInt(periodId), dataBaru: { reviewed_all: true, count: result.count } })
+    revalidatePath(`${PAGE_PATH}/${periodId}`)
+    return ok({ count: result.count })
+  } catch {
+    return fail("Gagal mereview semua slip")
+  }
+}
+
 export async function approvePayrollPeriod(periodId: number) {
   const auth = await requirePayrollAdmin()
   if ("error" in auth) return fail(auth.error)
@@ -903,29 +1236,43 @@ export async function approvePayrollPeriod(periodId: number) {
     if (!period) return fail("Periode tidak ditemukan")
     if (period.status !== "CALCULATED") return fail("Hanya periode CALCULATED yang dapat di-approve")
 
-    const [slips, activeEmployeeCount] = await Promise.all([
+    const { start: periodStart, end: periodEnd } = resolvePeriodRange(period)
+    const [slips, eligibleEmployeeCount] = await Promise.all([
       prisma.payroll_slips.findMany({
         where: { payroll_period_id: BigInt(periodId) },
         select: {
           id: true,
+          employee_id: true,
+          employee_snapshot: true,
+          karyawans: { select: { nama_karyawan: true } },
+          status: true,
           net_salary: true,
           total_earnings: true,
           total_deductions: true,
           _count: { select: { details: true } },
         },
       }),
-      prisma.karyawans.count({ where: { status_karyawan: "Aktif" } }),
+      prisma.karyawans.count({ where: eligibleEmployeeWhere(periodStart, periodEnd) }),
     ])
 
+    const slipName = (s: (typeof slips)[number]) => (s.employee_snapshot as { nama?: string } | null)?.nama ?? s.karyawans.nama_karyawan
+    const summarizeNames = (names: string[]) => names.length <= 8 ? names.join(", ") : `${names.slice(0, 8).join(", ")} +${names.length - 8} lainnya`
+
     if (slips.length === 0) return fail("Periode belum memiliki slip payroll")
-    if (slips.length < activeEmployeeCount) {
-      return fail(`Slip payroll belum lengkap (${slips.length}/${activeEmployeeCount} karyawan aktif). Hitung ulang periode sebelum approve`)
+    if (slips.length < eligibleEmployeeCount) {
+      return fail(`Slip payroll belum lengkap (${slips.length}/${eligibleEmployeeCount} karyawan eligible periode). Hitung ulang periode sebelum approve`)
     }
-    if (slips.some((s) => s._count.details === 0 || (Number(s.total_earnings) === 0 && Number(s.total_deductions) === 0 && Number(s.net_salary) === 0))) {
-      return fail("Terdapat slip kosong. Periksa komponen gaji dan hitung ulang sebelum approve")
+    const emptySlips = slips.filter((s) => s._count.details === 0 || (Number(s.total_earnings) === 0 && Number(s.total_deductions) === 0 && Number(s.net_salary) === 0))
+    if (emptySlips.length > 0) {
+      return fail(`Terdapat ${emptySlips.length} slip kosong: ${summarizeNames(emptySlips.map(slipName))}. Periksa komponen gaji dan hitung ulang sebelum approve`)
     }
-    if (slips.some((s) => Number(s.net_salary) < 0)) {
-      return fail("Terdapat slip dengan gaji bersih negatif. Periksa potongan sebelum approve")
+    const negativeSlips = slips.filter((s) => Number(s.net_salary) < 0)
+    if (negativeSlips.length > 0) {
+      return fail(`Terdapat ${negativeSlips.length} slip dengan gaji bersih negatif: ${summarizeNames(negativeSlips.map(slipName))}. Periksa potongan sebelum approve`)
+    }
+    const unreviewedSlips = slips.filter((s) => s.status !== "REVIEWED")
+    if (unreviewedSlips.length > 0) {
+      return fail(`${unreviewedSlips.length} slip belum direview: ${summarizeNames(unreviewedSlips.map(slipName))}`)
     }
 
     await prisma.$transaction(async (tx) => {
@@ -945,6 +1292,36 @@ export async function approvePayrollPeriod(periodId: number) {
     return ok({ id: periodId, status: "APPROVED" })
   } catch {
     return fail("Gagal meng-approve periode")
+  }
+}
+
+export async function cancelPayrollApproval(periodId: number) {
+  const auth = await requirePayrollAdmin()
+  if ("error" in auth) return fail(auth.error)
+  if (!periodId || periodId <= 0) return fail("ID periode tidak valid")
+
+  try {
+    const period = await prisma.payroll_periods.findUnique({ where: { id: BigInt(periodId) }, select: { status: true } })
+    if (!period) return fail("Periode tidak ditemukan")
+    if (period.status !== "APPROVED") return fail("Pembatalan approve hanya untuk periode APPROVED")
+
+    await prisma.$transaction(async (tx) => {
+      await tx.payroll_periods.update({
+        where: { id: BigInt(periodId) },
+        data: { status: "CALCULATED", approved_by: null, updated_at: new Date() },
+      })
+      await tx.payroll_slips.updateMany({
+        where: { payroll_period_id: BigInt(periodId), status: "APPROVED" },
+        data: { status: "REVIEWED", updated_at: new Date() },
+      })
+    })
+
+    await writeAuditLog({ user: auth.user, action: "UPDATE", modelType: "payroll_periods", modelId: BigInt(periodId), dataBaru: { status: "CALCULATED", approval_cancelled: true } })
+    revalidatePath(PAGE_PATH)
+    revalidatePath(`${PAGE_PATH}/${periodId}`)
+    return ok({ id: periodId, status: "CALCULATED" })
+  } catch {
+    return fail("Gagal membatalkan approve periode")
   }
 }
 
@@ -1038,7 +1415,7 @@ export async function getPayrollPeriodSummary(periodId: number) {
   try {
     const slips = await prisma.payroll_slips.findMany({
       where: { payroll_period_id: BigInt(periodId) },
-      select: { employee_id: true, total_earnings: true, total_deductions: true, net_salary: true },
+      select: { employee_id: true, employee_snapshot: true, total_earnings: true, total_deductions: true, net_salary: true },
     })
     const deptMap = await resolveDepartments(slips.map((s) => s.employee_id))
 
@@ -1047,7 +1424,7 @@ export async function getPayrollPeriodSummary(periodId: number) {
     for (const s of slips) {
       const e = Number(s.total_earnings), d = Number(s.total_deductions), n = Number(s.net_salary)
       totalEarnings += e; totalDeductions += d; totalNet += n
-      const dept = deptMap.get(s.employee_id.toString()) ?? "—"
+      const dept = (s.employee_snapshot as { department?: string } | null)?.department ?? deptMap.get(s.employee_id.toString()) ?? "—"
       const cur = byDept.get(dept) ?? { count: 0, earnings: 0, deductions: 0, net: 0 }
       cur.count++; cur.earnings += e; cur.deductions += d; cur.net += n
       byDept.set(dept, cur)
@@ -1105,7 +1482,10 @@ export async function getPayrollPeriodDetail(periodId: number) {
 
     const slips = await prisma.payroll_slips.findMany({
       where: { payroll_period_id: BigInt(periodId) },
-      include: { karyawans: { select: { id: true, nik: true, nama_karyawan: true, jabatan: true } } },
+      include: {
+        karyawans: { select: { id: true, nik: true, nama_karyawan: true, jabatan: true } },
+        _count: { select: { details: true } },
+      },
       orderBy: { id: "asc" },
     })
     const deptMap = await resolveDepartments(slips.map((s) => s.employee_id))
@@ -1113,18 +1493,26 @@ export async function getPayrollPeriodDetail(periodId: number) {
     const rows = slips.map((s) => ({
       id: Number(s.id),
       employee_id: Number(s.employee_id),
-      nama: s.karyawans.nama_karyawan,
-      nik: s.karyawans.nik,
-      jabatan: s.karyawans.jabatan,
-      department: deptMap.get(s.employee_id.toString()) ?? "—",
+      nama: (s.employee_snapshot as { nama?: string } | null)?.nama ?? s.karyawans.nama_karyawan,
+      nik: (s.employee_snapshot as { nik?: string } | null)?.nik ?? s.karyawans.nik,
+      jabatan: (s.employee_snapshot as { jabatan?: string } | null)?.jabatan ?? s.karyawans.jabatan,
+      department: (s.employee_snapshot as { department?: string } | null)?.department ?? deptMap.get(s.employee_id.toString()) ?? "—",
       working_days: s.working_days,
       total_earnings: Number(s.total_earnings),
       total_deductions: Number(s.total_deductions),
       net_salary: Number(s.net_salary),
       status: s.status,
+      detail_count: s._count.details,
     }))
 
-    return ok({ period: serialize(period), slips: rows })
+    const logs = await prisma.payroll_run_logs.findMany({
+      where: { payroll_period_id: BigInt(periodId) },
+      orderBy: { id: "desc" },
+      take: 200,
+      select: { id: true, employee_id: true, level: true, message: true, context: true, created_at: true },
+    })
+
+    return ok({ period: serialize(period), slips: rows, logs: serialize(logs) })
   } catch {
     return fail("Gagal memuat detail periode")
   }

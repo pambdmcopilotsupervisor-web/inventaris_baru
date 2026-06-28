@@ -70,7 +70,7 @@ export default function PayrollSlipPage() {
           </div>
           <div className="text-right text-xs text-slate-500">
             <p>No: <span className="font-mono">{slip.slip_number}</span></p>
-            <p className="mt-1">Status: <Badge variant={slip.status === "APPROVED" ? "success" : "secondary"}>{slip.status}</Badge></p>
+            <div className="mt-1 flex items-center justify-end gap-1">Status: <Badge variant={slip.status === "APPROVED" ? "success" : "secondary"}>{slip.status}</Badge></div>
           </div>
         </div>
 

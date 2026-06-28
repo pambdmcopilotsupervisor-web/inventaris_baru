@@ -2,9 +2,8 @@
  * Pembangun data slip gaji — SEMUA nilai moneter berasal dari snapshot
  * payroll_slip_details (audit trail), bukan kalkulasi ulang.
  *
- * Catatan: nama/jabatan/departemen karyawan diambil via relasi karyawans
- * (schema payroll_slips tidak menyimpan snapshot identitas). Rekap kehadiran
- * (jumlah hari) bersifat informasional dan dibangun ulang dari tabel `absensi`.
+ * Catatan: identitas karyawan memakai employee_snapshot bila ada. Untuk slip
+ * lama, fallback ke relasi karyawans. Rekap kehadiran lama fallback rebuild.
  */
 import { prisma } from "@/lib/prisma"
 import { terbilangRupiah } from "@/lib/payroll/terbilang"
@@ -68,6 +67,16 @@ export interface TaxDetailSnapshot {
   } | null
 }
 
+interface EmployeeSnapshot {
+  id?: number
+  nik?: string
+  nama?: string
+  jabatan?: string
+  department?: string
+  tanggal_masuk_kerja?: string | null
+  tanggal_keluar?: string | null
+}
+
 /** Selisih hari kalender (b − a), berbasis tanggal lokal. */
 function dayDiffSlip(a: Date, b: Date): number {
   const ms = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate()) - Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())
@@ -129,14 +138,26 @@ async function buildAttendanceSummary(employeeId: bigint, periodStart: Date, per
  * Bangun data slip gaji dari snapshot. Mengembalikan null jika slip tidak ada.
  */
 export async function buildSlipData(slipId: number): Promise<SlipData | null> {
-  const slip = await prisma.payroll_slips.findUnique({
-    where: { id: BigInt(slipId) },
-    include: {
-      payroll_periods: { select: { id: true, period_month: true, period_year: true, run_type: true, period_start_date: true, period_end_date: true } },
-      karyawans: { select: { id: true, nik: true, nama_karyawan: true, jabatan: true, divisi_id: true, subdivisi_id: true, tanggal_masuk_kerja: true, tanggal_keluar: true } },
-      details: { orderBy: { sort_order: "asc" } },
-    },
-  })
+  // Gunakan raw query untuk details agar category yang tidak valid (mis. '')
+  // tidak menyebabkan Prisma enum deserialization error pada slip lama.
+  const [slipRows, rawDetails] = await Promise.all([
+    prisma.payroll_slips.findUnique({
+      where: { id: BigInt(slipId) },
+      include: {
+        payroll_periods: { select: { id: true, period_month: true, period_year: true, run_type: true, period_start_date: true, period_end_date: true } },
+        karyawans: { select: { id: true, nik: true, nama_karyawan: true, jabatan: true, divisi_id: true, subdivisi_id: true, tanggal_masuk_kerja: true, tanggal_keluar: true } },
+      },
+    }),
+    prisma.$queryRaw<{ component_code: string; component_name: string; category: string; type: string; basis_value: number; quantity: number; amount: number; notes: string | null; sort_order: number }[]>`
+      SELECT component_code, component_name,
+             CASE WHEN category IN ('SALARY','ATTENDANCE_DEDUCTION','TAX','BPJS','LOAN','OTHER') THEN category ELSE 'OTHER' END AS category,
+             type, basis_value, quantity, amount, notes, sort_order
+      FROM payroll_slip_details
+      WHERE payroll_slip_id = ${BigInt(slipId)}
+      ORDER BY sort_order ASC
+    `,
+  ])
+  const slip = slipRows
   if (!slip) return null
 
   const month = slip.payroll_periods.period_month
@@ -157,14 +178,15 @@ export async function buildSlipData(slipId: number): Promise<SlipData | null> {
     slipNumber = `SLIP/${year}/${String(month).padStart(2, "0")}/${String(seq).padStart(3, "0")}`
   }
 
-  const department = await resolveDepartment(slip.karyawans.divisi_id, slip.karyawans.subdivisi_id)
+  const empSnapshot = (slip.employee_snapshot as EmployeeSnapshot | null) ?? null
+  const department = empSnapshot?.department ?? await resolveDepartment(slip.karyawans.divisi_id, slip.karyawans.subdivisi_id)
   // Kehadiran: utamakan snapshot (dibekukan saat hitung); fallback rebuild untuk slip lama.
   const attendance: AttendanceSummary = (slip.attendance_snapshot as AttendanceSummary | null)
     ?? await buildAttendanceSummary(slip.employee_id, periodStart, periodEnd, slip.working_days)
 
   const earnings: SlipDetailLine[] = []
   const deductions: SlipDetailLine[] = []
-  for (const d of slip.details) {
+  for (const d of rawDetails) {
     const line: SlipDetailLine = {
       no: 0,
       component_code: d.component_code,
@@ -188,7 +210,10 @@ export async function buildSlipData(slipId: number): Promise<SlipData | null> {
   const taxMethod = slip.tax_detail ? (taxConfig?.metode_pph21 === "TER" ? "TER (PP 58/2023)" : "Progresif") : null
 
   const { factor: prorataFactor, note: prorataNote } = computeProrataInfo(
-    slip.karyawans.tanggal_masuk_kerja, slip.karyawans.tanggal_keluar, periodStart, periodEnd,
+    empSnapshot?.tanggal_masuk_kerja ? new Date(empSnapshot.tanggal_masuk_kerja) : slip.karyawans.tanggal_masuk_kerja,
+    empSnapshot?.tanggal_keluar ? new Date(empSnapshot.tanggal_keluar) : slip.karyawans.tanggal_keluar,
+    periodStart,
+    periodEnd,
   )
 
   const fmtDate = (d: Date) => `${String(d.getDate()).padStart(2, "0")} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`
@@ -208,9 +233,9 @@ export async function buildSlipData(slipId: number): Promise<SlipData | null> {
     status: slip.status,
     employee: {
       id: Number(slip.employee_id),
-      nama: slip.karyawans.nama_karyawan,
-      nik: slip.karyawans.nik,
-      jabatan: slip.karyawans.jabatan,
+      nama: empSnapshot?.nama ?? slip.karyawans.nama_karyawan,
+      nik: empSnapshot?.nik ?? slip.karyawans.nik,
+      jabatan: empSnapshot?.jabatan ?? slip.karyawans.jabatan,
       department,
     },
     earnings,

@@ -68,6 +68,29 @@ const MENU_GROUPS = [
     ],
   },
   {
+    group: "Penggajian — Konfigurasi",
+    items: [
+      { label: "Komponen Gaji",          href: "/dashboard/payroll/components" },
+      { label: "Komponen per Jabatan",   href: "/dashboard/payroll/positions" },
+      { label: "Aturan Potongan",        href: "/dashboard/payroll/deduction-rules" },
+      { label: "Pajak & BPJS",           href: "/dashboard/payroll/tax-settings" },
+      { label: "Penyesuaian Gaji Massal",href: "/dashboard/payroll/bulk-adjust" },
+    ],
+  },
+  {
+    group: "Penggajian — Proses",
+    items: [
+      { label: "Payroll Run",             href: "/dashboard/payroll/run" },
+      { label: "Laporan Pajak (1721-A1)", href: "/dashboard/payroll/tax-report" },
+    ],
+  },
+  {
+    group: "Penggajian — Per Karyawan",
+    items: [
+      { label: "Pinjaman Karyawan",       href: "/dashboard/payroll/loans" },
+    ],
+  },
+  {
     group: "Penilaian Kinerja",
     items: [
       { label: "Dashboard Kinerja",   href: "/dashboard/sdm/penilaian-kinerja/dashboard" },
