@@ -127,3 +127,84 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Print mode for finance reports. Activated by src/lib/keuangan/client-export.ts */
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm 12mm;
+  }
+
+  body.finance-print {
+    background: #fff !important;
+    color: #111827 !important;
+    font-size: 11px;
+  }
+
+  body.finance-print header.fixed,
+  body.finance-print button,
+  body.finance-print select,
+  body.finance-print input,
+  body.finance-print .animate-spin,
+  body.finance-print .animate-pulse {
+    display: none !important;
+  }
+
+  body.finance-print main {
+    padding-top: 0 !important;
+  }
+
+  body.finance-print main > div {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+
+  body.finance-print main::before {
+    content: "Koperasi Konsumen Pedami\A" attr(data-print-title);
+    white-space: pre;
+    display: block;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #111827;
+    color: #111827;
+    font-weight: 700;
+    font-size: 16px;
+    line-height: 1.35;
+  }
+
+  body.finance-print main::after {
+    content: "Dicetak: " attr(data-print-date);
+    display: block;
+    margin-top: 16px;
+    padding-top: 8px;
+    border-top: 1px solid #d1d5db;
+    color: #4b5563;
+    font-size: 10px;
+  }
+
+  body.finance-print table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    page-break-inside: auto;
+  }
+
+  body.finance-print thead {
+    display: table-header-group;
+  }
+
+  body.finance-print tr {
+    page-break-inside: avoid;
+  }
+
+  body.finance-print th,
+  body.finance-print td {
+    border-color: #d1d5db !important;
+    color: #111827 !important;
+    padding: 5px 6px !important;
+  }
+
+  body.finance-print a {
+    color: inherit !important;
+    text-decoration: none !important;
+  }
+}

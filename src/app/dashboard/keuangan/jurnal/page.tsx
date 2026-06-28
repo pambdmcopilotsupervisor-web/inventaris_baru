@@ -1,7 +1,6 @@
 "use client"
 
-import React, { useCallback, useEffect, useMemo, useState } from "react"
-import Link from "next/link"
+import React, { useEffect, useMemo, useState } from "react"
 import { DataTable, Column } from "@/components/ui/data-table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -31,6 +30,48 @@ const JENIS_FORM = JENIS_OPTIONS.slice(1)
 const STATUS_VARIANT: Record<string, string> = {
   DRAFT: "secondary",
   POSTED: "success",
+}
+
+const TEMPLATE_OPTIONS = [
+  { value: "", label: "Pilih Template" },
+  { value: "biaya_operasional", label: "Biaya Operasional" },
+  { value: "pendapatan_jasa", label: "Pendapatan Jasa" },
+  { value: "transfer_kas_bank", label: "Transfer Kas ke Bank" },
+  { value: "penyusutan_aset", label: "Penyusutan Aset" },
+]
+
+const JOURNAL_TEMPLATES: Record<string, {
+  keterangan: string
+  lines: { kode: string; keterangan: string; side: "debit" | "kredit" }[]
+}> = {
+  biaya_operasional: {
+    keterangan: "Pembayaran biaya operasional",
+    lines: [
+      { kode: "5.2.4", keterangan: "Beban pemeliharaan/operasional", side: "debit" },
+      { kode: "1.1.1", keterangan: "Pembayaran kas", side: "kredit" },
+    ],
+  },
+  pendapatan_jasa: {
+    keterangan: "Penerimaan pendapatan jasa",
+    lines: [
+      { kode: "1.1.1", keterangan: "Penerimaan kas", side: "debit" },
+      { kode: "4.1.2", keterangan: "Pendapatan jasa", side: "kredit" },
+    ],
+  },
+  transfer_kas_bank: {
+    keterangan: "Transfer kas ke bank",
+    lines: [
+      { kode: "1.1.2", keterangan: "Setoran ke bank", side: "debit" },
+      { kode: "1.1.1", keterangan: "Kas keluar", side: "kredit" },
+    ],
+  },
+  penyusutan_aset: {
+    keterangan: "Pencatatan penyusutan aset tetap",
+    lines: [
+      { kode: "5.3.1", keterangan: "Beban penyusutan aset tetap", side: "debit" },
+      { kode: "1.2.2", keterangan: "Akumulasi penyusutan aset tetap", side: "kredit" },
+    ],
+  },
 }
 
 type DetailLine = {
@@ -64,6 +105,7 @@ export default function JurnalPage() {
     periode_id: "",
   })
   const [lines, setLines] = useState<DetailLine[]>([emptyLine(), emptyLine()])
+  const [templateKey, setTemplateKey] = useState("")
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -80,7 +122,7 @@ export default function JurnalPage() {
     })
   }, [])
 
-  const load = useCallback(async () => {
+  async function load() {
     setLoading(true)
     const res = await getJurnals({
       periode_id: filterPeriode ? Number(filterPeriode) : undefined,
@@ -90,9 +132,12 @@ export default function JurnalPage() {
     if (res.success) { setRows(res.data.rows); setTotal(res.data.total) }
     else setLoadError(res.error)
     setLoading(false)
-  }, [filterPeriode, filterStatus, filterJenis])
+  }
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    void Promise.resolve().then(() => load())
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterPeriode, filterStatus, filterJenis])
 
   const periodeOptions = useMemo(() => [
     { value: "", label: "Semua Periode" },
@@ -115,7 +160,12 @@ export default function JurnalPage() {
   const isBalance = Math.abs(totalDebit - totalKredit) < 0.01
 
   function updateLine(idx: number, field: keyof DetailLine, val: string) {
-    setLines((prev) => prev.map((l, i) => i === idx ? { ...l, [field]: val } : l))
+    setLines((prev) => prev.map((l, i) => {
+      if (i !== idx) return l
+      if (field === "debit" && parseThousand(val) > 0) return { ...l, debit: val, kredit: "" }
+      if (field === "kredit" && parseThousand(val) > 0) return { ...l, kredit: val, debit: "" }
+      return { ...l, [field]: val }
+    }))
   }
 
   function addLine() {
@@ -131,6 +181,7 @@ export default function JurnalPage() {
     setEditingId(null)
     setForm({ tanggal: now.toISOString().split("T")[0], keterangan: "", jenis: "UMUM", periode_id: "" })
     setLines([emptyLine(), emptyLine()])
+    setTemplateKey("")
     setFormError(null)
     setFormOpen(true)
   }
@@ -154,8 +205,57 @@ export default function JurnalPage() {
         kredit: d.kredit ? formatThousand(d.kredit) : "",
       }))
     )
+    setTemplateKey("")
     setFormError(null)
     setFormOpen(true)
+  }
+
+  function applyTemplate() {
+    const template = JOURNAL_TEMPLATES[templateKey]
+    if (!template) return
+    const mapped = template.lines.map((line) => {
+      const akun = akuns.find((a) => a.kode === line.kode)
+      if (!akun) return null
+      return {
+        akun_id: String(akun.id),
+        keterangan: `${line.keterangan} (${line.side === "debit" ? "Debit" : "Kredit"})`,
+        debit: "",
+        kredit: "",
+      }
+    })
+    if (mapped.some((line) => line === null)) {
+      setFormError("Sebagian akun template tidak ditemukan di bagan akun")
+      return
+    }
+    setForm((prev) => ({ ...prev, jenis: "UMUM", keterangan: prev.keterangan || template.keterangan }))
+    setLines(mapped as DetailLine[])
+    setFormError(null)
+  }
+
+  function copyMemoToEmptyLines() {
+    if (!form.keterangan.trim()) { setFormError("Isi keterangan/memo terlebih dahulu"); return }
+    setLines((prev) => prev.map((l) => ({ ...l, keterangan: l.keterangan || form.keterangan })))
+    setFormError(null)
+  }
+
+  function addBalancingLine() {
+    const diff = totalDebit - totalKredit
+    if (Math.abs(diff) < 0.01) return
+    const targetSide: "debit" | "kredit" = diff < 0 ? "debit" : "kredit"
+    const amount = formatThousand(Math.abs(diff))
+    const emptyIdx = lines.findIndex((l) => parseThousand(l.debit) === 0 && parseThousand(l.kredit) === 0)
+    if (emptyIdx >= 0) {
+      setLines((prev) => prev.map((l, i) => i === emptyIdx ? { ...l, [targetSide]: amount, keterangan: l.keterangan || form.keterangan || "Baris penyeimbang" } : l))
+      if (!lines[emptyIdx].akun_id) setFormError("Pilih akun untuk baris penyeimbang")
+      return
+    }
+    setLines((prev) => [...prev, {
+      akun_id: "",
+      keterangan: form.keterangan || "Baris penyeimbang",
+      debit: targetSide === "debit" ? amount : "",
+      kredit: targetSide === "kredit" ? amount : "",
+    }])
+    setFormError("Pilih akun untuk baris penyeimbang yang baru ditambahkan")
   }
 
   async function handleSave() {
@@ -297,9 +397,25 @@ export default function JurnalPage() {
           </div>
           <TextField label="Keterangan / Memo *" value={form.keterangan} onChange={(e) => setForm({ ...form, keterangan: e.target.value })} />
 
+          {!editingId && (
+            <div className="rounded-lg p-3 flex flex-col md:flex-row md:items-end gap-3" style={{ background: "var(--surface-muted)", border: "1px solid var(--border)" }}>
+              <SelectField label="Template Jurnal" value={templateKey} onChange={(e) => setTemplateKey(e.target.value)} options={TEMPLATE_OPTIONS} className="w-full md:w-64" />
+              <Button variant="outline" size="sm" onClick={applyTemplate} disabled={!templateKey}>Terapkan Template</Button>
+              <p className="text-xs md:flex-1" style={{ color: "var(--text-subtle)" }}>
+                Template mengisi akun dan keterangan awal. Nominal tetap diisi manual sesuai bukti transaksi.
+              </p>
+            </div>
+          )}
+
           {/* Baris Jurnal */}
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--text-subtle)" }}>Baris Jurnal</p>
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-subtle)" }}>Baris Jurnal</p>
+              <div className="flex gap-2 flex-wrap justify-end">
+                <Button variant="ghost" size="sm" onClick={copyMemoToEmptyLines}>Salin Memo</Button>
+                <Button variant="ghost" size="sm" onClick={addBalancingLine} disabled={isBalance || (totalDebit === 0 && totalKredit === 0)}>Tambah Penyeimbang</Button>
+              </div>
+            </div>
             <div className="rounded-lg overflow-hidden border" style={{ borderColor: "var(--border)" }}>
               <table className="w-full text-sm">
                 <thead>

@@ -24,6 +24,21 @@ export function downloadCsv(filename: string, rows: Array<Record<string, unknown
   URL.revokeObjectURL(url)
 }
 
-export function printToPdf() {
+export function printToPdf(title?: string) {
+  const main = document.querySelector("main")
+  const printTitle = title ?? document.querySelector("h1")?.textContent ?? "Laporan Keuangan"
+  document.body.classList.add("finance-print")
+  main?.setAttribute("data-print-title", printTitle)
+  main?.setAttribute("data-print-date", new Date().toLocaleString("id-ID"))
+
+  const cleanup = () => {
+    document.body.classList.remove("finance-print")
+    main?.removeAttribute("data-print-title")
+    main?.removeAttribute("data-print-date")
+    window.removeEventListener("afterprint", cleanup)
+  }
+
+  window.addEventListener("afterprint", cleanup)
   window.print()
+  window.setTimeout(cleanup, 500)
 }

@@ -4,8 +4,10 @@ import React, { useEffect, useState } from "react"
 import Link from "next/link"
 import {
   BookOpen, Calendar, LayoutDashboard, TrendingUp, Wallet,
-  ArrowRight, AlertCircle, RefreshCw, Users, PiggyBank, Lock, PieChart,
+  ArrowRight, AlertCircle, RefreshCw, Users, PiggyBank, Lock, PieChart, CheckCircle2, Clock,
 } from "lucide-react"
+import { getPeriodeFiskal, type PeriodeFiskalRow } from "@/actions/keuangan-periode"
+import { getJurnals } from "@/actions/keuangan-jurnal"
 
 const rp = (n: number) =>
   new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(n)
@@ -19,6 +21,11 @@ interface Summary {
   shu: number
   simpanan_pokok: number
   simpanan_wajib: number
+}
+
+interface OperationalStatus {
+  currentPeriod: PeriodeFiskalRow | null
+  draftCount: number
 }
 
 const NAV_CARDS = [
@@ -156,6 +163,7 @@ export default function KeuanganDashboardPage() {
   const bulan = now.getMonth() + 1
 
   const [summary, setSummary] = useState<Summary | null>(null)
+  const [status, setStatus] = useState<OperationalStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -163,9 +171,11 @@ export default function KeuanganDashboardPage() {
     setLoading(true)
     setError(null)
     try {
-      const [neracaRes, shuRes] = await Promise.all([
+      const [neracaRes, shuRes, periodeRes, draftRes] = await Promise.all([
         fetch(`/api/keuangan/summary?type=neraca&tahun=${tahun}&bulan=${bulan}`),
         fetch(`/api/keuangan/summary?type=shu&tahun=${tahun}&bulan=${bulan}`),
+        getPeriodeFiskal(),
+        getJurnals({ status: "DRAFT", limit: 1 }),
       ])
       if (!neracaRes.ok || !shuRes.ok) throw new Error("Gagal memuat ringkasan keuangan")
       const neraca = await neracaRes.json()
@@ -180,6 +190,12 @@ export default function KeuanganDashboardPage() {
         simpanan_pokok: neraca.simpanan_pokok ?? 0,
         simpanan_wajib: neraca.simpanan_wajib ?? 0,
       })
+      setStatus({
+        currentPeriod: periodeRes.success
+          ? periodeRes.data.find((p) => p.tahun === tahun && p.bulan === bulan) ?? null
+          : null,
+        draftCount: draftRes.success ? draftRes.data.total : 0,
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : "Gagal memuat data")
     } finally {
@@ -187,9 +203,37 @@ export default function KeuanganDashboardPage() {
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    void Promise.resolve().then(() => load())
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const MONTHS = ["","Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"]
+  const balanceDiff = summary ? summary.aset - (summary.kewajiban + summary.ekuitas) : 0
+  const isAccountingBalance = Math.abs(balanceDiff) < 1
+  const checklist = [
+    {
+      label: "Periode bulan ini",
+      value: status?.currentPeriod ? status.currentPeriod.status : "Belum dibuat",
+      ok: !!status?.currentPeriod && status.currentPeriod.status === "BUKA",
+      desc: status?.currentPeriod ? status.currentPeriod.nama : "Buat periode agar transaksi bulan ini bisa dicatat.",
+      href: "/dashboard/keuangan/periode-fiskal",
+    },
+    {
+      label: "Jurnal draft",
+      value: `${status?.draftCount ?? 0} entri`,
+      ok: (status?.draftCount ?? 0) === 0,
+      desc: (status?.draftCount ?? 0) === 0 ? "Tidak ada draft yang menunggu posting." : "Review dan posting jurnal agar laporan final.",
+      href: "/dashboard/keuangan/jurnal",
+    },
+    {
+      label: "Persamaan akuntansi",
+      value: isAccountingBalance ? "Balance" : `Selisih ${rp(Math.abs(balanceDiff))}`,
+      ok: isAccountingBalance,
+      desc: "Aset harus sama dengan kewajiban ditambah ekuitas.",
+      href: "/dashboard/keuangan/laporan/neraca",
+    },
+  ]
 
   return (
     <div className="space-y-6">
@@ -276,6 +320,50 @@ export default function KeuanganDashboardPage() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Status operasional bulanan */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2 rounded-xl p-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <h2 className="text-sm font-semibold" style={{ color: "var(--text-900)" }}>Status Bulan Berjalan</h2>
+              <p className="text-xs" style={{ color: "var(--text-subtle)" }}>Checklist cepat sebelum laporan dipakai untuk keputusan.</p>
+            </div>
+            <Clock className="h-4 w-4" style={{ color: "var(--text-subtle)" }} />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {checklist.map((item) => (
+              <Link key={item.label} href={item.href} className="rounded-lg p-3 transition-colors"
+                style={{ background: item.ok ? "rgba(5,150,105,0.07)" : "rgba(217,119,6,0.08)", border: `1px solid ${item.ok ? "rgba(5,150,105,0.22)" : "rgba(217,119,6,0.24)"}` }}>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold" style={{ color: item.ok ? "rgb(5,150,105)" : "rgb(180,83,9)" }}>{item.label}</p>
+                  {item.ok ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <AlertCircle className="h-4 w-4 text-amber-600" />}
+                </div>
+                <p className="text-sm font-bold mt-1" style={{ color: "var(--text-900)" }}>{item.value}</p>
+                <p className="text-xs mt-1 line-clamp-2" style={{ color: "var(--text-subtle)" }}>{item.desc}</p>
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-xl p-4" style={{ background: "linear-gradient(135deg, rgba(37,99,235,0.10), rgba(5,150,105,0.08))", border: "1px solid rgba(37,99,235,0.18)" }}>
+          <h2 className="text-sm font-semibold" style={{ color: "var(--text-900)" }}>Langkah Cepat</h2>
+          <p className="text-xs mt-1" style={{ color: "var(--text-subtle)" }}>Aksi yang paling sering dipakai operator keuangan.</p>
+          <div className="grid grid-cols-2 gap-2 mt-3">
+            {[
+              { label: "Buat Jurnal", href: "/dashboard/keuangan/jurnal" },
+              { label: "Setor Simpanan", href: "/dashboard/keuangan/simpanan" },
+              { label: "Buku Besar", href: "/dashboard/keuangan/laporan/buku-besar" },
+              { label: "Neraca", href: "/dashboard/keuangan/laporan/neraca" },
+            ].map((item) => (
+              <Link key={item.label} href={item.href} className="rounded-lg px-3 py-2 text-xs font-semibold text-center transition-colors"
+                style={{ background: "var(--surface)", color: "var(--text-900)", border: "1px solid var(--border)" }}>
+                {item.label}
+              </Link>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Menu Navigasi */}
