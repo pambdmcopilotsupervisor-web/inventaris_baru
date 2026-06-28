@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getSession } from "@/lib/session"
 
-export type AppRole = "admin" | "hrd" | "atasan" | "user" | "operator"
+export type AppRole = "admin" | "hrd" | "atasan" | "user" | "operator" | "keuangan"
 
 /**
  * Validasi session dari API route.

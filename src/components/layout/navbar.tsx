@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/contexts/AuthContext"
 import {
-  LayoutDashboard, Users, Archive, Truck, BarChart3, Database,
+  LayoutDashboard, Users, Archive, Truck, BarChart3, Database, BookOpen,
   Bell, Search, ChevronDown, LogOut, User, Settings, Package,
   Cpu, ArrowLeftRight, UserMinus, UserX, Trash2, AirVent,
   Building2, GitBranch, DoorOpen, UserCog, FileText, Wrench,
@@ -14,6 +14,7 @@ import {
   Menu, X, Layers, Clock, CalendarDays, CalendarOff, CalendarX, ClipboardList,
   Umbrella, CheckSquare, Wallet, ClipboardCheck, LogIn, Stethoscope, Timer, AlertTriangle,
   MapPin, Shield, History, Banknote, Settings2, PlayCircle,
+  PiggyBank, PieChart, Lock,
 } from "lucide-react"
 
 /* ────────────────────────────────────────────
@@ -39,24 +40,26 @@ type NavGroup = {
   items: NavSection[]
 }
 
-type AppModul = "aset" | "sdm" | "kinerja"
+type AppModul = "aset" | "sdm" | "kinerja" | "keuangan"
 
 function readStoredModul(): AppModul | null {
   if (typeof window === "undefined") return null
   const value = localStorage.getItem("pedami_modul")
-  return value === "aset" || value === "sdm" || value === "kinerja" ? value : null
+  return value === "aset" || value === "sdm" || value === "kinerja" || value === "keuangan" ? value : null
 }
 
 const modulLabels: Record<AppModul, string> = {
   aset: "Modul Aset",
   sdm: "Modul SDM",
   kinerja: "Modul Kinerja",
+  keuangan: "Modul Keuangan",
 }
 
 const modulColors: Record<AppModul, string> = {
   aset: "rgba(30,64,175,0.3)",
   sdm: "rgba(22,101,52,0.3)",
   kinerja: "rgba(234,88,12,0.3)",
+  keuangan: "rgba(109,40,217,0.3)",
 }
 
 const NAV_GROUPS: NavGroup[] = [
@@ -243,6 +246,69 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    key: "keuangan",
+    label: "Keuangan",
+    icon: <Banknote className="h-4 w-4" />,
+    items: [
+      {
+        section: "Akuntansi",
+        links: [
+          { label: "Dashboard Keuangan", href: "/dashboard/keuangan",                   icon: <LayoutDashboard className="h-3.5 w-3.5" />, desc: "Ringkasan posisi keuangan koperasi" },
+          { label: "Bagan Akun",         href: "/dashboard/keuangan/bagan-akun",        icon: <Database className="h-3.5 w-3.5" />,        desc: "Chart of Accounts — PSAK 27" },
+          { label: "Periode Fiskal",     href: "/dashboard/keuangan/periode-fiskal",    icon: <CalendarDays className="h-3.5 w-3.5" />,    desc: "Kelola periode akuntansi" },
+          { label: "Jurnal Umum",        href: "/dashboard/keuangan/jurnal",            icon: <FileText className="h-3.5 w-3.5" />,        desc: "Input & kelola entri jurnal" },
+          { label: "Buku Besar",         href: "/dashboard/keuangan/laporan/buku-besar", icon: <BookOpen className="h-3.5 w-3.5" />,       desc: "Mutasi dan saldo per akun" },
+        ],
+      },
+    ],
+  },
+  {
+    key: "keuangan-anggota",
+    label: "Anggota & Simpanan",
+    icon: <PiggyBank className="h-4 w-4" />,
+    items: [
+      {
+        section: "Keanggotaan",
+        links: [
+          { label: "Anggota Koperasi",   href: "/dashboard/keuangan/anggota",  icon: <Users className="h-3.5 w-3.5" />,     desc: "Data anggota koperasi" },
+          { label: "Simpanan Anggota",   href: "/dashboard/keuangan/simpanan", icon: <PiggyBank className="h-3.5 w-3.5" />, desc: "Setoran & penarikan simpanan" },
+        ],
+      },
+    ],
+  },
+  {
+    key: "keuangan-laporan",
+    label: "Laporan Keuangan",
+    icon: <BarChart3 className="h-4 w-4" />,
+    items: [
+      {
+        section: "Laporan Keuangan",
+        links: [
+          { label: "Neraca Saldo",       href: "/dashboard/keuangan/laporan/neraca-saldo", icon: <BarChart3 className="h-3.5 w-3.5" />,  desc: "Trial balance debit kredit" },
+          { label: "Neraca",             href: "/dashboard/keuangan/laporan/neraca",       icon: <Wallet className="h-3.5 w-3.5" />,     desc: "Laporan posisi keuangan" },
+          { label: "Laporan SHU",        href: "/dashboard/keuangan/laporan/shu",          icon: <TrendingUp className="h-3.5 w-3.5" />, desc: "Sisa Hasil Usaha periode berjalan" },
+          { label: "Arus Kas",           href: "/dashboard/keuangan/laporan/arus-kas",     icon: <Banknote className="h-3.5 w-3.5" />,   desc: "Penerimaan dan pengeluaran kas" },
+          { label: "Perubahan Ekuitas",  href: "/dashboard/keuangan/laporan/perubahan-ekuitas", icon: <BarChart3 className="h-3.5 w-3.5" />, desc: "Mutasi ekuitas koperasi" },
+        ],
+      },
+    ],
+  },
+  {
+    key: "keuangan-proses",
+    label: "Proses Akhir Tahun",
+    icon: <Lock className="h-4 w-4" />,
+    items: [
+      {
+        section: "Tutup Buku & SHU",
+        links: [
+          { label: "Saldo Awal",      href: "/dashboard/keuangan/saldo-awal",     icon: <Wallet className="h-3.5 w-3.5" />, desc: "Neraca pembukaan / saldo awal" },
+          { label: "Tutup Buku",      href: "/dashboard/keuangan/tutup-buku",     icon: <Lock className="h-3.5 w-3.5" />,   desc: "Jurnal penutup akhir tahun" },
+          { label: "Distribusi SHU",  href: "/dashboard/keuangan/shu-distribusi", icon: <PieChart className="h-3.5 w-3.5" />, desc: "Pembagian SHU sesuai AD/ART" },
+        ],
+      },
+    ],
+  },
+  {
     key: "aset",
     label: "Aset Kantor",
     icon: <Archive className="h-4 w-4" />,
@@ -393,6 +459,7 @@ export function Navbar() {
     if (modul === "aset") return ["dashboard", "aset", "kendaraan", "laporan"].includes(g.key)
     if (modul === "sdm")  return ["dashboard", "sdm", "jadwal-kerja", "absensi", "pengajuan", "lembur", "penggajian", "master"].includes(g.key)
     if (modul === "kinerja") return ["dashboard-kinerja", "penilaian"].includes(g.key)
+    if (modul === "keuangan") return ["keuangan", "keuangan-anggota", "keuangan-laporan", "keuangan-proses"].includes(g.key)
     return true
   }).map((g) => {
     // Filter menu items berdasarkan allowed_menus user

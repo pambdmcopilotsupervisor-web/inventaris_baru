@@ -210,6 +210,7 @@ model karyawans {
   employee_loans             employee_loans[]
   payroll_adjustments        payroll_adjustments[]
   payroll_run_logs           payroll_run_logs[]
+  keu_anggota                keu_anggota[]
 }
 
 model kontrak_details {
@@ -464,6 +465,12 @@ model users {
   karyawan_id       Int?
   exports           exports[]
   imports           imports[]
+  // Keuangan
+  keu_periode_ditutup       keu_periode_fiskal[] @relation("PeriodeClosedBy")
+  keu_jurnal_dibuat         keu_jurnal[]         @relation("JurnalDibuat")
+  keu_jurnal_diposting      keu_jurnal[]         @relation("JurnalPosting")
+  keu_simpanan_dibuat       keu_simpanan[]       @relation("SimpananDibuat")
+  keu_shu_run_dibuat        keu_shu_run[]        @relation("ShuRunDibuat")
 }
 
 enum riwayat_pembayaran_r2r4s_jenis_pembayaran {
@@ -1314,4 +1321,210 @@ model payroll_tax_configs {
   pph21_enabled            Boolean   @default(true)
   created_at               DateTime? @db.Timestamp(0)
   updated_at               DateTime? @db.Timestamp(0)
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MODUL KEUANGAN — Koperasi Pedami (PSAK 27 / ISAK 35)
+// Semua tabel diberi prefix keu_
+// ═══════════════════════════════════════════════════════════════
+
+/// Bagan Akun (Chart of Accounts)
+model keu_akun {
+  id           BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
+  kode         String       @unique @db.VarChar(20)
+  nama         String       @db.VarChar(150)
+  jenis        String       @db.VarChar(20) // ASET|KEWAJIBAN|EKUITAS|PENDAPATAN|BEBAN
+  kelompok     String?      @db.VarChar(80)
+  saldo_normal String       @db.VarChar(10)  // DEBIT|KREDIT
+  level        Int          @default(1) @db.TinyInt
+  parent_id    BigInt?      @db.UnsignedBigInt
+  is_detail    Boolean      @default(true)
+  is_active    Boolean      @default(true)
+  urutan       Int          @default(0) @db.SmallInt
+  keterangan   String?      @db.VarChar(255)
+  created_at   DateTime?    @db.Timestamp(0)
+  updated_at   DateTime?    @db.Timestamp(0)
+
+  parent           keu_akun?          @relation("AkunParent", fields: [parent_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  children         keu_akun[]         @relation("AkunParent")
+  jurnal_details   keu_jurnal_detail[]
+  anggaran         keu_anggaran[]
+  simpanan_kas     keu_simpanan[]
+  shu_alokasi      keu_shu_alokasi[]
+
+  @@index([jenis])
+  @@index([parent_id])
+}
+
+/// Periode Fiskal
+model keu_periode_fiskal {
+  id             BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  tahun          Int       @db.SmallInt
+  bulan          Int       @db.TinyInt
+  nama           String    @db.VarChar(80)
+  tgl_mulai      DateTime  @db.Date
+  tgl_selesai    DateTime  @db.Date
+  status         String    @default("BUKA") @db.VarChar(10) // BUKA|TUTUP|KUNCI
+  catatan        String?   @db.VarChar(255)
+  ditutup_oleh   BigInt?   @db.UnsignedBigInt
+  ditutup_pada   DateTime? @db.Timestamp(0)
+  created_at     DateTime? @db.Timestamp(0)
+  updated_at     DateTime? @db.Timestamp(0)
+
+  ditutup_user   users?     @relation("PeriodeClosedBy", fields: [ditutup_oleh], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  jurnal         keu_jurnal[]
+
+  @@unique([tahun, bulan])
+  @@index([status])
+}
+
+/// Header Jurnal Akuntansi
+model keu_jurnal {
+  id              BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  nomor_jurnal    String    @unique @db.VarChar(30)
+  tanggal         DateTime  @db.Date
+  keterangan      String    @db.VarChar(255)
+  jenis           String    @default("UMUM") @db.VarChar(20) // UMUM|PENYESUAIAN|PENUTUP|BALIK|KHUSUS
+  status          String    @default("DRAFT") @db.VarChar(10) // DRAFT|POSTED
+  periode_id      BigInt    @db.UnsignedBigInt
+  source_modul    String?   @db.VarChar(50)
+  source_ref_id   String?   @db.VarChar(50)
+  total_debit     Decimal   @default(0) @db.Decimal(18, 2)
+  total_kredit    Decimal   @default(0) @db.Decimal(18, 2)
+  dibuat_oleh     BigInt    @db.UnsignedBigInt
+  diposting_oleh  BigInt?   @db.UnsignedBigInt
+  diposting_pada  DateTime? @db.Timestamp(0)
+  created_at      DateTime? @db.Timestamp(0)
+  updated_at      DateTime? @db.Timestamp(0)
+
+  periode          keu_periode_fiskal @relation(fields: [periode_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  pembuat          users              @relation("JurnalDibuat", fields: [dibuat_oleh], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  poster           users?             @relation("JurnalPosting", fields: [diposting_oleh], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  details          keu_jurnal_detail[]
+  simpanan         keu_simpanan[]
+  shu_run          keu_shu_run[]
+
+  @@index([tanggal])
+  @@index([status])
+  @@index([periode_id])
+}
+
+/// Baris Jurnal (Debit / Kredit)
+model keu_jurnal_detail {
+  id          BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  jurnal_id   BigInt    @db.UnsignedBigInt
+  akun_id     BigInt    @db.UnsignedBigInt
+  urutan      Int       @default(0) @db.SmallInt
+  keterangan  String?   @db.VarChar(255)
+  debit       Decimal   @default(0) @db.Decimal(18, 2)
+  kredit      Decimal   @default(0) @db.Decimal(18, 2)
+  created_at  DateTime? @db.Timestamp(0)
+  updated_at  DateTime? @db.Timestamp(0)
+
+  jurnal  keu_jurnal @relation(fields: [jurnal_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  akun    keu_akun   @relation(fields: [akun_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([jurnal_id])
+  @@index([akun_id])
+}
+
+/// Anggaran (RAPB) per akun per periode
+model keu_anggaran {
+  id          BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  akun_id     BigInt    @db.UnsignedBigInt
+  tahun       Int       @db.SmallInt
+  bulan       Int       @default(0) @db.TinyInt // 0 = tahunan
+  jumlah      Decimal   @default(0) @db.Decimal(18, 2)
+  keterangan  String?   @db.VarChar(255)
+  created_at  DateTime? @db.Timestamp(0)
+  updated_at  DateTime? @db.Timestamp(0)
+
+  akun  keu_akun @relation(fields: [akun_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([akun_id, tahun, bulan])
+  @@index([tahun])
+}
+
+/// Anggota Koperasi
+model keu_anggota {
+  id          BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  no_anggota  String    @unique @db.VarChar(30)
+  nama        String    @db.VarChar(150)
+  karyawan_id BigInt?   @db.UnsignedBigInt
+  no_ktp      String?   @db.VarChar(30)
+  no_hp       String?   @db.VarChar(30)
+  alamat      String?   @db.VarChar(255)
+  tgl_gabung  DateTime  @db.Date
+  tgl_keluar  DateTime? @db.Date
+  status      String    @default("AKTIF") @db.VarChar(10) // AKTIF|NONAKTIF|KELUAR
+  keterangan  String?   @db.VarChar(255)
+  created_at  DateTime? @db.Timestamp(0)
+  updated_at  DateTime? @db.Timestamp(0)
+
+  karyawan  karyawans?     @relation(fields: [karyawan_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  simpanan  keu_simpanan[]
+
+  @@index([status])
+  @@index([karyawan_id])
+}
+
+/// Transaksi Simpanan Anggota
+model keu_simpanan {
+  id          BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  anggota_id  BigInt    @db.UnsignedBigInt
+  jenis       String    @db.VarChar(10) // POKOK|WAJIB|SUKARELA
+  tipe        String    @default("SETOR") @db.VarChar(10) // SETOR|TARIK
+  tanggal     DateTime  @db.Date
+  jumlah      Decimal   @db.Decimal(18, 2)
+  keterangan  String?   @db.VarChar(255)
+  jurnal_id   BigInt?   @db.UnsignedBigInt
+  akun_kas_id BigInt?   @db.UnsignedBigInt
+  dibuat_oleh BigInt?   @db.UnsignedBigInt
+  created_at  DateTime? @db.Timestamp(0)
+  updated_at  DateTime? @db.Timestamp(0)
+
+  anggota   keu_anggota @relation(fields: [anggota_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  jurnal    keu_jurnal? @relation(fields: [jurnal_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  akun_kas  keu_akun?   @relation(fields: [akun_kas_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  pembuat   users?      @relation("SimpananDibuat", fields: [dibuat_oleh], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([anggota_id])
+  @@index([jenis])
+  @@index([tanggal])
+}
+
+/// Distribusi SHU — Header (per tahun buku)
+model keu_shu_run {
+  id          BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  tahun       Int       @unique @db.SmallInt
+  total_shu   Decimal   @default(0) @db.Decimal(18, 2)
+  tanggal     DateTime  @db.Date
+  status      String    @default("DRAFT") @db.VarChar(10) // DRAFT|POSTED
+  jurnal_id   BigInt?   @db.UnsignedBigInt
+  catatan     String?   @db.VarChar(255)
+  dibuat_oleh BigInt?   @db.UnsignedBigInt
+  created_at  DateTime? @db.Timestamp(0)
+  updated_at  DateTime? @db.Timestamp(0)
+
+  jurnal   keu_jurnal?       @relation(fields: [jurnal_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  pembuat  users?            @relation("ShuRunDibuat", fields: [dibuat_oleh], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  alokasi  keu_shu_alokasi[]
+}
+
+/// Distribusi SHU — Alokasi per pos pembagian
+model keu_shu_alokasi {
+  id          BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  run_id      BigInt    @db.UnsignedBigInt
+  nama_pos    String    @db.VarChar(100)
+  persen      Decimal   @default(0) @db.Decimal(5, 2)
+  jumlah      Decimal   @default(0) @db.Decimal(18, 2)
+  akun_id     BigInt    @db.UnsignedBigInt
+  urutan      Int       @default(0) @db.SmallInt
+  created_at  DateTime? @db.Timestamp(0)
+  updated_at  DateTime? @db.Timestamp(0)
+
+  run   keu_shu_run @relation(fields: [run_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  akun  keu_akun    @relation(fields: [akun_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([run_id])
 }

@@ -21,6 +21,7 @@ import {
   reviewPayrollSlip,
   reviewAllPayrollSlips,
   approvePayrollPeriod,
+  createPayrollAccountingJournal,
   cancelPayrollApproval,
   markPayrollPaid,
   closePayrollPeriod,
@@ -267,6 +268,15 @@ export default function PayrollPeriodDetailPage() {
     setPayModal(false); load()
   }
 
+  const handleCreateJournal = async () => {
+    if (!confirm("Buat draft jurnal payroll untuk periode ini? Jurnal tetap perlu direview dan diposting di modul keuangan.")) return
+    setProcessing(true)
+    const res = await createPayrollAccountingJournal(periodId)
+    setProcessing(false)
+    if (!res.success) { setNotice(res.error); return }
+    setNotice(`Draft jurnal payroll berhasil dibuat: ${res.data.nomor_jurnal}`)
+  }
+
   const handleClose = async () => {
     if (!confirm("Tutup periode ini secara permanen? Periode tidak dapat diubah lagi.")) return
     setProcessing(true)
@@ -351,6 +361,7 @@ export default function PayrollPeriodDetailPage() {
             <>
               <Button variant="outline" size="sm" onClick={exportBank}><Landmark className="h-3.5 w-3.5 mr-1.5" />Transfer Bank</Button>
               <Button variant="outline" size="sm" onClick={exportExcel}><Download className="h-3.5 w-3.5 mr-1.5" />Export Excel</Button>
+              <Button variant="outline" size="sm" onClick={handleCreateJournal} disabled={processing}><FileText className="h-3.5 w-3.5 mr-1.5" />Buat Jurnal</Button>
               <Button variant="outline" size="sm" onClick={handleCancelApproval} disabled={processing} style={{ color: "var(--danger)", borderColor: "var(--danger)" }}><XCircle className="h-3.5 w-3.5 mr-1.5" />Batalkan Approve</Button>
               <Button size="sm" onClick={() => setPayModal(true)} disabled={processing}><Banknote className="h-3.5 w-3.5 mr-1.5" />Tandai Dibayar</Button>
             </>
@@ -359,6 +370,7 @@ export default function PayrollPeriodDetailPage() {
             <>
               <Button variant="outline" size="sm" onClick={exportBank}><Landmark className="h-3.5 w-3.5 mr-1.5" />Transfer Bank</Button>
               <Button variant="outline" size="sm" onClick={exportExcel}><Download className="h-3.5 w-3.5 mr-1.5" />Export Excel</Button>
+              <Button variant="outline" size="sm" onClick={handleCreateJournal} disabled={processing}><FileText className="h-3.5 w-3.5 mr-1.5" />Buat Jurnal</Button>
               <Button size="sm" onClick={handleClose} disabled={processing}><Lock className="h-3.5 w-3.5 mr-1.5" />Tutup Periode</Button>
             </>
           )}
@@ -366,6 +378,7 @@ export default function PayrollPeriodDetailPage() {
             <>
               <Button variant="outline" size="sm" onClick={exportBank}><Landmark className="h-3.5 w-3.5 mr-1.5" />Transfer Bank</Button>
               <Button variant="outline" size="sm" onClick={exportExcel}><Download className="h-3.5 w-3.5 mr-1.5" />Export Excel</Button>
+              <Button variant="outline" size="sm" onClick={handleCreateJournal} disabled={processing}><FileText className="h-3.5 w-3.5 mr-1.5" />Buat Jurnal</Button>
             </>
           )}
         </div>

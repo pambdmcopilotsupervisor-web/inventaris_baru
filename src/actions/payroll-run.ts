@@ -27,9 +27,23 @@ import type { BpjsSettingInput, TaxBracket, TerRate } from "@/lib/payroll/tax-en
 import type { DeductionTier } from "@/lib/payroll/deduction-engine"
 import { resolveEffectiveComponents } from "@/lib/payroll/effective-components"
 import { summarizeAbsensi, type AttendanceSummary } from "@/lib/payroll/attendance"
+import { validateJurnalInput, type JurnalDetailInput } from "@/lib/keuangan/jurnal"
 
 const PAGE_PATH = "/dashboard/payroll/run"
 const DEFAULT_WORKING_DAYS = 22
+
+async function generateFinanceJournalNumber(tanggal: Date, jenis: string): Promise<string> {
+  const prefix: Record<string, string> = { UMUM: "JU", PENYESUAIAN: "JP", PENUTUP: "JT", BALIK: "JB", KHUSUS: "JK" }
+  const p = prefix[jenis] ?? "JU"
+  const ym = `${tanggal.getFullYear()}${String(tanggal.getMonth() + 1).padStart(2, "0")}`
+  const last = await prisma.keu_jurnal.findFirst({
+    where: { nomor_jurnal: { startsWith: `${p}-${ym}-` } },
+    orderBy: { nomor_jurnal: "desc" },
+    select: { nomor_jurnal: true },
+  })
+  const seq = last ? (parseInt(last.nomor_jurnal.split("-").at(-1) ?? "0", 10) || 0) + 1 : 1
+  return `${p}-${ym}-${String(seq).padStart(4, "0")}`
+}
 
 // ─── Response standar ────────────────────────────────────────────
 export type ActionResult<T> =
@@ -1292,6 +1306,106 @@ export async function approvePayrollPeriod(periodId: number) {
     return ok({ id: periodId, status: "APPROVED" })
   } catch {
     return fail("Gagal meng-approve periode")
+  }
+}
+
+export async function createPayrollAccountingJournal(periodId: number) {
+  const auth = await requirePayrollAdmin()
+  if ("error" in auth) return fail(auth.error)
+  if (!periodId || periodId <= 0) return fail("ID periode tidak valid")
+
+  try {
+    const period = await prisma.payroll_periods.findUnique({ where: { id: BigInt(periodId) } })
+    if (!period) return fail("Periode payroll tidak ditemukan")
+    if (!["APPROVED", "PAID", "CLOSED"].includes(period.status)) return fail("Jurnal payroll hanya dapat dibuat setelah periode approved")
+
+    const source_ref_id = `payroll_period:${period.id.toString()}`
+    const existing = await prisma.keu_jurnal.findFirst({ where: { source_modul: "payroll", source_ref_id } })
+    if (existing) return fail(`Jurnal payroll sudah pernah dibuat: ${existing.nomor_jurnal}`)
+
+    const { end } = resolvePeriodRange(period)
+    const keuPeriode = await prisma.keu_periode_fiskal.findFirst({
+      where: { status: "BUKA", tgl_mulai: { lte: end }, tgl_selesai: { gte: end } },
+    })
+    if (!keuPeriode) return fail("Periode fiskal terbuka untuk tanggal akhir payroll tidak ditemukan")
+
+    const [slips, slipDetails, accounts] = await Promise.all([
+      prisma.payroll_slips.findMany({
+        where: { payroll_period_id: BigInt(periodId) },
+        select: { net_salary: true, total_earnings: true, total_deductions: true },
+      }),
+      prisma.payroll_slip_details.findMany({
+        where: { payroll_slips: { payroll_period_id: BigInt(periodId) }, type: "DEDUCTION" },
+        select: { category: true, amount: true },
+      }),
+      prisma.keu_akun.findMany({
+        where: { kode: { in: ["5.1.1", "2.1.2", "2.1.3", "2.1.4", "1.1.3", "2.1.5"] }, is_active: true, is_detail: true },
+        select: { id: true, kode: true, nama: true },
+      }),
+    ])
+    if (slips.length === 0) return fail("Tidak ada slip payroll untuk dijurnal")
+
+    const accountByCode = new Map(accounts.map((a) => [a.kode, a]))
+    const required = ["5.1.1", "2.1.2", "2.1.3", "2.1.4", "1.1.3", "2.1.5"]
+    const missing = required.filter((code) => !accountByCode.has(code))
+    if (missing.length > 0) return fail(`Akun jurnal payroll tidak lengkap: ${missing.join(", ")}`)
+
+    const sumByCategory = new Map<string, number>()
+    for (const d of slipDetails) {
+      sumByCategory.set(d.category, (sumByCategory.get(d.category) ?? 0) + Number(d.amount))
+    }
+    const attendanceDeduction = sumByCategory.get("ATTENDANCE_DEDUCTION") ?? 0
+    const tax = sumByCategory.get("TAX") ?? 0
+    const bpjs = sumByCategory.get("BPJS") ?? 0
+    const loan = sumByCategory.get("LOAN") ?? 0
+    const other = sumByCategory.get("OTHER") ?? 0
+    const net = slips.reduce((s, slip) => s + Number(slip.net_salary), 0)
+    const earnings = slips.reduce((s, slip) => s + Number(slip.total_earnings), 0)
+    const salaryExpense = earnings - attendanceDeduction
+
+    const details: JurnalDetailInput[] = []
+    const addLine = (code: string, keterangan: string, debit: number, kredit: number) => {
+      if (Math.abs(debit) < 0.01 && Math.abs(kredit) < 0.01) return
+      const akun = accountByCode.get(code)
+      if (!akun) return
+      details.push({ akun_id: Number(akun.id), keterangan, debit, kredit })
+    }
+
+    addLine("5.1.1", `Beban payroll ${period.period_month}/${period.period_year}`, salaryExpense, 0)
+    addLine("2.1.2", "Hutang gaji bersih", 0, net)
+    addLine("2.1.3", "Hutang PPh 21 payroll", 0, tax)
+    addLine("2.1.4", "Hutang BPJS payroll", 0, bpjs)
+    addLine("1.1.3", "Potongan cicilan/piutang anggota", 0, loan)
+    addLine("2.1.5", "Potongan payroll lain-lain", 0, other)
+
+    const validated = await validateJurnalInput({ tanggal: end, periode_id: keuPeriode.id, jenis: "KHUSUS", details })
+    const nomor_jurnal = await generateFinanceJournalNumber(validated.tanggal, "KHUSUS")
+    const row = await prisma.keu_jurnal.create({
+      data: {
+        nomor_jurnal,
+        tanggal: validated.tanggal,
+        keterangan: `Jurnal payroll ${period.period_month}/${period.period_year}`,
+        jenis: "KHUSUS",
+        status: "DRAFT",
+        periode_id: keuPeriode.id,
+        source_modul: "payroll",
+        source_ref_id,
+        total_debit: validated.totalDebit,
+        total_kredit: validated.totalKredit,
+        dibuat_oleh: BigInt(auth.user.id),
+        created_at: new Date(),
+        updated_at: new Date(),
+        details: { create: validated.details },
+      },
+      select: { id: true, nomor_jurnal: true, status: true },
+    })
+
+    await writeAuditLog({ user: auth.user, action: "CREATE", modelType: "keu_jurnal", modelId: row.id, dataBaru: { source_modul: "payroll", source_ref_id } })
+    revalidatePath("/dashboard/keuangan/jurnal")
+    revalidatePath(`${PAGE_PATH}/${periodId}`)
+    return ok({ id: Number(row.id), nomor_jurnal: row.nomor_jurnal, status: row.status })
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : "Gagal membuat jurnal payroll")
   }
 }
 

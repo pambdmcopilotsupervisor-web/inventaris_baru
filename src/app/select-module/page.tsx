@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
-import { Archive, Users, LogOut, ClipboardCheck } from "lucide-react"
+import { Archive, Users, LogOut, ClipboardCheck, Banknote } from "lucide-react"
 
 interface SessionUser {
   name: string; email: string; role: string | null; jabatan: string | null; nama_karyawan: string | null
@@ -16,9 +16,14 @@ export default function SelectModulePage() {
     fetch("/api/auth/me").then(r => r.ok ? r.json() : null).then(d => setUser(d)).catch(() => {})
   }, [])
 
-  const select = (modul: "aset" | "sdm" | "kinerja") => {
+  const select = (modul: "aset" | "sdm" | "kinerja" | "keuangan") => {
     localStorage.setItem("pedami_modul", modul)
-    router.push(modul === "aset" ? "/dashboard" : modul === "sdm" ? "/dashboard/sdm" : "/dashboard/sdm/penilaian-kinerja/target")
+    router.push(
+      modul === "aset" ? "/dashboard" :
+      modul === "sdm" ? "/dashboard/sdm" :
+      modul === "kinerja" ? "/dashboard/sdm/penilaian-kinerja/target" :
+      "/dashboard/keuangan"
+    )
   }
 
   const handleLogout = async () => {
@@ -67,14 +72,14 @@ export default function SelectModulePage() {
             <p className="text-xl font-black text-white">PEDAMI</p>
           </div>
         </div>
-        <h1 className="text-3xl font-bold text-white mb-2">Sistem Inventaris Aset, SDM, dan Kinerja</h1>
+        <h1 className="text-3xl font-bold text-white mb-2">Sistem Inventaris Aset, SDM, Kinerja &amp; Keuangan</h1>
         <p className="text-sm" style={{ color: "#94A3B8" }}>
           Pilih modul untuk melanjutkan
         </p>
       </div>
 
       {/* Module cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-5xl">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 w-full max-w-6xl">
         {/* ASET Module */}
         <button
           onClick={() => select("aset")}
@@ -167,6 +172,39 @@ export default function SelectModulePage() {
             </p>
             <div className="flex flex-wrap gap-2">
               {["Target Kerja", "Penilaian", "Approval", "Rekap"].map(m => (
+                <span key={m} className="text-xs px-2.5 py-1 rounded-full font-medium"
+                  style={{ background: "rgba(255,255,255,0.15)", color: "#fff" }}>{m}</span>
+              ))}
+            </div>
+          </div>
+        </button>
+
+        {/* KEUANGAN Module */}
+        <button
+          onClick={() => select("keuangan")}
+          className="group relative overflow-hidden rounded-2xl p-8 text-left transition-all duration-300 cursor-pointer"
+          style={{
+            background: "linear-gradient(135deg, #4C1D95 0%, #7C3AED 100%)",
+            border: "1px solid rgba(167, 139, 250, 0.35)",
+            boxShadow: "0 8px 32px rgba(76, 29, 149, 0.45)",
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(-4px)"; (e.currentTarget as HTMLElement).style.boxShadow = "0 16px 48px rgba(124, 58, 237, 0.55)" }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(0)"; (e.currentTarget as HTMLElement).style.boxShadow = "0 8px 32px rgba(76, 29, 149, 0.45)" }}
+        >
+          <div className="absolute top-0 right-0 h-32 w-32 rounded-full opacity-10" style={{ background: "#C4B5FD", transform: "translate(30%, -30%)" }} />
+          <div className="absolute bottom-0 left-0 h-20 w-20 rounded-full opacity-10" style={{ background: "#DDD6FE", transform: "translate(-30%, 30%)" }} />
+
+          <div className="relative z-10">
+            <div className="h-16 w-16 rounded-2xl flex items-center justify-center mb-5"
+              style={{ background: "rgba(255,255,255,0.15)", backdropFilter: "blur(10px)" }}>
+              <Banknote className="h-8 w-8 text-white" />
+            </div>
+            <h2 className="text-2xl font-black text-white mb-2">Modul Keuangan</h2>
+            <p className="text-sm mb-5" style={{ color: "rgba(255,255,255,0.75)" }}>
+              Akuntansi koperasi — PSAK 27 / ISAK 35
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {["Bagan Akun", "Jurnal", "Neraca", "SHU"].map(m => (
                 <span key={m} className="text-xs px-2.5 py-1 rounded-full font-medium"
                   style={{ background: "rgba(255,255,255,0.15)", color: "#fff" }}>{m}</span>
               ))}
