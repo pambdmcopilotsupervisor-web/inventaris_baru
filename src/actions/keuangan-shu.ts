@@ -10,7 +10,7 @@
  */
 
 import { revalidatePath } from "next/cache"
-import { prisma, serialize } from "@/lib/prisma"
+import { prisma } from "@/lib/prisma"
 import { getSession, type SessionUser } from "@/lib/session"
 import { writeAuditLog } from "@/lib/audit"
 
@@ -68,6 +68,24 @@ export type ShuConfig = {
   already_distributed: boolean
   jurnal_nomor: string | null
   pos: ShuPos[]
+}
+
+export type ShuAnggotaRow = {
+  anggota_id: number
+  no_anggota: string
+  nama: string
+  basis_simpanan: number
+  porsi: number
+  jumlah: number
+}
+
+export type ShuAnggotaPreview = {
+  tahun: number
+  run_id: number
+  total_bagian_anggota: number
+  total_basis: number
+  already_saved: boolean
+  rows: ShuAnggotaRow[]
 }
 
 /** Hitung saldo SHU 3.5 untuk tahun & susun pos default. */
@@ -189,5 +207,88 @@ export async function createShuDistribution(payload: {
     return ok(result)
   } catch (e) {
     return fail(e instanceof Error ? e.message : "Gagal mendistribusikan SHU")
+  }
+}
+
+export async function getShuAnggotaPreview(tahun: number): Promise<ActionResult<ShuAnggotaPreview>> {
+  try {
+    const run = await prisma.keu_shu_run.findUnique({
+      where: { tahun },
+      include: {
+        alokasi: { include: { akun: { select: { kode: true } } } },
+        anggota_alokasi: { include: { anggota: { select: { no_anggota: true, nama: true } } } },
+      },
+    })
+    if (!run || run.status !== "POSTED") return fail("Distribusi SHU tahunan belum dibuat. Buat Distribusi SHU dulu.")
+
+    const bagianAnggota = run.alokasi.find((a) => a.akun.kode === "2.3.1" || a.nama_pos.toLowerCase().includes("anggota"))
+    if (!bagianAnggota) return fail("Pos SHU Bagian Anggota tidak ditemukan pada distribusi SHU")
+    const totalBagian = Number(bagianAnggota.jumlah)
+
+    if (run.anggota_alokasi.length > 0) {
+      return ok({
+        tahun, run_id: Number(run.id), total_bagian_anggota: totalBagian,
+        total_basis: run.anggota_alokasi.reduce((s, r) => s + Number(r.basis_simpanan), 0),
+        already_saved: true,
+        rows: run.anggota_alokasi.map((r) => ({
+          anggota_id: Number(r.anggota_id), no_anggota: r.anggota.no_anggota, nama: r.anggota.nama,
+          basis_simpanan: Number(r.basis_simpanan), porsi: Number(r.porsi), jumlah: Number(r.jumlah),
+        })).sort((a, b) => a.no_anggota.localeCompare(b.no_anggota)),
+      })
+    }
+
+    const end = new Date(Date.UTC(tahun, 11, 31))
+    const [anggota, trx] = await Promise.all([
+      prisma.keu_anggota.findMany({ where: { status: { not: "KELUAR" } }, select: { id: true, no_anggota: true, nama: true }, orderBy: { no_anggota: "asc" } }),
+      prisma.keu_simpanan.groupBy({ by: ["anggota_id", "tipe"], where: { tanggal: { lte: end } }, _sum: { jumlah: true } }),
+    ])
+    const basisByAnggota = new Map<string, number>()
+    for (const t of trx) {
+      const cur = basisByAnggota.get(t.anggota_id.toString()) ?? 0
+      const amount = Number(t._sum.jumlah ?? 0) * (t.tipe === "SETOR" ? 1 : -1)
+      basisByAnggota.set(t.anggota_id.toString(), cur + amount)
+    }
+    const totalBasis = [...basisByAnggota.values()].reduce((s, v) => s + Math.max(0, v), 0)
+    const rows: ShuAnggotaRow[] = anggota.map((a) => {
+      const basis = Math.max(0, basisByAnggota.get(a.id.toString()) ?? 0)
+      const porsi = totalBasis > 0 ? basis / totalBasis : 0
+      return {
+        anggota_id: Number(a.id), no_anggota: a.no_anggota, nama: a.nama,
+        basis_simpanan: basis, porsi: Math.round(porsi * 1000000) / 10000,
+        jumlah: Math.round(totalBagian * porsi),
+      }
+    }).filter((r) => r.basis_simpanan > 0 || r.jumlah > 0)
+
+    const allocated = rows.reduce((s, r) => s + r.jumlah, 0)
+    if (rows.length > 0 && allocated !== totalBagian) rows[0].jumlah += totalBagian - allocated
+
+    return ok({ tahun, run_id: Number(run.id), total_bagian_anggota: totalBagian, total_basis: totalBasis, already_saved: false, rows })
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : "Gagal memuat preview SHU anggota")
+  }
+}
+
+export async function saveShuAnggotaAllocation(tahun: number): Promise<ActionResult<{ count: number }>> {
+  const auth = await requireKeuanganRole()
+  if ("error" in auth) return fail(auth.error)
+  try {
+    const preview = await getShuAnggotaPreview(tahun)
+    if (!preview.success) return fail(preview.error)
+    if (preview.data.already_saved) return fail(`SHU anggota tahun ${tahun} sudah dialokasikan`)
+    if (preview.data.rows.length === 0) return fail("Tidak ada anggota dengan basis simpanan")
+    const now = new Date()
+    await prisma.keu_shu_anggota.createMany({
+      data: preview.data.rows.map((r) => ({
+        run_id: BigInt(preview.data.run_id), anggota_id: BigInt(r.anggota_id),
+        basis_simpanan: r.basis_simpanan, porsi: r.porsi, jumlah: r.jumlah,
+        status: "DIALOKASIKAN", created_at: now, updated_at: now,
+      })),
+    })
+    await writeAuditLog({ user: auth.user, action: "CREATE", modelType: "keu_shu_anggota", modelId: BigInt(preview.data.run_id), dataBaru: { tahun, count: preview.data.rows.length } })
+    revalidatePath("/dashboard/keuangan/shu-anggota")
+    revalidatePath("/dashboard/keuangan/buku-pembantu")
+    return ok({ count: preview.data.rows.length })
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : "Gagal menyimpan alokasi SHU anggota")
   }
 }

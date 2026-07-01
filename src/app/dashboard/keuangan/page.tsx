@@ -129,6 +129,24 @@ const NAV_CARDS = [
     text: "rgb(5,150,105)",
   },
   {
+    href: "/dashboard/keuangan/buku-pembantu",
+    icon: <BookOpen className="h-5 w-5" />,
+    label: "Buku Pembantu",
+    desc: "Kartu anggota: simpanan, pinjaman, SHU",
+    color: "rgba(14,165,233,0.1)",
+    border: "rgba(14,165,233,0.3)",
+    text: "rgb(14,116,144)",
+  },
+  {
+    href: "/dashboard/keuangan/pinjaman",
+    icon: <Wallet className="h-5 w-5" />,
+    label: "Pinjaman Anggota",
+    desc: "Piutang & angsuran anggota",
+    color: "rgba(217,119,6,0.1)",
+    border: "rgba(217,119,6,0.3)",
+    text: "rgb(217,119,6)",
+  },
+  {
     href: "/dashboard/keuangan/saldo-awal",
     icon: <Wallet className="h-5 w-5" />,
     label: "Saldo Awal",
@@ -154,6 +172,15 @@ const NAV_CARDS = [
     color: "rgba(220,38,38,0.1)",
     border: "rgba(220,38,38,0.3)",
     text: "rgb(220,38,38)",
+  },
+  {
+    href: "/dashboard/keuangan/shu-anggota",
+    icon: <Users className="h-5 w-5" />,
+    label: "SHU per Anggota",
+    desc: "Alokasi SHU bagian anggota",
+    color: "rgba(124,58,237,0.1)",
+    border: "rgba(124,58,237,0.3)",
+    text: "rgb(124,58,237)",
   },
 ]
 

@@ -471,6 +471,9 @@ model users {
   keu_jurnal_diposting      keu_jurnal[]         @relation("JurnalPosting")
   keu_simpanan_dibuat       keu_simpanan[]       @relation("SimpananDibuat")
   keu_shu_run_dibuat        keu_shu_run[]        @relation("ShuRunDibuat")
+  keu_pinjaman_dibuat       keu_pinjaman[]       @relation("PinjamanDibuat")
+  keu_pinjaman_bayar_dibuat keu_pinjaman_pembayaran[] @relation("PinjamanBayarDibuat")
+  keu_rekonsiliasi_dibuat   keu_rekonsiliasi[]   @relation("RekonsiliasiDibuat")
 }
 
 enum riwayat_pembayaran_r2r4s_jenis_pembayaran {
@@ -1350,7 +1353,9 @@ model keu_akun {
   jurnal_details   keu_jurnal_detail[]
   anggaran         keu_anggaran[]
   simpanan_kas     keu_simpanan[]
+  pinjaman_kas     keu_pinjaman[]
   shu_alokasi      keu_shu_alokasi[]
+  rekonsiliasi     keu_rekonsiliasi[]
 
   @@index([jenis])
   @@index([parent_id])
@@ -1373,6 +1378,7 @@ model keu_periode_fiskal {
 
   ditutup_user   users?     @relation("PeriodeClosedBy", fields: [ditutup_oleh], references: [id], onDelete: SetNull, onUpdate: Cascade)
   jurnal         keu_jurnal[]
+  rekonsiliasi   keu_rekonsiliasi[]
 
   @@unique([tahun, bulan])
   @@index([status])
@@ -1403,10 +1409,13 @@ model keu_jurnal {
   details          keu_jurnal_detail[]
   simpanan         keu_simpanan[]
   shu_run          keu_shu_run[]
+  pinjaman_cair    keu_pinjaman[]            @relation("PinjamanJurnalCair")
+  pinjaman_bayar   keu_pinjaman_pembayaran[]
 
   @@index([tanggal])
   @@index([status])
   @@index([periode_id])
+  @@unique([source_modul, source_ref_id], map: "uq_keu_jurnal_source")
 }
 
 /// Baris Jurnal (Debit / Kredit)
@@ -1423,6 +1432,7 @@ model keu_jurnal_detail {
 
   jurnal  keu_jurnal @relation(fields: [jurnal_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
   akun    keu_akun   @relation(fields: [akun_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  rekonsiliasi_items keu_rekonsiliasi_item[]
 
   @@index([jurnal_id])
   @@index([akun_id])
@@ -1463,6 +1473,8 @@ model keu_anggota {
 
   karyawan  karyawans?     @relation(fields: [karyawan_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
   simpanan  keu_simpanan[]
+  pinjaman  keu_pinjaman[]
+  shu_bagian keu_shu_anggota[]
 
   @@index([status])
   @@index([karyawan_id])
@@ -1493,6 +1505,57 @@ model keu_simpanan {
   @@index([tanggal])
 }
 
+/// Pinjaman / Piutang Anggota Koperasi
+model keu_pinjaman {
+  id                BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  anggota_id        BigInt    @db.UnsignedBigInt
+  nomor_pinjaman    String    @unique @db.VarChar(40)
+  tanggal           DateTime  @db.Date
+  pokok             Decimal   @db.Decimal(18, 2)
+  jasa              Decimal   @default(0) @db.Decimal(18, 2)
+  tenor_bulan       Int       @default(1) @db.SmallInt
+  angsuran_pokok    Decimal   @default(0) @db.Decimal(18, 2)
+  angsuran_jasa     Decimal   @default(0) @db.Decimal(18, 2)
+  status            String    @default("AKTIF") @db.VarChar(12) // AKTIF|LUNAS|BATAL
+  keterangan        String?   @db.VarChar(255)
+  akun_kas_id       BigInt?   @db.UnsignedBigInt
+  jurnal_cair_id    BigInt?   @db.UnsignedBigInt
+  dibuat_oleh       BigInt?   @db.UnsignedBigInt
+  created_at        DateTime? @db.Timestamp(0)
+  updated_at        DateTime? @db.Timestamp(0)
+
+  anggota       keu_anggota               @relation(fields: [anggota_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  akun_kas      keu_akun?                 @relation(fields: [akun_kas_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  jurnal_cair   keu_jurnal?               @relation("PinjamanJurnalCair", fields: [jurnal_cair_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  pembuat       users?                    @relation("PinjamanDibuat", fields: [dibuat_oleh], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  pembayaran    keu_pinjaman_pembayaran[]
+
+  @@index([anggota_id])
+  @@index([status])
+  @@index([tanggal])
+}
+
+/// Pembayaran Pinjaman / Piutang Anggota
+model keu_pinjaman_pembayaran {
+  id              BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  pinjaman_id     BigInt    @db.UnsignedBigInt
+  tanggal         DateTime  @db.Date
+  pokok           Decimal   @default(0) @db.Decimal(18, 2)
+  jasa            Decimal   @default(0) @db.Decimal(18, 2)
+  keterangan      String?   @db.VarChar(255)
+  jurnal_id       BigInt?   @db.UnsignedBigInt
+  dibuat_oleh     BigInt?   @db.UnsignedBigInt
+  created_at      DateTime? @db.Timestamp(0)
+  updated_at      DateTime? @db.Timestamp(0)
+
+  pinjaman  keu_pinjaman @relation(fields: [pinjaman_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  jurnal    keu_jurnal?  @relation(fields: [jurnal_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  pembuat   users?       @relation("PinjamanBayarDibuat", fields: [dibuat_oleh], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([pinjaman_id])
+  @@index([tanggal])
+}
+
 /// Distribusi SHU — Header (per tahun buku)
 model keu_shu_run {
   id          BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
@@ -1509,6 +1572,7 @@ model keu_shu_run {
   jurnal   keu_jurnal?       @relation(fields: [jurnal_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
   pembuat  users?            @relation("ShuRunDibuat", fields: [dibuat_oleh], references: [id], onDelete: SetNull, onUpdate: Cascade)
   alokasi  keu_shu_alokasi[]
+  anggota_alokasi keu_shu_anggota[]
 }
 
 /// Distribusi SHU — Alokasi per pos pembagian
@@ -1527,4 +1591,69 @@ model keu_shu_alokasi {
   akun  keu_akun    @relation(fields: [akun_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([run_id])
+}
+
+/// Alokasi SHU bagian anggota per tahun buku
+model keu_shu_anggota {
+  id              BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  run_id          BigInt    @db.UnsignedBigInt
+  anggota_id      BigInt    @db.UnsignedBigInt
+  basis_simpanan  Decimal   @default(0) @db.Decimal(18, 2)
+  porsi           Decimal   @default(0) @db.Decimal(8, 4)
+  jumlah          Decimal   @default(0) @db.Decimal(18, 2)
+  status          String    @default("DIALOKASIKAN") @db.VarChar(15)
+  created_at      DateTime? @db.Timestamp(0)
+  updated_at      DateTime? @db.Timestamp(0)
+
+  run      keu_shu_run @relation(fields: [run_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  anggota  keu_anggota @relation(fields: [anggota_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([run_id, anggota_id])
+  @@index([anggota_id])
+}
+
+/// Rekonsiliasi Bank — Header
+model keu_rekonsiliasi {
+  id              BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  akun_id         BigInt    @db.UnsignedBigInt
+  periode_id      BigInt    @db.UnsignedBigInt
+  tanggal_mulai   DateTime  @db.Date
+  tanggal_selesai DateTime  @db.Date
+  saldo_buku      Decimal   @default(0) @db.Decimal(18, 2)
+  saldo_bank      Decimal   @default(0) @db.Decimal(18, 2)
+  status          String    @default("DRAFT") @db.VarChar(10) // DRAFT|SELESAI
+  catatan         String?   @db.VarChar(255)
+  dibuat_oleh     BigInt?   @db.UnsignedBigInt
+  created_at      DateTime? @db.Timestamp(0)
+  updated_at      DateTime? @db.Timestamp(0)
+
+  akun    keu_akun           @relation(fields: [akun_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  periode keu_periode_fiskal @relation(fields: [periode_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  pembuat users?             @relation("RekonsiliasiDibuat", fields: [dibuat_oleh], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  items   keu_rekonsiliasi_item[]
+
+  @@unique([akun_id, periode_id])
+  @@index([status])
+}
+
+/// Rekonsiliasi Bank — Baris mutasi dari rekening fisik
+model keu_rekonsiliasi_item {
+  id               BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  rekonsiliasi_id  BigInt    @db.UnsignedBigInt
+  tanggal          DateTime  @db.Date
+  keterangan       String    @db.VarChar(255)
+  debit            Decimal   @default(0) @db.Decimal(18, 2)
+  kredit           Decimal   @default(0) @db.Decimal(18, 2)
+  jurnal_detail_id BigInt?   @db.UnsignedBigInt
+  status_cocok     String    @default("BELUM") @db.VarChar(10) // BELUM|COCOK|BEDA
+  catatan          String?   @db.VarChar(255)
+  created_at       DateTime? @db.Timestamp(0)
+  updated_at       DateTime? @db.Timestamp(0)
+
+  rekonsiliasi   keu_rekonsiliasi   @relation(fields: [rekonsiliasi_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  jurnal_detail  keu_jurnal_detail? @relation(fields: [jurnal_detail_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([rekonsiliasi_id])
+  @@index([tanggal])
+  @@index([status_cocok])
 }

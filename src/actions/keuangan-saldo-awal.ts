@@ -7,7 +7,7 @@
  */
 
 import { revalidatePath } from "next/cache"
-import { prisma, serialize } from "@/lib/prisma"
+import { prisma } from "@/lib/prisma"
 import { getSession, type SessionUser } from "@/lib/session"
 import { writeAuditLog } from "@/lib/audit"
 import { validateJurnalInput } from "@/lib/keuangan/jurnal"
@@ -91,6 +91,14 @@ export async function createSaldoAwal(payload: {
       jenis: "UMUM",
       details,
     })
+
+    const source_ref_id = `saldo_awal:${validated.tanggal.getUTCFullYear()}`
+    const existing = await prisma.keu_jurnal.findFirst({
+      where: { source_modul: "saldo_awal", source_ref_id },
+      select: { nomor_jurnal: true },
+    })
+    if (existing) return fail(`Saldo awal tahun tersebut sudah dibuat (${existing.nomor_jurnal}). Gunakan jurnal koreksi bila perlu penyesuaian.`)
+
     const nomor_jurnal = await generateNomor(validated.tanggal)
 
     const row = await prisma.keu_jurnal.create({
@@ -102,7 +110,7 @@ export async function createSaldoAwal(payload: {
         status: "POSTED",
         periode_id: BigInt(payload.periode_id),
         source_modul: "saldo_awal",
-        source_ref_id: `saldo_awal:${validated.tanggal.getFullYear()}`,
+        source_ref_id,
         total_debit: validated.totalDebit,
         total_kredit: validated.totalKredit,
         dibuat_oleh: BigInt(auth.user.id),

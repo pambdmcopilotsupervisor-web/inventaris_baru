@@ -113,6 +113,28 @@ export async function updateStatusPeriode(
     if (order[status] < order[existing.status as keyof typeof order]) {
       return fail(`Tidak dapat mengubah status dari ${existing.status} ke ${status}`)
     }
+    if (order[status] > order[existing.status as keyof typeof order] + 1) {
+      return fail("Status periode harus ditutup bertahap: BUKA → TUTUP → KUNCI")
+    }
+
+    if (status === "TUTUP" || status === "KUNCI") {
+      const draftCount = await prisma.keu_jurnal.count({
+        where: { periode_id: existing.id, status: "DRAFT" },
+      })
+      if (draftCount > 0) {
+        return fail(`Masih ada ${draftCount} jurnal DRAFT pada periode ini. Posting atau hapus draft sebelum menutup/mengunci periode.`)
+      }
+
+      const totals = await prisma.keu_jurnal_detail.aggregate({
+        where: { jurnal: { periode_id: existing.id, status: "POSTED" } },
+        _sum: { debit: true, kredit: true },
+      })
+      const totalDebit = Number(totals._sum.debit ?? 0)
+      const totalKredit = Number(totals._sum.kredit ?? 0)
+      if (Math.abs(totalDebit - totalKredit) > 0.01) {
+        return fail(`Periode tidak balance: total debit ${totalDebit.toLocaleString("id-ID")} dan kredit ${totalKredit.toLocaleString("id-ID")}`)
+      }
+    }
 
     const row = await prisma.keu_periode_fiskal.update({
       where: { id: BigInt(id) },

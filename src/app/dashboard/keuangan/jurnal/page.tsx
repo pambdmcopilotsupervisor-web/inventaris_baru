@@ -6,9 +6,9 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Modal } from "@/components/ui/modal"
 import { TextField, SelectField } from "@/components/ui/form-field"
-import { BookOpen, Plus, RefreshCw, Send, Trash2, Pencil, Eye } from "lucide-react"
+import { BookOpen, Plus, RefreshCw, Send, Trash2, Pencil, Eye, RotateCcw } from "lucide-react"
 import {
-  getJurnals, getJurnalById, createJurnal, updateJurnal, deleteJurnal, postJurnal,
+  getJurnals, getJurnalById, createJurnal, updateJurnal, deleteJurnal, postJurnal, reverseJurnal,
   type JurnalRow, type JurnalDetailInput,
 } from "@/actions/keuangan-jurnal"
 import { getPeriodeFiskal, type PeriodeFiskalRow } from "@/actions/keuangan-periode"
@@ -306,6 +306,17 @@ export default function JurnalPage() {
     else alert(res.error)
   }
 
+  async function handleReverse(row: JurnalRow) {
+    const today = new Date().toISOString().split("T")[0]
+    const tanggal = prompt(`Tanggal jurnal pembalik untuk ${row.nomor_jurnal}:`, today)
+    if (!tanggal) return
+    const res = await reverseJurnal(row.id, { tanggal })
+    if (res.success) {
+      alert(`Draft jurnal pembalik berhasil dibuat: ${res.data.nomor_jurnal}. Review lalu posting bila sudah benar.`)
+      load()
+    } else alert(res.error)
+  }
+
   async function handleView(row: JurnalRow) {
     const res = await getJurnalById(row.id)
     if (res.success) setViewJurnal(res.data)
@@ -371,16 +382,25 @@ export default function JurnalPage() {
               </Button>
               {r.status === "DRAFT" && (
                 <>
-                  <Button size="sm" variant="ghost" onClick={() => openEdit(r)} title="Edit">
-                    <Pencil className="h-3.5 w-3.5 text-amber-600" />
-                  </Button>
+                  {!r.source_modul && (
+                    <Button size="sm" variant="ghost" onClick={() => openEdit(r)} title="Edit">
+                      <Pencil className="h-3.5 w-3.5 text-amber-600" />
+                    </Button>
+                  )}
                   <Button size="sm" variant="ghost" onClick={() => handlePost(r)} title="Posting">
                     <Send className="h-3.5 w-3.5 text-green-600" />
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => handleDelete(r)} title="Hapus">
-                    <Trash2 className="h-3.5 w-3.5 text-red-500" />
-                  </Button>
+                  {!r.source_modul && (
+                    <Button size="sm" variant="ghost" onClick={() => handleDelete(r)} title="Hapus">
+                      <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                    </Button>
+                  )}
                 </>
+              )}
+              {r.status === "POSTED" && r.source_modul !== "reversal" && (
+                <Button size="sm" variant="ghost" onClick={() => handleReverse(r)} title="Buat jurnal pembalik">
+                  <RotateCcw className="h-3.5 w-3.5 text-blue-600" />
+                </Button>
               )}
             </div>
           )
@@ -549,6 +569,11 @@ export default function JurnalPage() {
               {viewJurnal.status === "DRAFT" && (
                 <Button onClick={() => { handlePost(viewJurnal); setViewJurnal(null) }} className="bg-green-600 hover:bg-green-700">
                   <Send className="h-4 w-4 mr-1" />Posting
+                </Button>
+              )}
+              {viewJurnal.status === "POSTED" && viewJurnal.source_modul !== "reversal" && (
+                <Button variant="outline" onClick={() => { handleReverse(viewJurnal); setViewJurnal(null) }}>
+                  <RotateCcw className="h-4 w-4 mr-1" />Buat Pembalik
                 </Button>
               )}
               <Button variant="ghost" onClick={() => setViewJurnal(null)}>Tutup</Button>

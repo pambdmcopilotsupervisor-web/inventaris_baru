@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole, type AppRole } from "@/lib/auth"
-import { prisma, serialize } from "@/lib/prisma"
+import { prisma } from "@/lib/prisma"
 
 export const runtime = "nodejs"
 
@@ -45,6 +45,59 @@ export async function GET(req: NextRequest) {
 
   function saldoNormal(saldo_normal: string, debit: number, kredit: number) {
     return saldo_normal === "DEBIT" ? debit - kredit : kredit - debit
+  }
+
+  if (type === "buku_besar_summary") {
+    const accounts = await prisma.keu_akun.findMany({
+      where: { is_detail: true, is_active: true },
+      select: { id: true, kode: true, nama: true, jenis: true, saldo_normal: true },
+      orderBy: [{ kode: "asc" }],
+    })
+    const accountIds = accounts.map((a) => a.id)
+
+    const [openingDetails, periodDetails] = await Promise.all([
+      accountIds.length ? prisma.keu_jurnal_detail.findMany({
+        where: { akun_id: { in: accountIds }, jurnal: { status: "POSTED", tanggal: { lt: tgl_mulai } } },
+        select: { akun_id: true, debit: true, kredit: true },
+      }) : [],
+      accountIds.length ? prisma.keu_jurnal_detail.findMany({
+        where: { akun_id: { in: accountIds }, jurnal: { status: "POSTED", tanggal: { gte: tgl_mulai, lte: tgl_selesai } } },
+        select: { akun_id: true, debit: true, kredit: true },
+      }) : [],
+    ])
+
+    const opening = new Map<string, { debit: number; kredit: number }>()
+    for (const d of openingDetails) {
+      const key = d.akun_id.toString()
+      const row = opening.get(key) ?? { debit: 0, kredit: 0 }
+      row.debit += Number(d.debit); row.kredit += Number(d.kredit)
+      opening.set(key, row)
+    }
+
+    const period = new Map<string, { debit: number; kredit: number }>()
+    for (const d of periodDetails) {
+      const key = d.akun_id.toString()
+      const row = period.get(key) ?? { debit: 0, kredit: 0 }
+      row.debit += Number(d.debit); row.kredit += Number(d.kredit)
+      period.set(key, row)
+    }
+
+    const rows = accounts.map((a) => {
+      const o = opening.get(a.id.toString()) ?? { debit: 0, kredit: 0 }
+      const p = period.get(a.id.toString()) ?? { debit: 0, kredit: 0 }
+      const saldo_awal = saldoNormal(a.saldo_normal, o.debit, o.kredit)
+      const mutasi = saldoNormal(a.saldo_normal, p.debit, p.kredit)
+      return {
+        akun_id: Number(a.id), kode: a.kode, nama: a.nama, jenis: a.jenis, saldo_normal: a.saldo_normal,
+        saldo_awal, total_debit: p.debit, total_kredit: p.kredit, saldo_akhir: saldo_awal + mutasi,
+      }
+    }).filter((r) => Math.abs(r.saldo_awal) > 0.01 || r.total_debit > 0 || r.total_kredit > 0 || Math.abs(r.saldo_akhir) > 0.01)
+
+    return NextResponse.json({
+      type, tgl_mulai, tgl_selesai, rows,
+      total_debit: rows.reduce((s, r) => s + r.total_debit, 0),
+      total_kredit: rows.reduce((s, r) => s + r.total_kredit, 0),
+    })
   }
 
   if (type === "buku_besar") {
@@ -282,5 +335,5 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ type, tgl_mulai, tgl_selesai, kas_bank, total })
   }
 
-  return NextResponse.json({ error: "type tidak valid: trial_balance | neraca | shu | kas_bank | buku_besar | arus_kas | perubahan_ekuitas" }, { status: 400 })
+  return NextResponse.json({ error: "type tidak valid: trial_balance | neraca | shu | kas_bank | buku_besar | buku_besar_summary | arus_kas | perubahan_ekuitas" }, { status: 400 })
 }

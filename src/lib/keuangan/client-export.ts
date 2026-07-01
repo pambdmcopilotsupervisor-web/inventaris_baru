@@ -24,9 +24,13 @@ export function downloadCsv(filename: string, rows: Array<Record<string, unknown
   URL.revokeObjectURL(url)
 }
 
-export function printToPdf(title?: string) {
+export function printToPdf(titleArg?: unknown) {
   const main = document.querySelector("main")
-  const printTitle = title ?? document.querySelector("h1")?.textContent ?? "Laporan Keuangan"
+  // Abaikan jika yang masuk bukan string (mis. MouseEvent dari onClick={printToPdf})
+  const printTitle =
+    (typeof titleArg === "string" && titleArg ? titleArg : null) ??
+    document.querySelector("h1")?.textContent?.trim() ??
+    "Laporan Keuangan"
   document.body.classList.add("finance-print")
   main?.setAttribute("data-print-title", printTitle)
   main?.setAttribute("data-print-date", new Date().toLocaleString("id-ID"))

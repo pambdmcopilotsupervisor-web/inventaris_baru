@@ -78,7 +78,6 @@ async function generateNomorJurnal(tanggal: Date, jenis: string): Promise<string
   }[jenis] ?? "JU"
 
   const ym = `${tanggal.getFullYear()}${String(tanggal.getMonth() + 1).padStart(2, "0")}`
-  const like = `${prefix}-${ym}-%`
 
   const last = await prisma.keu_jurnal.findFirst({
     where: { nomor_jurnal: { startsWith: `${prefix}-${ym}-` } },
@@ -214,6 +213,7 @@ export async function updateJurnal(
     })
     if (!existing) return fail("Jurnal tidak ditemukan")
     if (existing.status === "POSTED") return fail("Jurnal sudah diposting, tidak dapat diubah")
+    if (existing.source_modul) return fail("Jurnal otomatis tidak dapat diubah manual. Buat jurnal pembalik/koreksi bila diperlukan.")
 
     const validated = await validateJurnalInput({
       tanggal: payload.tanggal ?? existing.tanggal,
@@ -298,6 +298,7 @@ export async function deleteJurnal(id: number): Promise<ActionResult<{ id: numbe
     const existing = await prisma.keu_jurnal.findUnique({ where: { id: BigInt(id) }, include: { periode: true } })
     if (!existing) return fail("Jurnal tidak ditemukan")
     if (existing.status === "POSTED") return fail("Jurnal sudah diposting, tidak dapat dihapus")
+    if (existing.source_modul) return fail("Jurnal otomatis tidak dapat dihapus manual. Buat jurnal pembalik/koreksi bila diperlukan.")
     if (existing.periode.status !== "BUKA") return fail("Jurnal hanya dapat dihapus saat periode masih buka")
 
     await prisma.keu_jurnal.delete({ where: { id: BigInt(id) } })
@@ -306,6 +307,73 @@ export async function deleteJurnal(id: number): Promise<ActionResult<{ id: numbe
     return ok({ id })
   } catch (e) {
     return fail(e instanceof Error ? e.message : "Gagal menghapus jurnal")
+  }
+}
+
+export async function reverseJurnal(
+  id: number,
+  payload?: { tanggal?: string; keterangan?: string }
+): Promise<ActionResult<JurnalRow>> {
+  const auth = await requireKeuanganRole()
+  if ("error" in auth) return fail(auth.error)
+
+  try {
+    const existing = await prisma.keu_jurnal.findUnique({
+      where: { id: BigInt(id) },
+      include: { details: { orderBy: { urutan: "asc" }, include: { akun: { select: { kode: true, nama: true } } } } },
+    })
+    if (!existing) return fail("Jurnal tidak ditemukan")
+    if (existing.status !== "POSTED") return fail("Hanya jurnal POSTED yang dapat dibuatkan jurnal pembalik")
+    if (existing.source_modul === "reversal") return fail("Jurnal pembalik tidak dapat dibalikkan lagi")
+
+    const source_ref_id = `reversal:${existing.id.toString()}`
+    const already = await prisma.keu_jurnal.findFirst({ where: { source_modul: "reversal", source_ref_id } })
+    if (already) return fail(`Jurnal pembalik sudah pernah dibuat: ${already.nomor_jurnal}`)
+
+    const tanggal = payload?.tanggal ? new Date(payload.tanggal) : new Date()
+    if (Number.isNaN(tanggal.getTime())) return fail("Tanggal jurnal pembalik tidak valid")
+
+    const periode = await prisma.keu_periode_fiskal.findFirst({
+      where: { status: "BUKA", tgl_mulai: { lte: tanggal }, tgl_selesai: { gte: tanggal } },
+    })
+    if (!periode) return fail("Periode fiskal terbuka untuk tanggal jurnal pembalik tidak ditemukan")
+
+    const details: JurnalDetailInput[] = existing.details.map((d, i) => ({
+      akun_id: Number(d.akun_id),
+      keterangan: `Pembalik ${existing.nomor_jurnal} - ${d.akun.kode}`,
+      debit: Number(d.kredit),
+      kredit: Number(d.debit),
+      urutan: i,
+    }))
+
+    const validated = await validateJurnalInput({ tanggal, periode_id: periode.id, jenis: "BALIK", details })
+    const nomor_jurnal = await generateNomorJurnal(validated.tanggal, "BALIK")
+
+    const row = await prisma.keu_jurnal.create({
+      data: {
+        nomor_jurnal,
+        tanggal: validated.tanggal,
+        keterangan: payload?.keterangan?.trim() || `Jurnal pembalik ${existing.nomor_jurnal}`,
+        jenis: "BALIK",
+        status: "DRAFT",
+        periode_id: periode.id,
+        source_modul: "reversal",
+        source_ref_id,
+        total_debit: validated.totalDebit,
+        total_kredit: validated.totalKredit,
+        dibuat_oleh: BigInt(auth.user.id),
+        created_at: new Date(),
+        updated_at: new Date(),
+        details: { create: validated.details },
+      },
+      include: { details: true },
+    })
+
+    await writeAuditLog({ user: auth.user, action: "CREATE", modelType: "keu_jurnal", modelId: row.id, dataBaru: { nomor: row.nomor_jurnal, reversal_of: existing.nomor_jurnal } })
+    revalidatePath(PAGE_PATH)
+    return ok(serialize(row) as unknown as JurnalRow)
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : "Gagal membuat jurnal pembalik")
   }
 }
 
