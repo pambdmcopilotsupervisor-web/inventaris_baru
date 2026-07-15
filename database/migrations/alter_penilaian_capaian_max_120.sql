@@ -4,6 +4,8 @@
 -- Tanggal  : 2026-06-14
 -- ============================================================
 
+DROP PROCEDURE IF EXISTS alter_penilaian_capaian_max_120;
+
 DELIMITER //
 
 CREATE PROCEDURE alter_penilaian_capaian_max_120()
@@ -33,4 +35,4 @@ END//
 DELIMITER ;
 
 CALL alter_penilaian_capaian_max_120();
-DROP PROCEDURE alter_penilaian_capaian_max_120;
+DROP PROCEDURE IF EXISTS alter_penilaian_capaian_max_120;

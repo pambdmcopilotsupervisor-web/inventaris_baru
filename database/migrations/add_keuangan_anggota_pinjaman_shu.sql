@@ -2,6 +2,32 @@
 -- Modul Keuangan — Buku Pembantu, Pinjaman Anggota, SHU Anggota
 -- ============================================================
 
+-- -----------------------------------------------------------
+-- 0. keu_anggota — harus ada sebelum keu_pinjaman & keu_shu_anggota.
+--    Definisi lengkap ada di add_keuangan_simpanan_shu.sql;
+--    di sini hanya dipastikan sudah ada (idempotent).
+-- -----------------------------------------------------------
+CREATE TABLE IF NOT EXISTS keu_anggota (
+  id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  no_anggota    VARCHAR(30)  NOT NULL,
+  nama          VARCHAR(150) NOT NULL,
+  karyawan_id   BIGINT UNSIGNED NULL,
+  no_ktp        VARCHAR(30)  NULL,
+  no_hp         VARCHAR(30)  NULL,
+  alamat        VARCHAR(255) NULL,
+  tgl_gabung    DATE         NOT NULL,
+  tgl_keluar    DATE         NULL,
+  status        ENUM('AKTIF','NONAKTIF','KELUAR') NOT NULL DEFAULT 'AKTIF',
+  keterangan    VARCHAR(255) NULL,
+  created_at    TIMESTAMP    NULL,
+  updated_at    TIMESTAMP    NULL,
+  UNIQUE KEY uq_keu_anggota_no (no_anggota),
+  KEY idx_keu_anggota_status (status),
+  KEY idx_keu_anggota_karyawan (karyawan_id),
+  CONSTRAINT fk_keu_anggota_karyawan FOREIGN KEY (karyawan_id)
+    REFERENCES karyawans (id) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS keu_pinjaman (
   id                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   anggota_id        BIGINT UNSIGNED NOT NULL,

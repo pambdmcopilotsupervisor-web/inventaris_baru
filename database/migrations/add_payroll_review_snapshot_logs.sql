@@ -5,29 +5,18 @@
 --   - Snapshot identitas/bank karyawan pada payroll_slips.
 --   - Review per slip sebelum approve periode.
 --   - Log error/warning kalkulasi payroll yang persisten.
--- Catatan  : Idempotent.
+-- Catatan  : Idempotent — menggunakan ADD COLUMN IF NOT EXISTS (MariaDB).
 -- ============================================================
 
-DROP PROCEDURE IF EXISTS _payroll_review_snapshot_cols;
-DELIMITER //
-CREATE PROCEDURE _payroll_review_snapshot_cols()
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='payroll_slips' AND COLUMN_NAME='employee_snapshot') THEN
-    ALTER TABLE payroll_slips ADD COLUMN employee_snapshot JSON NULL AFTER attendance_snapshot;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='payroll_slips' AND COLUMN_NAME='bank_snapshot') THEN
-    ALTER TABLE payroll_slips ADD COLUMN bank_snapshot JSON NULL AFTER employee_snapshot;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='payroll_slips' AND COLUMN_NAME='reviewed_by') THEN
-    ALTER TABLE payroll_slips ADD COLUMN reviewed_by BIGINT UNSIGNED NULL AFTER bank_snapshot;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='payroll_slips' AND COLUMN_NAME='reviewed_at') THEN
-    ALTER TABLE payroll_slips ADD COLUMN reviewed_at TIMESTAMP NULL AFTER reviewed_by;
-  END IF;
-END //
-DELIMITER ;
-CALL _payroll_review_snapshot_cols();
-DROP PROCEDURE IF EXISTS _payroll_review_snapshot_cols;
+-- Pastikan attendance_snapshot ada terlebih dahulu (dependency dari
+-- add_payroll_attendance_snapshot.sql yang mungkin belum jalan).
+ALTER TABLE payroll_slips ADD COLUMN IF NOT EXISTS attendance_snapshot JSON NULL;
+
+-- Tambah kolom-kolom snapshot & review
+ALTER TABLE payroll_slips ADD COLUMN IF NOT EXISTS employee_snapshot JSON NULL;
+ALTER TABLE payroll_slips ADD COLUMN IF NOT EXISTS bank_snapshot JSON NULL;
+ALTER TABLE payroll_slips ADD COLUMN IF NOT EXISTS reviewed_by BIGINT UNSIGNED NULL;
+ALTER TABLE payroll_slips ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP NULL;
 
 CREATE TABLE IF NOT EXISTS payroll_run_logs (
   id                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
