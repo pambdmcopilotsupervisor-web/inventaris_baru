@@ -27,12 +27,14 @@ CREATE DATABASE asset_baru CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 ### Struktur tabel akan dibuat otomatis saat deploy pertama
 
-Proses deploy akan membuat tabel dalam **dua cara** secara berurutan:
+Semua tabel dibuat otomatis oleh **script entrypoint** (`docker-entrypoint.sh`) saat container start untuk pertama kali. Urutan eksekusi file SQL (alphabetical):
 
-1. **`prisma db push`** → membuat 29 tabel core (assets, karyawans, users, dll.) yang tidak ada di file SQL migration
-2. **Script entrypoint** → menjalankan semua file di `database/migrations/*.sql` untuk membuat tabel-tabel modul (SDM, Payroll, Keuangan, dll.)
+1. **`000_create_core_tables.sql`** ← dijalankan PERTAMA, membuat 29 tabel core (users, karyawans, assets, divisis, dll.)
+2. **`add_absensi.sql`, `add_cuti.sql`, ...** → membuat tabel-tabel modul (SDM, Payroll, Keuangan, dll.)
+3. **`alter_*.sql`** → menambahkan kolom baru ke tabel yang sudah ada
+4. **`seed_keuangan_demo.sql`** → data demo keuangan (opsional)
 
-Kedua proses ini berjalan otomatis di dalam `docker-entrypoint.sh` saat container pertama kali start.
+Semua file SQL bersifat **idempotent** (`CREATE TABLE IF NOT EXISTS`) — aman dijalankan berulang saat redeploy.
 
 ---
 
@@ -184,21 +186,16 @@ Di panel Dokploy, pastikan volume ini di-mount sebagai **persistent volume**.
 
 ### Prisma error — "Table does not exist"
 
-Tabel-tabel core (assets, karyawans, users, dll.) **tidak dibuat otomatis oleh SQL migrations**. Jalankan `prisma db push` secara manual:
+**Sudah diatasi** sejak file `database/migrations/000_create_core_tables.sql` ditambahkan — semua tabel core kini dibuat oleh file SQL tersebut sebelum file migration lain berjalan.
+
+Jika error masih muncul, kemungkinan penyebab dan solusi:
 
 ```bash
-# Masuk ke container yang running
-docker exec -it <container_id> sh
+# Cek apakah file 000_create_core_tables.sql ada di container
+docker exec -it <container_id> ls /app/database/migrations/ | head -5
 
-# Jalankan prisma db push
-DATABASE_URL="mysql://..." npx prisma db push
-```
-
-Atau tambahkan perintah ini ke `docker-entrypoint.sh` sebelum loop SQL migrations:
-
-```sh
-# Jalankan SEKALI untuk membuat tabel core (idempotent)
-npx prisma db push --accept-data-loss
+# Jalankan ulang script migration secara manual
+docker exec -it <container_id> sh -c 'MYSQL_PWD="$DB_PASS" mysql -h "$DB_HOST" -u "$DB_USER" "$DB_NAME" < /app/database/migrations/000_create_core_tables.sql'
 ```
 
 ### Error 500 di halaman login
