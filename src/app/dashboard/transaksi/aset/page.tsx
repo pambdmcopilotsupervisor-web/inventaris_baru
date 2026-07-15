@@ -604,11 +604,11 @@ export default function AsetPage() {
             </label>
 
             {/* Preview gambar yang sudah ada */}
-            {(localPreview ?? (form.gambar && selected ? gambarSrc(selected.id, form.gambar) : null)) && (
+            {(localPreview ?? (form.gambar && selected ? gambarSrc(selected.id, form.gambar ?? null) : null)) && (
               <div className="relative inline-block">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={localPreview ?? (selected ? gambarSrc(selected.id, form.gambar) ?? "" : "")}
+                  src={localPreview ?? (selected ? gambarSrc(selected.id, form.gambar ?? null) ?? "" : "")}
                   alt="Gambar aset"
                   className="h-32 w-48 rounded-xl object-cover"
                   style={{ border: "1px solid var(--border)" }}
