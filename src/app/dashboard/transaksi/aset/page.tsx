@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input"
 import {
   Plus, Pencil, Trash2, Eye, QrCode, Printer, RefreshCw,
   Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-  Package2, Filter, FileText,
+  Package2, Filter, FileText, ImagePlus, X, ImageOff,
 } from "lucide-react"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
@@ -42,6 +42,17 @@ function KondisiBadge({ status }: { status: string }) {
   return <Badge variant={v}>{status}</Badge>
 }
 
+/* ── Helper: src gambar via proxy ───────────────────────────────── */
+function gambarSrc(assetId: number, gambar: string | null): string | null {
+  if (!gambar) return null
+  // Gambar baru: hanya key (mis. "uuid.jpg") → proxy endpoint
+  // Gambar lama: URL penuh → masih pakai langsung (backward compat)
+  if (gambar.startsWith("http://") || gambar.startsWith("https://") || gambar.startsWith("/")) {
+    return gambar
+  }
+  return `/api/aset/${assetId}/gambar`
+}
+
 /* ── Main Page ──────────────────────────────────────────────────── */
 export default function AsetPage() {
   const { data, loading, refetch } = useApi<Asset[]>("/api/aset")
@@ -61,6 +72,10 @@ export default function AsetPage() {
   const [form, setForm]             = useState<Partial<Asset>>(EMPTY)
   const [errors, setErrors]         = useState<Record<string, string>>({})
 
+  /* ── Upload gambar ──────────────────────────────────────────── */
+  const [uploading, setUploading]     = useState(false)
+  const [uploadErr, setUploadErr]     = useState<string | null>(null)
+  const [localPreview, setLocalPreview] = useState<string | null>(null)
   /* ── Filters & pagination ───────────────────────────────────── */
   const [search, setSearch]       = useState("")
   const [kelompokFilter, setKelompokFilter] = useState<string>("")
@@ -92,8 +107,8 @@ export default function AsetPage() {
   /* ── Form helpers ───────────────────────────────────────────── */
   const set = (k: keyof Asset, v: string) => setForm(f => ({ ...f, [k]: v || null }))
 
-  const openAdd = () => { setEditMode(false); setSelected(null); setForm(EMPTY); setErrors({}); setModalOpen(true) }
-  const openEdit = (row: Asset) => { setEditMode(true); setSelected(row); setForm(row); setErrors({}); setModalOpen(true) }
+  const openAdd = () => { setEditMode(false); setSelected(null); setForm(EMPTY); setErrors({}); setLocalPreview(null); setModalOpen(true) }
+  const openEdit = (row: Asset) => { setEditMode(true); setSelected(row); setForm(row); setErrors({}); setLocalPreview(null); setModalOpen(true) }
 
   const handleSubmit = async () => {
     const e: Record<string, string> = {}
@@ -110,6 +125,47 @@ export default function AsetPage() {
     if (!selected) return
     const ok = await remove(selected.id)
     if (ok) setDeleteOpen(false)
+  }
+
+  /* ── Upload gambar ke MinIO (aset yang sudah ada) ───────────── */
+  const handleUploadGambar = async (file: File, assetId: number) => {
+    // Tampilkan preview instan sebelum upload selesai
+    const objectUrl = URL.createObjectURL(file)
+    setLocalPreview(objectUrl)
+    setUploading(true)
+    setUploadErr(null)
+    try {
+      const fd = new FormData()
+      fd.append("file", file)
+      const res = await fetch(`/api/aset/${assetId}/gambar`, { method: "POST", body: fd })
+      const json = await res.json()
+      if (!res.ok) {
+        setUploadErr(json.error ?? "Gagal upload")
+        URL.revokeObjectURL(objectUrl)
+        setLocalPreview(null)
+        return
+      }
+      const newKey = json.asset?.gambar ?? null
+      setForm(f => ({ ...f, gambar: newKey }))
+      setSelected(s => s ? { ...s, gambar: newKey } : s)
+      refetch()
+    } catch {
+      setUploadErr("Gagal upload gambar")
+      URL.revokeObjectURL(objectUrl)
+      setLocalPreview(null)
+    } finally { setUploading(false) }
+  }
+
+  /* ── Hapus gambar ───────────────────────────────────────────── */
+  const handleHapusGambar = async (assetId: number) => {
+    if (localPreview) { URL.revokeObjectURL(localPreview); setLocalPreview(null) }
+    setUploading(true)
+    try {
+      await fetch(`/api/aset/${assetId}/gambar`, { method: "DELETE" })
+      setForm(f => ({ ...f, gambar: null }))
+      setSelected(s => s ? { ...s, gambar: null } : s)
+      refetch()
+    } finally { setUploading(false) }
   }
 
   /* ── Cetak barcode massal ───────────────────────────────────── */
@@ -444,6 +500,18 @@ export default function AsetPage() {
       <Modal open={viewOpen} onClose={() => setViewOpen(false)} title="Detail Aset" size="lg">
         {selected && (
           <div className="space-y-5">
+            {/* Gambar aset */}
+            {selected.gambar && (
+              <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={gambarSrc(selected.id, selected.gambar) ?? ""}
+                  alt={selected.nama_asset}
+                  className="w-full max-h-72 object-contain"
+                  style={{ background: "var(--surface-muted)" }}
+                />
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               {[
                 ["Kode Aset", selected.kode_asset],
@@ -482,7 +550,7 @@ export default function AsetPage() {
       </Modal>
 
       {/* ── Add / Edit Modal ──────────────────────────────────────── */}
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} size="lg"
+      <Modal open={modalOpen} onClose={() => { setModalOpen(false); if (localPreview) { URL.revokeObjectURL(localPreview); setLocalPreview(null) } }} size="lg"
         title={editMode ? "Edit Aset" : "Tambah Aset Baru"}
         footer={<>
           <Button variant="outline" onClick={() => setModalOpen(false)}>Batal</Button>
@@ -528,6 +596,80 @@ export default function AsetPage() {
             value={form.deskripsi ?? ""}
             onChange={e => set("deskripsi", e.target.value)}
             className="md:col-span-2" />
+
+          {/* Gambar Aset */}
+          <div className="md:col-span-2 space-y-2">
+            <label className="block text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+              Gambar Aset
+            </label>
+
+            {/* Preview gambar yang sudah ada */}
+            {(localPreview ?? (form.gambar && selected ? gambarSrc(selected.id, form.gambar) : null)) && (
+              <div className="relative inline-block">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={localPreview ?? (selected ? gambarSrc(selected.id, form.gambar) ?? "" : "")}
+                  alt="Gambar aset"
+                  className="h-32 w-48 rounded-xl object-cover"
+                  style={{ border: "1px solid var(--border)" }}
+                />
+                {/* Tombol hapus */}
+                {editMode && selected && (
+                  <button
+                    type="button"
+                    disabled={uploading}
+                    onClick={() => handleHapusGambar(selected.id)}
+                    className="absolute -top-2 -right-2 h-6 w-6 rounded-full flex items-center justify-center text-white transition-opacity hover:opacity-80"
+                    style={{ background: "var(--danger)" }}
+                    title="Hapus gambar"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Upload area */}
+            {editMode && selected ? (
+              /* Edit mode: langsung upload ke API */
+              <label
+                className="flex items-center gap-2 w-fit rounded-lg px-4 py-2 text-sm font-medium cursor-pointer transition-colors"
+                style={{
+                  border: "1px dashed var(--border-strong)",
+                  background: "var(--surface-muted)",
+                  color: "var(--text-700)",
+                  opacity: uploading ? 0.6 : 1,
+                  pointerEvents: uploading ? "none" : "auto",
+                }}
+              >
+                <ImagePlus className="h-4 w-4" />
+                {uploading ? "Mengupload..." : form.gambar ? "Ganti Gambar" : "Upload Gambar"}
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  disabled={uploading}
+                  onChange={e => {
+                    const file = e.target.files?.[0]
+                    if (file) handleUploadGambar(file, selected.id)
+                    e.target.value = ""
+                  }}
+                />
+              </label>
+            ) : !editMode ? (
+              /* Tambah baru: gambar bisa diupload setelah disimpan */
+              <p className="text-xs" style={{ color: "var(--text-subtle)" }}>
+                Gambar dapat ditambahkan setelah aset disimpan (klik Edit).
+              </p>
+            ) : null}
+
+            {uploadErr && (
+              <p className="text-xs" style={{ color: "var(--danger)" }}>{uploadErr}</p>
+            )}
+            <p className="text-xs" style={{ color: "var(--text-subtle)" }}>
+              Format JPG, PNG, atau WEBP. Maks 5 MB.
+            </p>
+          </div>
         </div>
       </Modal>
 

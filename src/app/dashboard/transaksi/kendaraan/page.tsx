@@ -8,7 +8,7 @@ import { Modal } from "@/components/ui/modal"
 import { ConfirmDelete } from "@/components/ui/confirm-delete"
 import { TextField, SelectField, TextareaField } from "@/components/ui/form-field"
 import { Input } from "@/components/ui/input"
-import { Plus, Pencil, Trash2, Eye, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, Wrench, CreditCard, Info, FileText } from "lucide-react"
+import { Plus, Pencil, Trash2, Eye, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, Wrench, CreditCard, Info, FileText, ImagePlus, X, ImageOff } from "lucide-react"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
 import { useCrud } from "@/hooks/useCrud"
@@ -26,13 +26,28 @@ interface Kendaraan {
   hrg_beli: number | null; hrg_sewa: number | null
   stat: string | null; tgl_stop_tagihan: string | null; alasan_stop_tagihan: string | null
   deskripsi: string | null; no_bpkb: string | null
+  gambar_fisik: string | null; gambar_pajak: string | null
+  gambar_stnk: string | null; gbr_barang: string | null
   kontrak_info?: KontrakInfo[]
 }
 interface RiwayatServis { id: number; tanggal_servis: string; jenis_servis: string; biaya: number; bengkel: string | null; keterangan: string | null }
 interface RiwayatPembayaran { id: number; jenis_pembayaran: string; tanggal_pembayaran: string; biaya: number; jatuh_tempo_berikutnya: string | null; keterangan: string | null }
 
-const JNS_VARIANT: Record<string, "default" | "info" | "success" | "warning"> = {
-  "R4 Operasional": "default", "R4 Dinas": "info", "R2 Operasional": "success", "R2 Dinas": "warning"
+/* ── Helper: src gambar via proxy ───────────────────────────────── */
+type ImgField = "gambar_fisik" | "gambar_pajak" | "gambar_stnk" | "gbr_barang"
+const IMG_LABELS: Record<ImgField, string> = {
+  gambar_fisik: "Foto Fisik",
+  gambar_pajak: "Foto Pajak",
+  gambar_stnk:  "Foto STNK",
+  gbr_barang:   "Foto Kendaraan",
+}
+function gambarSrc(id: number, key: string | null, field: ImgField): string | null {
+  if (!key) return null
+  if (key.startsWith("http://") || key.startsWith("https://") || key.startsWith("/")) return key
+  return `/api/kendaraan/${id}/gambar?field=${field}`
+}
+
+const JNS_VARIANT: Record<string, "default" | "info" | "success" | "warning"> = {  "R4 Operasional": "default", "R4 Dinas": "info", "R2 Operasional": "success", "R2 Dinas": "warning"
 }
 
 const STAT_OPTIONS = [
@@ -69,7 +84,7 @@ export default function KendaraanPage() {
   // Riwayat servis & pembayaran untuk detail view
   const [riwayatServis, setRiwayatServis]       = useState<RiwayatServis[]>([])
   const [riwayatPembayaran, setRiwayatPembayaran] = useState<RiwayatPembayaran[]>([])
-  const [detailTab, setDetailTab]               = useState<"info" | "servis" | "pembayaran">("info")
+  const [detailTab, setDetailTab] = useState<"info" | "foto" | "servis" | "pembayaran">("info")
   const [loadingRelasi, setLoadingRelasi]       = useState(false)
 
   // Filter + pagination
@@ -99,11 +114,11 @@ export default function KendaraanPage() {
   })
 
   const openAdd = () => {
-    setEditMode(false); setSelected(null); setForm(EMPTY); setErrors({})
+    setEditMode(false); setSelected(null); setForm(EMPTY); setErrors({}); setLocalPreviews({})
     setModalOpen(true)
   }
   const openEdit = (row: Kendaraan) => {
-    setEditMode(true); setSelected(row); setForm(row); setErrors({})
+    setEditMode(true); setSelected(row); setForm(row); setErrors({}); setLocalPreviews({})
     setModalOpen(true)
   }
 
@@ -142,6 +157,47 @@ export default function KendaraanPage() {
     if (!selected) return
     const ok = await remove(selected.id)
     if (ok) setDeleteOpen(false)
+  }
+
+  const [uploading, setUploading]   = useState<ImgField | null>(null)
+  const [uploadErr, setUploadErr]   = useState<string | null>(null)
+  const [localPreviews, setLocalPreviews] = useState<Partial<Record<ImgField, string>>>({})
+
+  const handleUploadGambar = async (file: File, kendaraanId: number, field: ImgField) => {
+    // Preview instan sebelum upload selesai
+    const objectUrl = URL.createObjectURL(file)
+    setLocalPreviews(p => ({ ...p, [field]: objectUrl }))
+    setUploading(field); setUploadErr(null)
+    try {
+      const fd = new FormData(); fd.append("file", file)
+      const res  = await fetch(`/api/kendaraan/${kendaraanId}/gambar?field=${field}`, { method: "POST", body: fd })
+      const json = await res.json()
+      if (!res.ok) {
+        setUploadErr(json.error ?? "Gagal upload")
+        URL.revokeObjectURL(objectUrl)
+        setLocalPreviews(p => { const n = { ...p }; delete n[field]; return n })
+        return
+      }
+      const newKey = json.kendaraan?.[field] ?? null
+      setForm(f => ({ ...f, [field]: newKey }))
+      setSelected(s => s ? { ...s, [field]: newKey } : s)
+      refetch()
+    } catch {
+      setUploadErr("Gagal upload gambar")
+      URL.revokeObjectURL(objectUrl)
+      setLocalPreviews(p => { const n = { ...p }; delete n[field]; return n })
+    } finally  { setUploading(null) }
+  }
+
+  const handleHapusGambar = async (kendaraanId: number, field: ImgField) => {
+    if (localPreviews[field]) { URL.revokeObjectURL(localPreviews[field]!); setLocalPreviews(p => { const n = { ...p }; delete n[field]; return n }) }
+    setUploading(field)
+    try {
+      await fetch(`/api/kendaraan/${kendaraanId}/gambar?field=${field}`, { method: "DELETE" })
+      setForm(f => ({ ...f, [field]: null }))
+      setSelected(s => s ? { ...s, [field]: null } : s)
+      refetch()
+    } finally { setUploading(null) }
   }
 
   const stats = [
@@ -424,6 +480,66 @@ export default function KendaraanPage() {
           )}
 
           <TextareaField label="Deskripsi" value={form.deskripsi ?? ""} onChange={e => setF("deskripsi", e.target.value)} className="md:col-span-3" />
+
+          {/* ── Upload Gambar (edit mode only) ───────────────────── */}
+          {editMode && selected && (
+            <div className="md:col-span-3 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Gambar</p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {(["gambar_fisik","gambar_pajak","gambar_stnk","gbr_barang"] as ImgField[]).map(field => {
+                  const key  = form[field] as string | null
+                  const src  = localPreviews[field] ?? gambarSrc(selected.id, key, field)
+                  const busy = uploading === field
+                  return (
+                    <div key={field} className="space-y-1.5">
+                      <p className="text-xs font-medium" style={{ color: "var(--text-700)" }}>{IMG_LABELS[field]}</p>
+                      <div className="relative">
+                        {src ? (
+                          <>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={src} alt={IMG_LABELS[field]}
+                              className="w-full h-24 rounded-lg object-cover"
+                              style={{ border: "1px solid var(--border)" }} />
+                            <button type="button" disabled={busy}
+                              onClick={() => handleHapusGambar(selected.id, field)}
+                              className="absolute -top-2 -right-2 h-5 w-5 rounded-full flex items-center justify-center text-white"
+                              style={{ background: "var(--danger)", opacity: busy ? 0.5 : 1 }}>
+                              <X className="h-3 w-3" />
+                            </button>
+                          </>
+                        ) : (
+                          <div className="w-full h-24 rounded-lg flex items-center justify-center"
+                            style={{ border: "1px dashed var(--border-strong)", background: "var(--surface-muted)" }}>
+                            <ImageOff className="h-5 w-5" style={{ color: "var(--text-subtle)" }} />
+                          </div>
+                        )}
+                      </div>
+                      <label className="flex items-center justify-center gap-1.5 w-full rounded-lg px-2 py-1.5 text-xs font-medium cursor-pointer transition-colors"
+                        style={{
+                          border: "1px solid var(--border-strong)",
+                          background: "var(--surface-muted)",
+                          color: "var(--text-700)",
+                          opacity: busy ? 0.6 : 1,
+                          pointerEvents: busy ? "none" : "auto",
+                        }}>
+                        <ImagePlus className="h-3.5 w-3.5" />
+                        {busy ? "Uploading..." : src ? "Ganti" : "Upload"}
+                        <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+                          disabled={busy}
+                          onChange={e => {
+                            const file = e.target.files?.[0]
+                            if (file) handleUploadGambar(file, selected.id, field)
+                            e.target.value = ""
+                          }} />
+                      </label>
+                    </div>
+                  )
+                })}
+              </div>
+              {uploadErr && <p className="text-xs" style={{ color: "var(--danger)" }}>{uploadErr}</p>}
+              <p className="text-xs" style={{ color: "var(--text-subtle)" }}>JPG, PNG, atau WEBP · Maks 5 MB per gambar</p>
+            </div>
+          )}
         </div>
 
         {/* Business logic info */}
@@ -445,6 +561,7 @@ export default function KendaraanPage() {
             <div className="flex gap-2 border-b" style={{ borderColor: "var(--border)" }}>
               {[
                 { key: "info",        label: "Informasi", icon: <Eye className="h-3.5 w-3.5" /> },
+                { key: "foto",        label: "Foto", icon: <ImageOff className="h-3.5 w-3.5" /> },
                 { key: "servis",      label: `Riwayat Servis (${riwayatServis.length})`, icon: <Wrench className="h-3.5 w-3.5" /> },
                 { key: "pembayaran",  label: `Riwayat Pembayaran (${riwayatPembayaran.length})`, icon: <CreditCard className="h-3.5 w-3.5" /> },
               ].map(tab => (
@@ -507,9 +624,36 @@ export default function KendaraanPage() {
               </div>
             )}
 
+            {/* Tab: Foto */}
+            {detailTab === "foto" && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {(["gambar_fisik","gambar_pajak","gambar_stnk","gbr_barang"] as ImgField[]).map(field => {
+                  const src = gambarSrc(selected.id, selected[field] as string | null, field)
+                  return (
+                    <div key={field} className="space-y-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>
+                        {IMG_LABELS[field]}
+                      </p>
+                      {src ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={src} alt={IMG_LABELS[field]}
+                          className="w-full rounded-xl object-cover"
+                          style={{ maxHeight: 180, border: "1px solid var(--border)", background: "var(--surface-muted)" }} />
+                      ) : (
+                        <div className="w-full h-28 rounded-xl flex flex-col items-center justify-center gap-1"
+                          style={{ border: "1px dashed var(--border)", background: "var(--surface-muted)" }}>
+                          <ImageOff className="h-5 w-5" style={{ color: "var(--text-subtle)" }} />
+                          <p className="text-xs" style={{ color: "var(--text-subtle)" }}>Belum ada foto</p>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
             {/* Tab: Riwayat Servis */}
-            {detailTab === "servis" && (
-              <div>
+            {detailTab === "servis" && (              <div>
                 {loadingRelasi ? (
                   <p className="text-sm text-center py-8" style={{ color: "var(--text-subtle)" }}>Memuat riwayat servis...</p>
                 ) : riwayatServis.length === 0 ? (

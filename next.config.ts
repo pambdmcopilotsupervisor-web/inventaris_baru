@@ -13,8 +13,8 @@ const securityHeaders = [
       "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://unpkg.com",  // unsafe-eval diperlukan Next.js dev
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com",
       "font-src 'self' https://fonts.gstatic.com",
-      "img-src 'self' data: blob: https://tile.openstreetmap.org https://*.tile.openstreetmap.org https://storage.pedami-inventaris.com",
-      "connect-src 'self' https://unpkg.com https://tile.openstreetmap.org https://*.tile.openstreetmap.org",
+      "img-src 'self' data: blob: https://tile.openstreetmap.org https://*.tile.openstreetmap.org https://storage.pedami-inventaris.com http://minio.paymentpedami.com:9000",
+      "connect-src 'self' https://unpkg.com https://tile.openstreetmap.org https://*.tile.openstreetmap.org http://minio.paymentpedami.com:9000",
       "frame-ancestors 'none'",
     ].join("; "),
   },
