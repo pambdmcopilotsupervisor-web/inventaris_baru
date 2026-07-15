@@ -109,8 +109,14 @@ export default function JurnalPage() {
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
+  const [notice, setNotice] = useState<{ type: "success" | "error"; message: string } | null>(null)
 
   const [viewJurnal, setViewJurnal] = useState<JurnalRow | null>(null)
+  const [confirmAction, setConfirmAction] = useState<{ type: "POST" | "DELETE"; row: JurnalRow } | null>(null)
+  const [confirmLoading, setConfirmLoading] = useState(false)
+  const [reverseTarget, setReverseTarget] = useState<JurnalRow | null>(null)
+  const [reverseDate, setReverseDate] = useState(new Date().toISOString().split("T")[0])
+  const [reverseSaving, setReverseSaving] = useState(false)
 
   // Pre-load
   useEffect(() => {
@@ -124,6 +130,7 @@ export default function JurnalPage() {
 
   async function load() {
     setLoading(true)
+    setLoadError(null)
     const res = await getJurnals({
       periode_id: filterPeriode ? Number(filterPeriode) : undefined,
       status: filterStatus || undefined,
@@ -188,7 +195,7 @@ export default function JurnalPage() {
 
   async function openEdit(row: JurnalRow) {
     const res = await getJurnalById(row.id)
-    if (!res.success) { alert(res.error); return }
+    if (!res.success) { setNotice({ type: "error", message: res.error }); return }
     const j = res.data
     setEditingId(j.id)
     setForm({
@@ -286,6 +293,7 @@ export default function JurnalPage() {
       setFormOpen(false)
       setEditingId(null)
       setLines([emptyLine(), emptyLine()])
+      setNotice({ type: "success", message: editingId ? "Draft jurnal berhasil diperbarui" : "Draft jurnal berhasil dibuat" })
       load()
     } else {
       setFormError(res.error)
@@ -293,34 +301,46 @@ export default function JurnalPage() {
   }
 
   async function handlePost(row: JurnalRow) {
-    if (!confirm(`Posting jurnal ${row.nomor_jurnal}? Setelah diposting tidak dapat diubah.`)) return
     const res = await postJurnal(row.id)
-    if (res.success) load()
-    else alert(res.error)
+    if (res.success) {
+      setNotice({ type: "success", message: `Jurnal ${row.nomor_jurnal} berhasil diposting` })
+      load()
+    } else setNotice({ type: "error", message: res.error })
   }
 
   async function handleDelete(row: JurnalRow) {
-    if (!confirm(`Hapus jurnal ${row.nomor_jurnal}?`)) return
     const res = await deleteJurnal(row.id)
-    if (res.success) load()
-    else alert(res.error)
+    if (res.success) {
+      setNotice({ type: "success", message: `Jurnal ${row.nomor_jurnal} berhasil dihapus` })
+      load()
+    } else setNotice({ type: "error", message: res.error })
   }
 
-  async function handleReverse(row: JurnalRow) {
-    const today = new Date().toISOString().split("T")[0]
-    const tanggal = prompt(`Tanggal jurnal pembalik untuk ${row.nomor_jurnal}:`, today)
-    if (!tanggal) return
-    const res = await reverseJurnal(row.id, { tanggal })
+  async function handleReverseSubmit() {
+    if (!reverseTarget) return
+    setReverseSaving(true)
+    const res = await reverseJurnal(reverseTarget.id, { tanggal: reverseDate })
+    setReverseSaving(false)
     if (res.success) {
-      alert(`Draft jurnal pembalik berhasil dibuat: ${res.data.nomor_jurnal}. Review lalu posting bila sudah benar.`)
+      setReverseTarget(null)
+      setNotice({ type: "success", message: `Draft jurnal pembalik berhasil dibuat: ${res.data.nomor_jurnal}` })
       load()
-    } else alert(res.error)
+    } else setNotice({ type: "error", message: res.error })
   }
 
   async function handleView(row: JurnalRow) {
     const res = await getJurnalById(row.id)
     if (res.success) setViewJurnal(res.data)
-    else alert(res.error)
+    else setNotice({ type: "error", message: res.error })
+  }
+
+  async function handleConfirmAction() {
+    if (!confirmAction) return
+    setConfirmLoading(true)
+    if (confirmAction.type === "POST") await handlePost(confirmAction.row)
+    else await handleDelete(confirmAction.row)
+    setConfirmLoading(false)
+    setConfirmAction(null)
   }
 
   const columns: Column<JurnalRow>[] = [
@@ -366,6 +386,18 @@ export default function JurnalPage() {
           {loadError}
         </div>
       )}
+      {notice && (
+        <div
+          className="p-3 rounded-lg text-sm"
+          style={{
+            background: notice.type === "success" ? "rgba(5,150,105,0.08)" : "rgba(220,38,38,0.08)",
+            color: notice.type === "success" ? "rgb(5,150,105)" : "rgb(220,38,38)",
+            border: `1px solid ${notice.type === "success" ? "rgba(5,150,105,0.25)" : "rgba(220,38,38,0.25)"}`,
+          }}
+        >
+          {notice.message}
+        </div>
+      )}
 
       <DataTable
         columns={columns as unknown as Column<Record<string, unknown>>[]}
@@ -387,18 +419,26 @@ export default function JurnalPage() {
                       <Pencil className="h-3.5 w-3.5 text-amber-600" />
                     </Button>
                   )}
-                  <Button size="sm" variant="ghost" onClick={() => handlePost(r)} title="Posting">
+                  <Button size="sm" variant="ghost" onClick={() => setConfirmAction({ type: "POST", row: r })} title="Posting">
                     <Send className="h-3.5 w-3.5 text-green-600" />
                   </Button>
                   {!r.source_modul && (
-                    <Button size="sm" variant="ghost" onClick={() => handleDelete(r)} title="Hapus">
+                    <Button size="sm" variant="ghost" onClick={() => setConfirmAction({ type: "DELETE", row: r })} title="Hapus">
                       <Trash2 className="h-3.5 w-3.5 text-red-500" />
                     </Button>
                   )}
                 </>
               )}
               {r.status === "POSTED" && r.source_modul !== "reversal" && (
-                <Button size="sm" variant="ghost" onClick={() => handleReverse(r)} title="Buat jurnal pembalik">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setReverseDate(new Date().toISOString().split("T")[0])
+                    setReverseTarget(r)
+                  }}
+                  title="Buat jurnal pembalik"
+                >
                   <RotateCcw className="h-3.5 w-3.5 text-blue-600" />
                 </Button>
               )}
@@ -567,12 +607,19 @@ export default function JurnalPage() {
             )}
             <div className="flex justify-end gap-2 pt-1">
               {viewJurnal.status === "DRAFT" && (
-                <Button onClick={() => { handlePost(viewJurnal); setViewJurnal(null) }} className="bg-green-600 hover:bg-green-700">
+                <Button onClick={() => { setConfirmAction({ type: "POST", row: viewJurnal }); setViewJurnal(null) }} className="bg-green-600 hover:bg-green-700">
                   <Send className="h-4 w-4 mr-1" />Posting
                 </Button>
               )}
               {viewJurnal.status === "POSTED" && viewJurnal.source_modul !== "reversal" && (
-                <Button variant="outline" onClick={() => { handleReverse(viewJurnal); setViewJurnal(null) }}>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setReverseDate(new Date().toISOString().split("T")[0])
+                    setReverseTarget(viewJurnal)
+                    setViewJurnal(null)
+                  }}
+                >
                   <RotateCcw className="h-4 w-4 mr-1" />Buat Pembalik
                 </Button>
               )}
@@ -581,6 +628,45 @@ export default function JurnalPage() {
           </div>
         </Modal>
       )}
+
+      <Modal
+        open={!!confirmAction}
+        onClose={() => setConfirmAction(null)}
+        title={confirmAction?.type === "POST" ? "Konfirmasi Posting" : "Konfirmasi Hapus"}
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm" style={{ color: "var(--text-900)" }}>
+            {confirmAction?.type === "POST"
+              ? `Posting jurnal ${confirmAction.row.nomor_jurnal}? Setelah diposting jurnal tidak dapat diubah.`
+              : `Hapus jurnal ${confirmAction?.row.nomor_jurnal}? Tindakan ini tidak dapat dibatalkan.`}
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setConfirmAction(null)} disabled={confirmLoading}>Batal</Button>
+            <Button onClick={handleConfirmAction} disabled={confirmLoading}>
+              {confirmLoading ? "Memproses..." : confirmAction?.type === "POST" ? "Ya, Posting" : "Ya, Hapus"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!reverseTarget}
+        onClose={() => setReverseTarget(null)}
+        title="Buat Jurnal Pembalik"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm" style={{ color: "var(--text-subtle)" }}>
+            Jurnal sumber: <span style={{ color: "var(--text-900)", fontWeight: 600 }}>{reverseTarget?.nomor_jurnal}</span>
+          </p>
+          <TextField label="Tanggal Jurnal Pembalik" type="date" value={reverseDate} onChange={(e) => setReverseDate(e.target.value)} />
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setReverseTarget(null)} disabled={reverseSaving}>Batal</Button>
+            <Button onClick={handleReverseSubmit} disabled={reverseSaving}>{reverseSaving ? "Membuat..." : "Buat Draft Pembalik"}</Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

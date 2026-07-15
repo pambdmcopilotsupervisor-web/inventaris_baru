@@ -53,6 +53,23 @@ interface Summary {
   adjustment_earning_total?: number; adjustment_deduction_total?: number; adjustment_count?: number
 }
 interface RunLog { id: number; employee_id: number | null; level: "ERROR" | "WARNING" | "INFO"; message: string; context: { nama?: string } | null; created_at: string | null }
+interface RecalcDiffLine {
+  code: string
+  name: string
+  type: "EARNING" | "DEDUCTION"
+  before: number
+  after: number
+  delta: number
+}
+interface RecalcDiffPayload {
+  employee_id: number
+  employee_name: string
+  before: { total_earnings: number; total_deductions: number; net_salary: number } | null
+  after: { total_earnings: number; total_deductions: number; net_salary: number } | null
+  delta: { total_earnings: number; total_deductions: number; net_salary: number }
+  line_diffs: RecalcDiffLine[]
+  changed_line_count: number
+}
 
 export default function PayrollPeriodDetailPage() {
   const params = useParams<{ id: string }>()
@@ -81,8 +98,11 @@ export default function PayrollPeriodDetailPage() {
 
   const [deptFilter, setDeptFilter] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
+  const [issueFilter, setIssueFilter] = useState<"" | "EMPTY" | "NEGATIVE" | "UNREVIEWED">("")
   const [payModal, setPayModal] = useState(false)
   const [payDate, setPayDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [recalcDiffModal, setRecalcDiffModal] = useState(false)
+  const [recalcDiff, setRecalcDiff] = useState<RecalcDiffPayload | null>(null)
 
   type CheckItem = { level: "error" | "warning" | "ok"; message: string; detail?: string }
   type ValidationResult = { employee_count: number; error_count: number; warning_count: number; can_calculate: boolean; checks: CheckItem[] }
@@ -218,6 +238,10 @@ export default function PayrollPeriodDetailPage() {
     const res = await recalculateEmployeePayroll(periodId, row.employee_id)
     setRecalcId(null)
     if (!res.success) { alert(res.error); return }
+    const diff = res.data as unknown as RecalcDiffPayload
+    setRecalcDiff(diff)
+    setRecalcDiffModal(true)
+    setNotice(`Hitung ulang selesai: ${diff.employee_name}. ${diff.changed_line_count} komponen berubah.`)
     load()
   }
 
@@ -304,8 +328,11 @@ export default function PayrollPeriodDetailPage() {
   const filtered = useMemo(() => slips.filter((s) => {
     if (deptFilter && s.department !== deptFilter) return false
     if (statusFilter && s.status !== statusFilter) return false
+    if (issueFilter === "EMPTY" && !(s.detail_count === 0 || (s.total_earnings === 0 && s.total_deductions === 0 && s.net_salary === 0))) return false
+    if (issueFilter === "NEGATIVE" && s.net_salary >= 0) return false
+    if (issueFilter === "UNREVIEWED" && s.status === "REVIEWED") return false
     return true
-  }), [slips, deptFilter, statusFilter])
+  }), [slips, deptFilter, statusFilter, issueFilter])
 
   const columns: Column<SlipRow>[] = [
     { key: "nama", header: "Nama", cell: (r) => <div><p className="font-medium">{r.nama}</p><p className="text-xs" style={{ color: "var(--text-subtle)" }}>{r.jabatan}</p></div> },
@@ -317,6 +344,35 @@ export default function PayrollPeriodDetailPage() {
   ]
 
   const status = period?.status
+  const workflowSteps = useMemo(() => {
+    const reviewedDone = unreviewedSlipRows.length === 0
+    return [
+      { key: "DRAFT", label: "Draft" },
+      { key: "CALCULATE", label: "Kalkulasi" },
+      { key: "REVIEW", label: "Review" },
+      { key: "APPROVE", label: "Approve" },
+      { key: "PAID", label: "Dibayar" },
+      { key: "CLOSED", label: "Ditutup" },
+    ].map((s, idx) => {
+      let state: "done" | "current" | "todo" = "todo"
+      if (status === "DRAFT") {
+        state = idx === 0 ? "current" : "todo"
+      } else if (status === "CALCULATED") {
+        if (idx <= 1) state = "done"
+        else if (idx === 2) state = reviewedDone ? "done" : "current"
+        else if (idx === 3) state = reviewedDone ? "current" : "todo"
+      } else if (status === "APPROVED") {
+        if (idx <= 3) state = "done"
+        else if (idx === 4) state = "current"
+      } else if (status === "PAID") {
+        if (idx <= 4) state = "done"
+        else if (idx === 5) state = "current"
+      } else if (status === "CLOSED") {
+        state = "done"
+      }
+      return { ...s, state }
+    })
+  }, [status, unreviewedSlipRows.length])
 
   return (
     <div className="space-y-5">
@@ -387,12 +443,72 @@ export default function PayrollPeriodDetailPage() {
       {loadError && <div className="rounded-lg px-4 py-3 text-sm" style={{ background: "var(--danger-bg)", color: "var(--danger)" }}>{loadError}</div>}
       {notice && <div className="rounded-lg px-4 py-3 text-sm" style={{ background: "var(--surface-hover)", color: "var(--text-muted)" }}>{notice}</div>}
 
+      <div className="rounded-lg px-4 py-3" style={{ border: "1px solid var(--border)", background: "var(--surface)" }}>
+        <p className="text-xs font-semibold mb-2" style={{ color: "var(--text-muted)" }}>Workflow Periode</p>
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+          {workflowSteps.map((step) => (
+            <div key={step.key} className="rounded-lg px-3 py-2 text-xs" style={{
+              border: "1px solid var(--border)",
+              background: step.state === "done" ? "var(--success-bg, #ecfdf5)" : step.state === "current" ? "var(--surface-hover)" : "var(--surface)",
+            }}>
+              <div className="flex items-center gap-1.5">
+                {step.state === "done"
+                  ? <CheckCircle2 className="h-3.5 w-3.5" style={{ color: "var(--success)" }} />
+                  : step.state === "current"
+                    ? <RotateCw className="h-3.5 w-3.5" style={{ color: "var(--primary)" }} />
+                    : <div className="h-3.5 w-3.5 rounded-full" style={{ background: "var(--border)" }} />}
+                <span className="font-medium" style={{ color: "var(--text-900)" }}>{step.label}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {status === "CALCULATED" && (emptySlipRows.length > 0 || negativeSlipRows.length > 0 || unreviewedSlipRows.length > 0) && (
         <div className="rounded-lg px-4 py-3 space-y-2" style={{ background: "var(--danger-bg)", border: "1px solid var(--danger)", color: "var(--text-900)" }}>
           <p className="text-sm font-semibold" style={{ color: "var(--danger)" }}>Perlu diperbaiki sebelum approve</p>
-          {emptySlipRows.length > 0 && <IssueList title={`${emptySlipRows.length} slip kosong`} rows={emptySlipRows} />}
-          {negativeSlipRows.length > 0 && <IssueList title={`${negativeSlipRows.length} slip gaji bersih negatif`} rows={negativeSlipRows} />}
-          {unreviewedSlipRows.length > 0 && <IssueList title={`${unreviewedSlipRows.length} slip belum direview`} rows={unreviewedSlipRows} />}
+          <div className="flex flex-wrap gap-2">
+            {emptySlipRows.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setIssueFilter("EMPTY")}
+                className="rounded-full px-3 py-1 text-xs font-semibold"
+                style={{ border: "1px solid var(--danger)", color: "var(--danger)", background: issueFilter === "EMPTY" ? "var(--danger-bg)" : "var(--surface)" }}
+              >
+                {emptySlipRows.length} slip kosong
+              </button>
+            )}
+            {negativeSlipRows.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setIssueFilter("NEGATIVE")}
+                className="rounded-full px-3 py-1 text-xs font-semibold"
+                style={{ border: "1px solid var(--danger)", color: "var(--danger)", background: issueFilter === "NEGATIVE" ? "var(--danger-bg)" : "var(--surface)" }}
+              >
+                {negativeSlipRows.length} net negatif
+              </button>
+            )}
+            {unreviewedSlipRows.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setIssueFilter("UNREVIEWED")}
+                className="rounded-full px-3 py-1 text-xs font-semibold"
+                style={{ border: "1px solid var(--danger)", color: "var(--danger)", background: issueFilter === "UNREVIEWED" ? "var(--danger-bg)" : "var(--surface)" }}
+              >
+                {unreviewedSlipRows.length} belum direview
+              </button>
+            )}
+            {issueFilter && (
+              <button
+                type="button"
+                onClick={() => setIssueFilter("")}
+                className="rounded-full px-3 py-1 text-xs"
+                style={{ border: "1px solid var(--border)", color: "var(--text-muted)", background: "var(--surface)" }}
+              >
+                Reset filter isu
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -470,6 +586,11 @@ export default function PayrollPeriodDetailPage() {
           options={[{ value: "", label: "Semua Departemen" }, ...departments.map((d) => ({ value: d, label: d }))]} />
         <SelectField label="Filter Status" className="w-48" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
           options={[{ value: "", label: "Semua Status" }, { value: "PENDING", label: "Pending" }, { value: "REVIEWED", label: "Reviewed" }, { value: "APPROVED", label: "Approved" }]} />
+        {issueFilter && (
+          <div className="rounded-lg px-3 py-2 text-xs" style={{ border: "1px solid var(--border)", background: "var(--surface-hover)", color: "var(--text-muted)" }}>
+            Filter isu aktif: <span className="font-semibold" style={{ color: "var(--text-900)" }}>{issueFilter}</span>
+          </div>
+        )}
       </div>
 
       <DataTable
@@ -682,17 +803,68 @@ export default function PayrollPeriodDetailPage() {
           </p>
         </div>
       </Modal>
-    </div>
-  )
-}
 
-function IssueList({ title, rows }: { title: string; rows: SlipRow[] }) {
-  const shown = rows.slice(0, 8)
-  const more = rows.length - shown.length
-  return (
-    <div className="text-xs" style={{ color: "var(--text-muted)" }}>
-      <span className="font-semibold" style={{ color: "var(--text-900)" }}>{title}: </span>
-      {shown.map((r) => r.nama).join(", ")}{more > 0 ? ` +${more} lainnya` : ""}
+      <Modal
+        open={recalcDiffModal}
+        onClose={() => setRecalcDiffModal(false)}
+        title="Audit Diff Hitung Ulang"
+        size="lg"
+        footer={<Button variant="outline" onClick={() => setRecalcDiffModal(false)}>Tutup</Button>}
+      >
+        {!recalcDiff ? (
+          <p className="text-sm" style={{ color: "var(--text-subtle)" }}>Tidak ada data diff</p>
+        ) : (
+          <div className="space-y-4">
+            <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+              Karyawan: <span className="font-semibold" style={{ color: "var(--text-900)" }}>{recalcDiff.employee_name}</span>
+            </p>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-lg p-3" style={{ border: "1px solid var(--border)", background: "var(--surface)" }}>
+                <p className="text-xs" style={{ color: "var(--text-subtle)" }}>Delta Pendapatan</p>
+                <p className="font-mono font-semibold" style={{ color: recalcDiff.delta.total_earnings >= 0 ? "var(--success)" : "var(--danger)" }}>
+                  {recalcDiff.delta.total_earnings >= 0 ? "+" : ""}{formatCurrency(recalcDiff.delta.total_earnings)}
+                </p>
+              </div>
+              <div className="rounded-lg p-3" style={{ border: "1px solid var(--border)", background: "var(--surface)" }}>
+                <p className="text-xs" style={{ color: "var(--text-subtle)" }}>Delta Potongan</p>
+                <p className="font-mono font-semibold" style={{ color: recalcDiff.delta.total_deductions >= 0 ? "var(--danger)" : "var(--success)" }}>
+                  {recalcDiff.delta.total_deductions >= 0 ? "+" : ""}{formatCurrency(recalcDiff.delta.total_deductions)}
+                </p>
+              </div>
+              <div className="rounded-lg p-3" style={{ border: "1px solid var(--border)", background: "var(--surface)" }}>
+                <p className="text-xs" style={{ color: "var(--text-subtle)" }}>Delta Gaji Bersih</p>
+                <p className="font-mono font-semibold" style={{ color: recalcDiff.delta.net_salary >= 0 ? "var(--success)" : "var(--danger)" }}>
+                  {recalcDiff.delta.net_salary >= 0 ? "+" : ""}{formatCurrency(recalcDiff.delta.net_salary)}
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-lg" style={{ border: "1px solid var(--border)" }}>
+              <div className="px-3 py-2 text-xs font-semibold" style={{ background: "var(--surface-hover)", color: "var(--text-muted)" }}>
+                Perubahan Komponen ({recalcDiff.changed_line_count})
+              </div>
+              <div className="max-h-72 overflow-y-auto">
+                {recalcDiff.line_diffs.length === 0 ? (
+                  <p className="px-3 py-3 text-sm" style={{ color: "var(--text-subtle)" }}>Tidak ada perubahan komponen</p>
+                ) : recalcDiff.line_diffs.map((line, idx) => (
+                  <div key={`${line.type}-${line.code}-${idx}`} className="px-3 py-2 grid grid-cols-12 gap-2 text-xs" style={{ borderTop: "1px solid var(--border)" }}>
+                    <div className="col-span-5">
+                      <p className="font-medium" style={{ color: "var(--text-900)" }}>{line.name}</p>
+                      <p style={{ color: "var(--text-subtle)" }}>{line.code} · {line.type}</p>
+                    </div>
+                    <div className="col-span-2 font-mono text-right" style={{ color: "var(--text-muted)" }}>{formatCurrency(line.before)}</div>
+                    <div className="col-span-2 font-mono text-right" style={{ color: "var(--text-muted)" }}>{formatCurrency(line.after)}</div>
+                    <div className="col-span-3 font-mono text-right font-semibold" style={{ color: line.delta >= 0 ? "var(--success)" : "var(--danger)" }}>
+                      {line.delta >= 0 ? "+" : ""}{formatCurrency(line.delta)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

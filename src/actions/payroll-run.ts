@@ -1104,10 +1104,23 @@ export async function recalculateEmployeePayroll(periodId: number, employeeId: n
       run_label: period.run_label,
     }
 
-    // Snapshot nilai sebelum (untuk audit before/after).
+    // Snapshot nilai sebelum (untuk audit before/after + diff UI).
     const before = await prisma.payroll_slips.findFirst({
       where: { payroll_period_id: BigInt(periodId), employee_id: BigInt(employeeId) },
-      select: { total_earnings: true, total_deductions: true, net_salary: true },
+      select: {
+        id: true,
+        total_earnings: true,
+        total_deductions: true,
+        net_salary: true,
+        details: {
+          select: {
+            component_code: true,
+            component_name: true,
+            type: true,
+            amount: true,
+          },
+        },
+      },
     })
 
     await prisma.payroll_run_logs.deleteMany({ where: { payroll_period_id: BigInt(periodId), employee_id: BigInt(employeeId) } })
@@ -1116,8 +1129,60 @@ export async function recalculateEmployeePayroll(periodId: number, employeeId: n
 
     const after = await prisma.payroll_slips.findFirst({
       where: { payroll_period_id: BigInt(periodId), employee_id: BigInt(employeeId) },
-      select: { total_earnings: true, total_deductions: true, net_salary: true },
+      select: {
+        id: true,
+        total_earnings: true,
+        total_deductions: true,
+        net_salary: true,
+        details: {
+          select: {
+            component_code: true,
+            component_name: true,
+            type: true,
+            amount: true,
+          },
+        },
+      },
     })
+
+    type DiffLine = { code: string; name: string; type: "EARNING" | "DEDUCTION"; before: number; after: number; delta: number }
+    const beforeMap = new Map<string, { name: string; type: "EARNING" | "DEDUCTION"; amount: number }>()
+    const afterMap = new Map<string, { name: string; type: "EARNING" | "DEDUCTION"; amount: number }>()
+
+    for (const d of before?.details ?? []) {
+      beforeMap.set(`${d.type}:${d.component_code}`, {
+        name: d.component_name,
+        type: d.type as "EARNING" | "DEDUCTION",
+        amount: Number(d.amount),
+      })
+    }
+    for (const d of after?.details ?? []) {
+      afterMap.set(`${d.type}:${d.component_code}`, {
+        name: d.component_name,
+        type: d.type as "EARNING" | "DEDUCTION",
+        amount: Number(d.amount),
+      })
+    }
+
+    const keys = new Set([...beforeMap.keys(), ...afterMap.keys()])
+    const lineDiffs: DiffLine[] = []
+    for (const key of keys) {
+      const b = beforeMap.get(key)
+      const a = afterMap.get(key)
+      const beforeAmount = b?.amount ?? 0
+      const afterAmount = a?.amount ?? 0
+      const delta = afterAmount - beforeAmount
+      if (delta === 0) continue
+      lineDiffs.push({
+        code: key.split(":")[1] ?? "-",
+        name: a?.name ?? b?.name ?? "-",
+        type: a?.type ?? b?.type ?? "EARNING",
+        before: beforeAmount,
+        after: afterAmount,
+        delta,
+      })
+    }
+    lineDiffs.sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta))
 
     await writeAuditLog({
       user: auth.user,
@@ -1128,7 +1193,31 @@ export async function recalculateEmployeePayroll(periodId: number, employeeId: n
       dataBaru: after ? serialize({ periode: periodId, recalculated: true, ...after }) : { periode: periodId, recalculated: true },
     })
     revalidatePath(`${PAGE_PATH}/${periodId}`)
-    return ok({ employee_id: employeeId })
+    return ok({
+      employee_id: employeeId,
+      employee_name: employee.nama_karyawan,
+      before: before
+        ? {
+            total_earnings: Number(before.total_earnings),
+            total_deductions: Number(before.total_deductions),
+            net_salary: Number(before.net_salary),
+          }
+        : null,
+      after: after
+        ? {
+            total_earnings: Number(after.total_earnings),
+            total_deductions: Number(after.total_deductions),
+            net_salary: Number(after.net_salary),
+          }
+        : null,
+      delta: {
+        total_earnings: Number(after?.total_earnings ?? 0) - Number(before?.total_earnings ?? 0),
+        total_deductions: Number(after?.total_deductions ?? 0) - Number(before?.total_deductions ?? 0),
+        net_salary: Number(after?.net_salary ?? 0) - Number(before?.net_salary ?? 0),
+      },
+      line_diffs: lineDiffs,
+      changed_line_count: lineDiffs.length,
+    })
   } catch (e) {
     console.error("[payroll] recalculate error:", e)
     return fail("Gagal menghitung ulang karyawan")

@@ -25,6 +25,7 @@ export default function RekonsiliasiPage() {
   const [periods, setPeriods] = useState<PeriodeFiskalRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<{ type: "success" | "error"; message: string } | null>(null)
 
   // Form buat baru
   const [createOpen, setCreateOpen] = useState(false)
@@ -43,9 +44,15 @@ export default function RekonsiliasiPage() {
   const [addItemOpen, setAddItemOpen] = useState(false)
   const [bankRow, setBankRow] = useState({ tanggal: now.toISOString().split("T")[0], keterangan: "", debit: "", kredit: "" })
   const [addingItem, setAddingItem] = useState(false)
+  const [matchOpen, setMatchOpen] = useState(false)
+  const [targetItem, setTargetItem] = useState<RekonsiliasiItem | null>(null)
+  const [matchStatus, setMatchStatus] = useState<"COCOK" | "BEDA">("COCOK")
+  const [selectedJurnalId, setSelectedJurnalId] = useState("")
+  const [matching, setMatching] = useState(false)
 
   const loadList = useCallback(async () => {
     setLoading(true)
+    setError(null)
     const res = await getRekonsiliasiList()
     if (res.success) setList(res.data)
     else setError(res.error)
@@ -63,6 +70,12 @@ export default function RekonsiliasiPage() {
     })
   }, [loadList])
 
+  useEffect(() => {
+    if (!notice) return
+    const t = setTimeout(() => setNotice(null), 4500)
+    return () => clearTimeout(t)
+  }, [notice])
+
   const loadDetail = async (id: number) => {
     setDetailLoading(true); setActiveId(id)
     const res = await getRekonsiliasiDetail(id)
@@ -77,7 +90,12 @@ export default function RekonsiliasiPage() {
       akun_id: Number(formAkun), periode_id: Number(formPeriode), saldo_bank: parseThousand(formSaldoBank),
     })
     setCreating(false)
-    if (res.success) { setCreateOpen(false); await loadList(); loadDetail(res.data.id) }
+    if (res.success) {
+      setCreateOpen(false)
+      setNotice({ type: "success", message: "Rekonsiliasi baru berhasil dibuat" })
+      await loadList()
+      loadDetail(res.data.id)
+    }
     else setCreateError(res.error)
   }
 
@@ -89,29 +107,47 @@ export default function RekonsiliasiPage() {
       debit: parseThousand(bankRow.debit), kredit: parseThousand(bankRow.kredit),
     }])
     setAddingItem(false)
-    if (res.success) { setAddItemOpen(false); setBankRow({ tanggal: now.toISOString().split("T")[0], keterangan: "", debit: "", kredit: "" }); loadDetail(activeId) }
+    if (res.success) {
+      setAddItemOpen(false)
+      setNotice({ type: "success", message: "Mutasi bank berhasil ditambahkan" })
+      setBankRow({ tanggal: now.toISOString().split("T")[0], keterangan: "", debit: "", kredit: "" })
+      loadDetail(activeId)
+    } else setNotice({ type: "error", message: res.error })
   }
 
   async function handleAutoMatch() {
     if (!activeId) return
     const res = await autoMatch(activeId)
-    if (res.success) { await loadDetail(activeId); alert(`Auto-match: ${res.data.matched} item berhasil dicocokkan`) }
-    else alert(res.error)
+    if (res.success) {
+      await loadDetail(activeId)
+      setNotice({ type: "success", message: `Auto-match selesai: ${res.data.matched} item berhasil dicocokkan` })
+    } else setNotice({ type: "error", message: res.error })
   }
 
-  async function handleMatch(item: RekonsiliasiItem) {
-    if (!detail?.jurnal_rows.length) { alert("Tidak ada transaksi buku yang tersedia untuk dicocokkan"); return }
-    // Tampilkan jurnal rows untuk dipilih
-    const options = detail.jurnal_rows.slice(0, 10)
-    const labels = options.map((j, i) => `${i + 1}. ${new Date(j.tanggal).toLocaleDateString("id-ID")} | ${j.nomor_jurnal} | ${rp(j.debit + j.kredit)}`).join("\n")
-    const pick = prompt(`Pilih jurnal (nomor 1-${options.length}):\n${labels}\n\nKetik 0 untuk tandai BEDA`)
-    if (pick === null) return
-    const idx = parseInt(pick, 10) - 1
-    if (pick === "0") {
-      await matchItem(item.id, null, "BEDA")
-    } else if (idx >= 0 && idx < options.length) {
-      await matchItem(item.id, options[idx].id, "COCOK")
+  async function handleOpenMatch(item: RekonsiliasiItem) {
+    if (!detail?.jurnal_rows.length) { setNotice({ type: "error", message: "Tidak ada transaksi buku yang tersedia untuk dicocokkan" }); return }
+    setTargetItem(item)
+    setMatchStatus("COCOK")
+    setSelectedJurnalId("")
+    setMatchOpen(true)
+  }
+
+  async function handleSubmitMatch() {
+    if (!targetItem) return
+    if (matchStatus === "COCOK" && !selectedJurnalId) {
+      setNotice({ type: "error", message: "Pilih transaksi buku terlebih dahulu" })
+      return
     }
+    setMatching(true)
+    const res = await matchItem(targetItem.id, matchStatus === "COCOK" ? Number(selectedJurnalId) : null, matchStatus)
+    setMatching(false)
+    if (!res.success) {
+      setNotice({ type: "error", message: res.error })
+      return
+    }
+    setMatchOpen(false)
+    setTargetItem(null)
+    setNotice({ type: "success", message: matchStatus === "COCOK" ? "Item berhasil dicocokkan" : "Item ditandai sebagai BEDA" })
     if (activeId) loadDetail(activeId)
   }
 
@@ -168,6 +204,20 @@ export default function RekonsiliasiPage() {
           ))
         )}
       </div>
+
+      {notice && (
+        <div className="fixed right-4 top-20 z-50 max-w-sm w-[calc(100%-2rem)] rounded-lg px-3 py-2 text-xs shadow-lg"
+          style={{
+            background: notice.type === "success" ? "rgba(5,150,105,0.95)" : "rgba(220,38,38,0.95)",
+            color: "#fff",
+            border: "1px solid rgba(255,255,255,0.18)",
+          }}>
+          <div className="flex items-start justify-between gap-2">
+            <span>{notice.message}</span>
+            <button type="button" onClick={() => setNotice(null)} className="text-[11px] leading-none opacity-85 hover:opacity-100">✕</button>
+          </div>
+        </div>
+      )}
 
       {/* Panel kanan: detail */}
       <div className="lg:col-span-2 space-y-4">
@@ -237,7 +287,7 @@ export default function RekonsiliasiPage() {
                         </td>
                         <td className="p-1">
                           {item.status_cocok === "BELUM" && (
-                            <Button size="sm" variant="ghost" onClick={() => handleMatch(item)}>
+                            <Button size="sm" variant="ghost" onClick={() => handleOpenMatch(item)}>
                               <ChevronRight className="h-3 w-3" />
                             </Button>
                           )}
@@ -268,7 +318,16 @@ export default function RekonsiliasiPage() {
 
             {active.status === "DRAFT" && Math.abs(active.selisih) < 1 && detail.items.filter((i) => i.status_cocok === "BELUM").length === 0 && (
               <div className="flex justify-end">
-                <Button onClick={async () => { const res = await selesaiRekonsiliasi(active.id); if (res.success) { await loadList(); loadDetail(active.id) } else alert(res.error) }}>
+                <Button
+                  onClick={async () => {
+                    const res = await selesaiRekonsiliasi(active.id)
+                    if (res.success) {
+                      setNotice({ type: "success", message: "Rekonsiliasi berhasil ditandai selesai" })
+                      await loadList()
+                      loadDetail(active.id)
+                    } else setNotice({ type: "error", message: res.error })
+                  }}
+                >
                   <CheckCircle2 className="h-4 w-4 mr-1" />Tandai Selesai
                 </Button>
               </div>
@@ -303,6 +362,45 @@ export default function RekonsiliasiPage() {
           <div className="flex justify-end gap-2 pt-1">
             <Button variant="ghost" onClick={() => setAddItemOpen(false)}>Batal</Button>
             <Button onClick={handleAddItem} disabled={addingItem}>{addingItem ? "Menambah…" : "Tambah"}</Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={matchOpen} onClose={() => setMatchOpen(false)} title="Cocokkan Mutasi Bank" size="md">
+        <div className="space-y-4">
+          {targetItem && (
+            <div className="rounded-lg p-3" style={{ border: "1px solid var(--border)", background: "var(--surface-muted)" }}>
+              <p className="text-xs" style={{ color: "var(--text-subtle)" }}>Mutasi dipilih</p>
+              <p className="text-sm font-medium" style={{ color: "var(--text-900)" }}>{new Date(targetItem.tanggal).toLocaleDateString("id-ID")} · {targetItem.keterangan}</p>
+              <p className="text-sm font-mono" style={{ color: "var(--text-900)" }}>Debit {rp(targetItem.debit)} · Kredit {rp(targetItem.kredit)}</p>
+            </div>
+          )}
+
+          <SelectField
+            label="Status"
+            value={matchStatus}
+            onChange={(e) => setMatchStatus(e.target.value as "COCOK" | "BEDA")}
+            options={[{ value: "COCOK", label: "Cocokkan ke transaksi buku" }, { value: "BEDA", label: "Tandai sebagai BEDA" }]}
+          />
+
+          {matchStatus === "COCOK" && (
+            <SelectField
+              label="Transaksi Buku"
+              value={selectedJurnalId}
+              onChange={(e) => setSelectedJurnalId(e.target.value)}
+              options={[
+                { value: "", label: "— Pilih transaksi buku —" },
+                ...(detail?.jurnal_rows ?? []).slice(0, 30).map((j) => ({
+                  value: String(j.id),
+                  label: `${new Date(j.tanggal).toLocaleDateString("id-ID")} · ${j.nomor_jurnal} · ${rp(j.debit + j.kredit)}`,
+                })),
+              ]}
+            />
+          )}
+
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setMatchOpen(false)} disabled={matching}>Batal</Button>
+            <Button onClick={handleSubmitMatch} disabled={matching}>{matching ? "Memproses..." : "Simpan"}</Button>
           </div>
         </div>
       </Modal>

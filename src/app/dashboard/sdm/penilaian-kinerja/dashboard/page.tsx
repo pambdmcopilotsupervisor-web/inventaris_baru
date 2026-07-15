@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { useMemo, useState } from "react"
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -55,6 +55,13 @@ type DashboardResponse = {
 
 type SortKey = "peringkat" | "nama_karyawan" | "jabatan" | "nama_divisi" | "nilai_akhir" | "predikat" | "delta"
 
+const KOMPONEN_LABELS = {
+  kehadiran: "Kehadiran",
+  capaian: "Capaian",
+  perilaku: "Perilaku",
+  kompetensi: "Kompetensi",
+} as const
+
 function fmt(value: number | null | undefined, digits = 2): string {
   return value == null ? "-" : value.toFixed(digits)
 }
@@ -101,6 +108,85 @@ export default function DashboardKinerjaPage() {
   const rankingStart = ranking.length === 0 ? 0 : (activeRankingPage - 1) * rankingPerPage + 1
   const rankingEnd = Math.min(activeRankingPage * rankingPerPage, ranking.length)
   const selectedEmployee = ranking.find(row => row.id === selectedEmployeeId) ?? ranking[0] ?? null
+
+  const heatmapRows = useMemo(() => {
+    const byDivisi = new Map<string, { count: number; kehadiran: number; capaian: number; perilaku: number; kompetensi: number }>()
+    for (const row of ranking) {
+      const key = row.nama_divisi ?? "Tanpa Divisi"
+      const cur = byDivisi.get(key) ?? { count: 0, kehadiran: 0, capaian: 0, perilaku: 0, kompetensi: 0 }
+      cur.count += 1
+      cur.kehadiran += row.komponen.kehadiran
+      cur.capaian += row.komponen.capaian
+      cur.perilaku += row.komponen.perilaku
+      cur.kompetensi += row.komponen.kompetensi
+      byDivisi.set(key, cur)
+    }
+    return Array.from(byDivisi.entries()).map(([divisi, v]) => ({
+      divisi,
+      count: v.count,
+      kehadiran: v.count ? v.kehadiran / v.count : 0,
+      capaian: v.count ? v.capaian / v.count : 0,
+      perilaku: v.count ? v.perilaku / v.count : 0,
+      kompetensi: v.count ? v.kompetensi / v.count : 0,
+    })).sort((a, b) => b.count - a.count)
+  }, [ranking])
+
+  const calibrationRows = useMemo(() => {
+    if (ranking.length === 0) return []
+    const nilai = ranking.map(r => r.nilai_akhir ?? 0).sort((a, b) => a - b)
+    const percentile = (x: number) => {
+      const idx = nilai.findIndex(v => v >= x)
+      if (idx < 0) return 100
+      return Math.round((idx / Math.max(1, nilai.length - 1)) * 100)
+    }
+    return ranking.slice(0, 50).map(r => {
+      const score = r.nilai_akhir ?? 0
+      const p = percentile(score)
+      let flag = "Normal"
+      if (p >= 95) flag = "Top Outlier"
+      else if (p <= 5) flag = "Low Outlier"
+      return { ...r, percentile: p, flag }
+    })
+  }, [ranking])
+
+  const coachingPlan = useMemo(() => {
+    if (!selectedEmployee) return null
+    const entries = [
+      ["kehadiran", selectedEmployee.komponen.kehadiran],
+      ["capaian", selectedEmployee.komponen.capaian],
+      ["perilaku", selectedEmployee.komponen.perilaku],
+      ["kompetensi", selectedEmployee.komponen.kompetensi],
+    ] as const
+    const weakest = [...entries].sort((a, b) => a[1] - b[1])[0]
+    const strongest = [...entries].sort((a, b) => b[1] - a[1])[0]
+    const weakLabel = KOMPONEN_LABELS[weakest[0]]
+    const strongLabel = KOMPONEN_LABELS[strongest[0]]
+    const actions = {
+      kehadiran: [
+        "Tetapkan check-in checklist harian selama 4 minggu.",
+        "Review kepatuhan jadwal setiap akhir pekan dengan atasan.",
+      ],
+      capaian: [
+        "Pecah target bulanan menjadi target mingguan terukur.",
+        "Lakukan weekly review hambatan dan corrective action.",
+      ],
+      perilaku: [
+        "Lakukan 2 sesi coaching komunikasi dan kolaborasi per bulan.",
+        "Tetapkan feedback 360 mini setiap 2 minggu.",
+      ],
+      kompetensi: [
+        "Susun learning path 6 minggu sesuai gap kompetensi inti.",
+        "Praktikkan project assignment kecil dengan mentor.",
+      ],
+    } as const
+    return {
+      weakLabel,
+      strongLabel,
+      weakScore: weakest[1],
+      strongScore: strongest[1],
+      actions: actions[weakest[0]],
+    }
+  }, [selectedEmployee])
 
   const changeSort = (key: SortKey) => {
     setRankingPage(1)
@@ -235,6 +321,112 @@ export default function DashboardKinerjaPage() {
           <div className="h-[320px]"><Radar data={radarData} options={radarOptions} /></div>
         </section>
       </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] gap-5">
+        <section className="rounded-xl p-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+          <h2 className="font-bold" style={{ color: "var(--text-900)" }}>Calibration Board</h2>
+          <p className="text-xs mt-0.5 mb-3" style={{ color: "var(--text-subtle)" }}>Deteksi outlier nilai untuk kalibrasi lintas divisi (top 50 ranking aktif).</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ background: "var(--surface-muted)", borderBottom: "1px solid var(--border)" }}>
+                  {[
+                    "Pegawai",
+                    "Divisi",
+                    "Nilai",
+                    "Percentile",
+                    "Flag",
+                  ].map(h => <th key={h} className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>{h}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {calibrationRows.length === 0 && <tr><td colSpan={5} className="px-3 py-6 text-center text-sm" style={{ color: "var(--text-subtle)" }}>Belum ada data kalibrasi</td></tr>}
+                {calibrationRows.map(r => (
+                  <tr key={r.id} style={{ borderBottom: "1px solid var(--border)" }}>
+                    <td className="px-3 py-2 font-medium" style={{ color: "var(--text-900)" }}>{r.nama_karyawan}</td>
+                    <td className="px-3 py-2 text-xs" style={{ color: "var(--text-subtle)" }}>{r.nama_divisi ?? "-"}</td>
+                    <td className="px-3 py-2 font-mono">{fmt(r.nilai_akhir)}</td>
+                    <td className="px-3 py-2 font-mono">P{r.percentile}</td>
+                    <td className="px-3 py-2">
+                      <Badge variant={r.flag === "Normal" ? "outline" : r.flag === "Top Outlier" ? "success" : "warning"}>{r.flag}</Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="rounded-xl p-4 space-y-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+          <div>
+            <h2 className="font-bold" style={{ color: "var(--text-900)" }}>Coaching Plan Integration</h2>
+            <p className="text-xs mt-0.5" style={{ color: "var(--text-subtle)" }}>Rencana coaching otomatis berdasarkan komponen terlemah pegawai terpilih.</p>
+          </div>
+          {!coachingPlan || !selectedEmployee ? (
+            <p className="text-sm" style={{ color: "var(--text-subtle)" }}>Pilih pegawai untuk melihat rekomendasi coaching.</p>
+          ) : (
+            <div className="space-y-3">
+              <div className="rounded-lg p-3" style={{ border: "1px solid var(--border)", background: "var(--surface-muted)" }}>
+                <p className="text-sm font-semibold" style={{ color: "var(--text-900)" }}>{selectedEmployee.nama_karyawan}</p>
+                <p className="text-xs" style={{ color: "var(--text-subtle)" }}>{selectedEmployee.jabatan} · {selectedEmployee.nama_divisi ?? "-"}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-lg p-3" style={{ border: "1px solid var(--border)" }}>
+                  <p className="text-[11px]" style={{ color: "var(--text-subtle)" }}>Fokus Perbaikan</p>
+                  <p className="text-sm font-semibold" style={{ color: "var(--danger, #dc2626)" }}>{coachingPlan.weakLabel} ({fmt(coachingPlan.weakScore)})</p>
+                </div>
+                <div className="rounded-lg p-3" style={{ border: "1px solid var(--border)" }}>
+                  <p className="text-[11px]" style={{ color: "var(--text-subtle)" }}>Kekuatan Utama</p>
+                  <p className="text-sm font-semibold" style={{ color: "var(--success, #16a34a)" }}>{coachingPlan.strongLabel} ({fmt(coachingPlan.strongScore)})</p>
+                </div>
+              </div>
+              <div className="rounded-lg p-3" style={{ border: "1px solid var(--border)", background: "var(--surface-muted)" }}>
+                <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-subtle)" }}>Rencana 30 Hari</p>
+                <ul className="space-y-1 text-sm" style={{ color: "var(--text-900)" }}>
+                  {coachingPlan.actions.map((a) => <li key={a}>• {a}</li>)}
+                </ul>
+              </div>
+            </div>
+          )}
+        </section>
+      </div>
+
+      <section className="rounded-xl p-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+        <h2 className="font-bold" style={{ color: "var(--text-900)" }}>Heatmap Divisi x Komponen</h2>
+        <p className="text-xs mt-0.5 mb-3" style={{ color: "var(--text-subtle)" }}>Rata-rata komponen per divisi untuk identifikasi area prioritas organisasi.</p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{ background: "var(--surface-muted)", borderBottom: "1px solid var(--border)" }}>
+                {[
+                  "Divisi",
+                  "N",
+                  "Kehadiran",
+                  "Capaian",
+                  "Perilaku",
+                  "Kompetensi",
+                ].map(h => <th key={h} className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {heatmapRows.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-sm" style={{ color: "var(--text-subtle)" }}>Belum ada data heatmap</td></tr>}
+              {heatmapRows.map(r => {
+                const color = (v: number) => v >= 85 ? "rgba(5,150,105,0.18)" : v >= 70 ? "rgba(217,119,6,0.18)" : "rgba(220,38,38,0.18)"
+                return (
+                  <tr key={r.divisi} style={{ borderBottom: "1px solid var(--border)" }}>
+                    <td className="px-3 py-2 font-medium" style={{ color: "var(--text-900)" }}>{r.divisi}</td>
+                    <td className="px-3 py-2 font-mono">{r.count}</td>
+                    <td className="px-3 py-2 font-mono" style={{ background: color(r.kehadiran) }}>{fmt(r.kehadiran)}</td>
+                    <td className="px-3 py-2 font-mono" style={{ background: color(r.capaian) }}>{fmt(r.capaian)}</td>
+                    <td className="px-3 py-2 font-mono" style={{ background: color(r.perilaku) }}>{fmt(r.perilaku)}</td>
+                    <td className="px-3 py-2 font-mono" style={{ background: color(r.kompetensi) }}>{fmt(r.kompetensi)}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   )
 }

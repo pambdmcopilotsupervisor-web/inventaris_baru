@@ -41,9 +41,17 @@ export default function PeriodeFiskalPage() {
   const [form, setForm] = useState({ tahun: String(now.getFullYear()), bulan: String(now.getMonth() + 1), catatan: "" })
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<{ type: "success" | "error"; message: string } | null>(null)
+  const [confirmAction, setConfirmAction] = useState<
+    | { type: "STATUS"; row: PeriodeFiskalRow; next: "TUTUP" | "KUNCI" }
+    | { type: "CLOSING"; row: PeriodeFiskalRow }
+    | null
+  >(null)
+  const [confirmLoading, setConfirmLoading] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
+    setLoadError(null)
     const res = await getPeriodeFiskal()
     if (res.success) setRows(res.data)
     else setLoadError(res.error)
@@ -57,22 +65,35 @@ export default function PeriodeFiskalPage() {
     setFormError(null)
     const res = await createPeriodeFiskal({ tahun: Number(form.tahun), bulan: Number(form.bulan), catatan: form.catatan || undefined })
     setSaving(false)
-    if (res.success) { setFormOpen(false); load() }
+    if (res.success) {
+      setFormOpen(false)
+      setNotice({ type: "success", message: `Periode ${res.data.nama} berhasil dibuat` })
+      load()
+    }
     else setFormError(res.error)
   }
 
   async function handleStatusChange(row: PeriodeFiskalRow, next: "TUTUP" | "KUNCI") {
-    if (!confirm(`Yakin ingin mengubah status periode "${row.nama}" menjadi ${next}? Tindakan ini tidak dapat dibatalkan.`)) return
     const res = await updateStatusPeriode(row.id, next)
-    if (res.success) load()
-    else alert(res.error)
+    if (res.success) {
+      setNotice({ type: "success", message: `Status periode ${row.nama} berubah menjadi ${next}` })
+      load()
+    } else setNotice({ type: "error", message: res.error })
   }
 
   async function handleCreateClosing(row: PeriodeFiskalRow) {
-    if (!confirm(`Buat jurnal penutup untuk periode "${row.nama}"? Jurnal akan dibuat sebagai DRAFT untuk direview sebelum posting.`)) return
     const res = await createJurnalPenutup(row.id)
-    if (res.success) alert(`Jurnal penutup berhasil dibuat: ${res.data.nomor_jurnal}`)
-    else alert(res.error)
+    if (res.success) setNotice({ type: "success", message: `Jurnal penutup berhasil dibuat: ${res.data.nomor_jurnal}` })
+    else setNotice({ type: "error", message: res.error })
+  }
+
+  async function handleConfirmAction() {
+    if (!confirmAction) return
+    setConfirmLoading(true)
+    if (confirmAction.type === "STATUS") await handleStatusChange(confirmAction.row, confirmAction.next)
+    else await handleCreateClosing(confirmAction.row)
+    setConfirmLoading(false)
+    setConfirmAction(null)
   }
 
   const columns: Column<PeriodeFiskalRow>[] = [
@@ -112,6 +133,18 @@ export default function PeriodeFiskalPage() {
           {loadError}
         </div>
       )}
+      {notice && (
+        <div
+          className="p-3 rounded-lg text-sm"
+          style={{
+            background: notice.type === "success" ? "rgba(5,150,105,0.08)" : "rgba(220,38,38,0.08)",
+            color: notice.type === "success" ? "rgb(5,150,105)" : "rgb(220,38,38)",
+            border: `1px solid ${notice.type === "success" ? "rgba(5,150,105,0.25)" : "rgba(220,38,38,0.25)"}`,
+          }}
+        >
+          {notice.message}
+        </div>
+      )}
 
       <DataTable
         columns={columns as unknown as Column<Record<string, unknown>>[]}
@@ -126,11 +159,11 @@ export default function PeriodeFiskalPage() {
           return (
             <div className="flex gap-1 justify-end">
               {r.status === "BUKA" && (
-                <Button size="sm" variant="ghost" onClick={() => handleCreateClosing(r)}>
+                <Button size="sm" variant="ghost" onClick={() => setConfirmAction({ type: "CLOSING", row: r })}>
                   Jurnal Penutup
                 </Button>
               )}
-              <Button size="sm" variant="ghost" onClick={() => handleStatusChange(r, next.next)}>
+              <Button size="sm" variant="ghost" onClick={() => setConfirmAction({ type: "STATUS", row: r, next: next.next })}>
                 {next.next === "KUNCI" ? <Lock className="h-3.5 w-3.5 mr-1" /> : <Unlock className="h-3.5 w-3.5 mr-1" />}
                 {next.label}
               </Button>
@@ -150,6 +183,25 @@ export default function PeriodeFiskalPage() {
           <div className="flex justify-end gap-2 pt-1">
             <Button variant="ghost" onClick={() => setFormOpen(false)}>Batal</Button>
             <Button onClick={handleCreate} disabled={saving}>{saving ? "Membuat…" : "Buat"}</Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!confirmAction}
+        onClose={() => setConfirmAction(null)}
+        title={confirmAction?.type === "STATUS" ? "Konfirmasi Perubahan Status" : "Konfirmasi Jurnal Penutup"}
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm" style={{ color: "var(--text-900)" }}>
+            {confirmAction?.type === "STATUS"
+              ? `Ubah status periode \"${confirmAction.row.nama}\" menjadi ${confirmAction.next}? Tindakan ini tidak dapat dibatalkan.`
+              : `Buat jurnal penutup untuk periode \"${confirmAction?.row.nama}\" sebagai DRAFT untuk direview sebelum posting?`}
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setConfirmAction(null)} disabled={confirmLoading}>Batal</Button>
+            <Button onClick={handleConfirmAction} disabled={confirmLoading}>{confirmLoading ? "Memproses..." : "Ya, Lanjutkan"}</Button>
           </div>
         </div>
       </Modal>

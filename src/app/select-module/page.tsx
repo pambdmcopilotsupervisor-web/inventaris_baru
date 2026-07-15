@@ -1,22 +1,42 @@
 "use client"
 
-import { useRouter } from "next/navigation"
-import { useEffect, useState } from "react"
-import { Archive, Users, LogOut, ClipboardCheck, Banknote } from "lucide-react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { useEffect, useState, Suspense } from "react"
+import { Archive, Users, LogOut, ClipboardCheck, Banknote, Lock } from "lucide-react"
+import { MODULE_STATUS } from "@/lib/modules"
 
 interface SessionUser {
   name: string; email: string; role: string | null; jabatan: string | null; nama_karyawan: string | null
 }
 
-export default function SelectModulePage() {
+function SelectModuleContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [user, setUser] = useState<SessionUser | null>(null)
+  const [blockedMsg, setBlockedMsg] = useState<string | null>(null)
 
   useEffect(() => {
     fetch("/api/auth/me").then(r => r.ok ? r.json() : null).then(d => setUser(d)).catch(() => {})
   }, [])
 
+  // Tampilkan pesan jika diredirect karena modul nonaktif
+  useEffect(() => {
+    const blocked = searchParams.get("blocked")
+    if (blocked) {
+      const labels: Record<string, string> = {
+        aset: "Modul Aset",
+        sdm: "Modul SDM",
+        kinerja: "Modul Kinerja",
+        keuangan: "Modul Keuangan",
+      }
+      setBlockedMsg(`${labels[blocked] ?? "Modul"} sedang tidak aktif. Hubungi administrator.`)
+      // Bersihkan query param dari URL tanpa reload
+      window.history.replaceState(null, "", "/select-module")
+    }
+  }, [searchParams])
+
   const select = (modul: "aset" | "sdm" | "kinerja" | "keuangan") => {
+    if (!MODULE_STATUS[modul]) return  // jangan bisa pilih modul nonaktif
     localStorage.setItem("pedami_modul", modul)
     router.push(
       modul === "aset" ? "/dashboard" :
@@ -36,6 +56,22 @@ export default function SelectModulePage() {
       className="min-h-screen flex flex-col items-center justify-center p-6"
       style={{ background: "linear-gradient(135deg, #0F172A 0%, #1E293B 60%, #0F172A 100%)" }}
     >
+      {/* Banner modul nonaktif */}
+      {blockedMsg && (
+        <div
+          className="absolute top-5 left-1/2 -translate-x-1/2 flex items-center gap-2.5 rounded-xl px-5 py-3 text-sm font-medium shadow-lg"
+          style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.35)", color: "#fca5a5", maxWidth: "90vw" }}
+        >
+          <Lock className="h-4 w-4 shrink-0" style={{ color: "#f87171" }} />
+          {blockedMsg}
+          <button
+            onClick={() => setBlockedMsg(null)}
+            className="ml-2 opacity-60 hover:opacity-100 cursor-pointer"
+            style={{ color: "#f87171" }}
+          >✕</button>
+        </div>
+      )}
+
       {/* Info login — pojok kanan atas */}
       {user && (
         <div className="absolute top-5 right-5 flex items-center gap-3">
@@ -81,6 +117,7 @@ export default function SelectModulePage() {
       {/* Module cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 w-full max-w-6xl">
         {/* ASET Module */}
+        {MODULE_STATUS.aset && (
         <button
           onClick={() => select("aset")}
           className="group relative overflow-hidden rounded-2xl p-8 text-left transition-all duration-300 cursor-pointer"
@@ -112,8 +149,10 @@ export default function SelectModulePage() {
             </div>
           </div>
         </button>
+        )}
 
         {/* SDM Module */}
+        {MODULE_STATUS.sdm && (
         <button
           onClick={() => select("sdm")}
           className="group relative overflow-hidden rounded-2xl p-8 text-left transition-all duration-300 cursor-pointer"
@@ -145,8 +184,10 @@ export default function SelectModulePage() {
             </div>
           </div>
         </button>
+        )}
 
         {/* KINERJA Module */}
+        {MODULE_STATUS.kinerja && (
         <button
           onClick={() => select("kinerja")}
           className="group relative overflow-hidden rounded-2xl p-8 text-left transition-all duration-300 cursor-pointer"
@@ -178,8 +219,10 @@ export default function SelectModulePage() {
             </div>
           </div>
         </button>
+        )}
 
         {/* KEUANGAN Module */}
+        {MODULE_STATUS.keuangan && (
         <button
           onClick={() => select("keuangan")}
           className="group relative overflow-hidden rounded-2xl p-8 text-left transition-all duration-300 cursor-pointer"
@@ -211,11 +254,20 @@ export default function SelectModulePage() {
             </div>
           </div>
         </button>
+        )}
       </div>
 
       <p className="mt-10 text-xs" style={{ color: "#475569" }}>
         Kamu bisa berpindah modul kapan saja melalui navbar
       </p>
     </div>
+  )
+}
+
+export default function SelectModulePage() {
+  return (
+    <Suspense>
+      <SelectModuleContent />
+    </Suspense>
   )
 }

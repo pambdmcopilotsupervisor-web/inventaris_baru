@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useMemo, useState } from "react"
 import { DataTable, Column } from "@/components/ui/data-table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -30,12 +30,55 @@ interface Bpjs {
 interface Ptkp { id: number; kode: string; nama: string; nominal_setahun: number; kategori_ter: string; is_active: boolean; urutan: number }
 interface Bracket { urutan: number; batas_bawah: number; batas_atas: number | null; tarif_persen: number }
 interface TerRate { id?: number; kategori: string; bruto_min: number; bruto_max: number | null; tarif_persen: number }
+interface GuardrailIssue { level: "error" | "warning"; message: string }
 
 const TABS = [["config", "Konfigurasi"], ["bpjs", "BPJS"], ["ptkp", "PTKP"], ["bracket", "Tarif PPh21"], ["ter", "Tarif TER"]] as const
 type Tab = (typeof TABS)[number][0]
 
 const EMPTY_BPJS: Bpjs = { id: 0, kode: "", nama: "", rate_karyawan: 0, rate_perusahaan: 0, batas_atas_upah: null, basis_component_code: "GAJI_POKOK", menambah_bruto_pajak: false, pengurang_pajak: false, is_active: true, urutan: 0 }
 const EMPTY_PTKP: Ptkp = { id: 0, kode: "", nama: "", nominal_setahun: 0, kategori_ter: "A", is_active: true, urutan: 0 }
+
+function analyzeRanges(rows: Array<{ min: number; max: number | null; rate: number }>, label: string): GuardrailIssue[] {
+  const issues: GuardrailIssue[] = []
+  const normalized = rows.map((r) => ({
+    min: Number(r.min),
+    max: r.max == null ? null : Number(r.max),
+    rate: Number(r.rate),
+  }))
+  const sorted = [...normalized].sort((a, b) => a.min - b.min)
+
+  if (sorted.length === 0) {
+    issues.push({ level: "warning", message: `${label} masih kosong.` })
+    return issues
+  }
+
+  for (let i = 0; i < sorted.length; i++) {
+    const r = sorted[i]
+    if (!Number.isFinite(r.min) || r.min < 0) issues.push({ level: "error", message: `Baris ${i + 1}: nilai minimum tidak valid.` })
+    if (r.max != null && (!Number.isFinite(r.max) || r.max <= r.min)) issues.push({ level: "error", message: `Baris ${i + 1}: nilai maksimum harus lebih besar dari minimum.` })
+    if (!Number.isFinite(r.rate) || r.rate < 0) issues.push({ level: "error", message: `Baris ${i + 1}: tarif harus >= 0.` })
+  }
+
+  if (sorted[0].min > 0) {
+    issues.push({ level: "warning", message: `Rentang mulai dari ${sorted[0].min.toLocaleString("id-ID")}, ada gap dari 0.` })
+  }
+
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const cur = sorted[i]
+    const next = sorted[i + 1]
+    if (cur.max == null) {
+      issues.push({ level: "error", message: `Baris ${i + 1}: maksimum tak terbatas harus jadi baris terakhir.` })
+      continue
+    }
+    if (next.min <= cur.max) {
+      issues.push({ level: "error", message: `Rentang overlap antara baris ${i + 1} dan ${i + 2}.` })
+    } else if (next.min > cur.max + 1) {
+      issues.push({ level: "warning", message: `Ada gap rentang antara ${cur.max.toLocaleString("id-ID")} dan ${next.min.toLocaleString("id-ID")}.` })
+    }
+  }
+
+  return issues
+}
 
 export default function TaxSettingsPage() {
   const [tab, setTab] = useState<Tab>("config")
@@ -55,6 +98,17 @@ export default function TaxSettingsPage() {
   const [terAll, setTerAll] = useState<TerRate[]>([])
   const [terKat, setTerKat] = useState("A")
   const [terRows, setTerRows] = useState<TerRate[]>([])
+
+  const bracketIssues = useMemo(
+    () => analyzeRanges(brackets.map((b) => ({ min: b.batas_bawah, max: b.batas_atas, rate: b.tarif_persen })), "Tarif PPh21"),
+    [brackets],
+  )
+  const terIssues = useMemo(
+    () => analyzeRanges(terRows.map((r) => ({ min: r.bruto_min, max: r.bruto_max, rate: r.tarif_persen })), `Tarif TER ${terKat}`),
+    [terRows, terKat],
+  )
+  const hasBracketError = bracketIssues.some((x) => x.level === "error")
+  const hasTerError = terIssues.some((x) => x.level === "error")
 
   const loadTer = async () => {
     const res = await getTerRates()
@@ -267,6 +321,15 @@ export default function TaxSettingsPage() {
           {/* Bracket PPh21 */}
           {tab === "bracket" && (
             <Card><CardContent className="p-5 space-y-3">
+              {bracketIssues.length > 0 && (
+                <div className="rounded-lg px-3 py-2.5 text-xs space-y-1" style={{ border: "1px solid var(--border)", background: "var(--surface-hover)" }}>
+                  {bracketIssues.map((issue, i) => (
+                    <p key={i} style={{ color: issue.level === "error" ? "var(--danger)" : "var(--warning)" }}>
+                      {issue.level === "error" ? "Error" : "Peringatan"}: {issue.message}
+                    </p>
+                  ))}
+                </div>
+              )}
               <div className="overflow-x-auto rounded-lg" style={{ border: "1px solid var(--border)" }}>
                 <table className="w-full text-sm">
                   <thead><tr style={{ background: "var(--surface-hover)", color: "var(--text-subtle)" }}>
@@ -291,7 +354,7 @@ export default function TaxSettingsPage() {
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={addBracket}><Plus className="h-3.5 w-3.5 mr-1" />Tambah Lapisan</Button>
-                <Button size="sm" onClick={submitBrackets} disabled={saving}><Save className="h-3.5 w-3.5 mr-1.5" />{saving ? "Menyimpan..." : "Simpan Tarif"}</Button>
+                <Button size="sm" onClick={submitBrackets} disabled={saving || hasBracketError}><Save className="h-3.5 w-3.5 mr-1.5" />{saving ? "Menyimpan..." : "Simpan Tarif"}</Button>
               </div>
             </CardContent></Card>
           )}
@@ -299,6 +362,15 @@ export default function TaxSettingsPage() {
           {/* Tarif TER */}
           {tab === "ter" && (
             <Card><CardContent className="p-5 space-y-3">
+              {terIssues.length > 0 && (
+                <div className="rounded-lg px-3 py-2.5 text-xs space-y-1" style={{ border: "1px solid var(--border)", background: "var(--surface-hover)" }}>
+                  {terIssues.map((issue, i) => (
+                    <p key={i} style={{ color: issue.level === "error" ? "var(--danger)" : "var(--warning)" }}>
+                      {issue.level === "error" ? "Error" : "Peringatan"}: {issue.message}
+                    </p>
+                  ))}
+                </div>
+              )}
               <div className="flex items-end justify-between flex-wrap gap-3">
                 <SelectField label="Kategori TER" className="w-40" value={terKat} onChange={(e) => selectTerKat(e.target.value)}
                   options={[{ value: "A", label: "Kategori A" }, { value: "B", label: "Kategori B" }, { value: "C", label: "Kategori C" }]} />
@@ -328,7 +400,7 @@ export default function TaxSettingsPage() {
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={addTer}><Plus className="h-3.5 w-3.5 mr-1" />Tambah Baris</Button>
-                <Button size="sm" onClick={submitTer} disabled={saving}><Save className="h-3.5 w-3.5 mr-1.5" />{saving ? "Menyimpan..." : `Simpan Kategori ${terKat}`}</Button>
+                <Button size="sm" onClick={submitTer} disabled={saving || hasTerError}><Save className="h-3.5 w-3.5 mr-1.5" />{saving ? "Menyimpan..." : `Simpan Kategori ${terKat}`}</Button>
               </div>
             </CardContent></Card>
           )}

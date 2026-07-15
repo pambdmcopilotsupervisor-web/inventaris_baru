@@ -1,5 +1,5 @@
 "use client"
-import React, { useState, useCallback, useEffect } from "react"
+import React, { useState, useCallback, useEffect, useMemo } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -50,6 +50,35 @@ type RingkasanResponse = {
   total: RingkasanTotal
 }
 
+type ReviewData = {
+  penilaian: {
+    id: number
+    status: StatusPenilaian
+    nilai_akhir: number | null
+    nama_karyawan: string
+    jabatan: string
+    nama_divisi: string | null
+    nama_periode: string
+    tanggal_diajukan: string | null
+    tanggal_diverifikasi: string | null
+    tanggal_disetujui: string | null
+    tanggal_final: string | null
+    catatan_pegawai: string | null
+    catatan_atasan: string | null
+  }
+  timeline: {
+    id: number
+    aksi: string
+    status_dari: string | null
+    status_ke: string | null
+    catatan: string | null
+    created_at: string
+    actor_nama: string | null
+    actor_jabatan: string | null
+  }[]
+  actions: { ke: StatusPenilaian; label: string; butuh_catatan: boolean }[]
+}
+
 /* ─── Helpers ────────────────────────────────────────────────────── */
 const STATUS_LABEL: Record<StatusPenilaian, string> = {
   draft: "Draft", diajukan: "Menunggu Verifikasi",
@@ -72,6 +101,125 @@ function predikat(nilai: number | null): string {
 
 function pctBar(v: number, total: number) {
   return total ? Math.round((v / total) * 100) : 0
+}
+
+function getAgingDays(tanggal: string | null | undefined): number | null {
+  if (!tanggal) return null
+  const t = new Date(tanggal)
+  if (Number.isNaN(t.getTime())) return null
+  const diffMs = Date.now() - t.getTime()
+  return Math.max(0, Math.floor(diffMs / 86400000))
+}
+
+function getSlaMeta(days: number | null) {
+  if (days == null) return { label: "-", tone: "neutral" as const }
+  if (days <= 2) return { label: `${days}h`, tone: "good" as const }
+  if (days <= 5) return { label: `${days}h`, tone: "warn" as const }
+  return { label: `${days}h`, tone: "bad" as const }
+}
+
+function SlaBadge({ tanggal }: { tanggal: string | null | undefined }) {
+  const days = getAgingDays(tanggal)
+  const meta = getSlaMeta(days)
+  const palette = meta.tone === "good"
+    ? { bg: "rgba(5,150,105,0.12)", color: "rgb(5,150,105)", border: "rgba(5,150,105,0.3)" }
+    : meta.tone === "warn"
+      ? { bg: "rgba(217,119,6,0.12)", color: "rgb(180,83,9)", border: "rgba(217,119,6,0.3)" }
+      : meta.tone === "bad"
+        ? { bg: "rgba(220,38,38,0.12)", color: "rgb(220,38,38)", border: "rgba(220,38,38,0.3)" }
+        : { bg: "var(--surface-muted)", color: "var(--text-subtle)", border: "var(--border)" }
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold"
+      style={{ background: palette.bg, color: palette.color, border: `1px solid ${palette.border}` }}
+    >
+      SLA {meta.label}
+    </span>
+  )
+}
+
+function NotificationCenter({ title, items }: { title: string; items: { label: string; value: number; action: string; tone?: "good" | "warn" | "bad" }[] }) {
+  return (
+    <div className="rounded-xl p-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+      <p className="font-bold text-sm mb-3" style={{ color: "var(--text-900)" }}>{title}</p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        {items.map((it) => {
+          const color = it.tone === "bad" ? "rgb(220,38,38)" : it.tone === "warn" ? "rgb(180,83,9)" : "rgb(5,150,105)"
+          return (
+            <div key={it.label} className="rounded-lg p-3" style={{ border: "1px solid var(--border)", background: "var(--surface-muted)" }}>
+              <p className="text-[11px]" style={{ color: "var(--text-subtle)" }}>{it.label}</p>
+              <p className="text-lg font-bold" style={{ color }}>{it.value}</p>
+              <p className="text-[11px]" style={{ color: "var(--text-subtle)" }}>{it.action}</p>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function ReviewDrawer({
+  open,
+  loading,
+  data,
+  error,
+  onClose,
+}: {
+  open: boolean
+  loading: boolean
+  data: ReviewData | null
+  error: string
+  onClose: () => void
+}) {
+  if (!open) return null
+  return (
+    <div className="fixed inset-0 z-50">
+      <div className="absolute inset-0" style={{ background: "rgba(15,23,42,0.45)" }} onClick={onClose} />
+      <div className="absolute right-0 top-0 h-full w-full max-w-xl overflow-y-auto p-4" style={{ background: "var(--surface)", borderLeft: "1px solid var(--border)" }}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-base font-bold" style={{ color: "var(--text-900)" }}>Detail Review Penilaian</h3>
+          <Button variant="outline" size="sm" onClick={onClose}>Tutup</Button>
+        </div>
+
+        {loading && <p className="text-sm" style={{ color: "var(--text-subtle)" }}>Memuat detail...</p>}
+        {!loading && error && <div className="rounded-lg px-3 py-2 text-sm" style={{ background: "var(--danger-bg)", color: "var(--danger)" }}>{error}</div>}
+
+        {!loading && data && (
+          <div className="space-y-4">
+            <div className="rounded-lg p-3" style={{ border: "1px solid var(--border)", background: "var(--surface-muted)" }}>
+              <p className="font-semibold" style={{ color: "var(--text-900)" }}>{data.penilaian.nama_karyawan}</p>
+              <p className="text-xs" style={{ color: "var(--text-subtle)" }}>{data.penilaian.jabatan} · {data.penilaian.nama_divisi ?? "-"}</p>
+              <p className="text-xs mt-1" style={{ color: "var(--text-subtle)" }}>{data.penilaian.nama_periode}</p>
+              <div className="mt-2 flex items-center gap-2">
+                <Badge variant={STATUS_BADGE_VARIANT[data.penilaian.status]}>{STATUS_LABEL[data.penilaian.status]}</Badge>
+                <span className="text-xs font-mono" style={{ color: "var(--primary)" }}>Nilai: {data.penilaian.nilai_akhir != null ? Number(data.penilaian.nilai_akhir).toFixed(2) : "-"}</span>
+              </div>
+            </div>
+
+            <div className="rounded-lg p-3" style={{ border: "1px solid var(--border)", background: "var(--surface)" }}>
+              <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-subtle)" }}>Timeline Audit</p>
+              <div className="space-y-2">
+                {data.timeline.length === 0 && <p className="text-xs" style={{ color: "var(--text-subtle)" }}>Belum ada riwayat approval.</p>}
+                {data.timeline.map((t) => (
+                  <div key={t.id} className="rounded-md px-3 py-2" style={{ background: "var(--surface-muted)", border: "1px solid var(--border)" }}>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold" style={{ color: "var(--text-900)" }}>{t.aksi.replaceAll("_", " ")}</p>
+                      <p className="text-[11px]" style={{ color: "var(--text-subtle)" }}>{new Date(t.created_at).toLocaleString("id-ID")}</p>
+                    </div>
+                    <p className="text-[11px] mt-0.5" style={{ color: "var(--text-subtle)" }}>
+                      {t.actor_nama ?? "Sistem"}{t.actor_jabatan ? ` · ${t.actor_jabatan}` : ""}
+                      {t.status_dari || t.status_ke ? ` · ${t.status_dari ?? "-"} -> ${t.status_ke ?? "-"}` : ""}
+                    </p>
+                    {t.catatan && <p className="text-[11px] mt-1" style={{ color: "var(--text-700)" }}>{t.catatan}</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
 
 /* ─── Status Steps ────────────────────────────────────────────────── */
@@ -187,9 +335,17 @@ function ViewKepalaDivisi() {
   const [filterStatus, setFilterStatus] = useState<"semua" | "belum_mengisi" | "menunggu_saya" | "sudah_selesai">("semua")
   const [actionModal, setActionModal] = useState<{ id: number; ke: "diverifikasi" | "draft" } | null>(null)
   const [catatan, setCatatan]   = useState("")
+  const [selectedIds, setSelectedIds] = useState<number[]>([])
+  const [bulkModal, setBulkModal] = useState(false)
+  const [bulkAction, setBulkAction] = useState<"diverifikasi" | "draft">("diverifikasi")
+  const [bulkCatatan, setBulkCatatan] = useState("")
   const [saving, setSaving]     = useState(false)
   const [errMsg, setErrMsg]     = useState("")
   const [successMsg, setSuccessMsg] = useState("")
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [reviewLoading, setReviewLoading] = useState(false)
+  const [reviewError, setReviewError] = useState("")
+  const [reviewData, setReviewData] = useState<ReviewData | null>(null)
 
   const list = daftar?.list ?? []
   const total       = list.length
@@ -205,6 +361,11 @@ function ViewKepalaDivisi() {
     if (filterStatus === "sudah_selesai") return r.status === "diverifikasi" || r.status === "disetujui" || r.status === "final"
     return true
   })
+
+  const siapVerifikasi = filtered.filter(r => r.status === "diajukan" && !!r.penilaian_id && !!r.id_penilai_atasan)
+  const toggleSelect = (id: number) => setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  const selectAll = () => setSelectedIds(siapVerifikasi.map(r => Number(r.penilaian_id)).filter(Boolean))
+  const clearSelected = () => setSelectedIds([])
 
   const doAction = async () => {
     if (!actionModal) return
@@ -222,6 +383,53 @@ function ViewKepalaDivisi() {
     } finally { setSaving(false) }
   }
 
+  const doBulkAction = async () => {
+    if (!selectedIds.length) return
+    if (bulkAction === "draft" && !bulkCatatan.trim()) { setErrMsg("Catatan alasan wajib diisi untuk pengembalian bulk"); return }
+    setSaving(true); setErrMsg("")
+    try {
+      const res = await fetch("/api/penilaian/bulk-transisi", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: selectedIds, ke: bulkAction, catatan: bulkCatatan }),
+      })
+      const j = await res.json()
+      if (!res.ok) { setErrMsg(j.error ?? "Gagal"); return }
+      setSuccessMsg(j.message ?? "Berhasil")
+      setBulkModal(false)
+      setBulkCatatan("")
+      setSelectedIds([])
+      refetch()
+    } finally { setSaving(false) }
+  }
+
+  const notificationItems = useMemo(() => {
+    const urgent = filtered.filter(r => (getAgingDays(r.tanggal_diajukan) ?? 0) > 5 && r.status === "diajukan").length
+    const perluNilai = filtered.filter(r => r.status === "diajukan" && !r.id_penilai_atasan).length
+    const ready = siapVerifikasi.length
+    return [
+      { label: "Urgent SLA > 5 hari", value: urgent, action: "Prioritaskan review segera", tone: "bad" as const },
+      { label: "Perlu Nilai Atasan", value: perluNilai, action: "Lengkapi nilai atasan dulu", tone: "warn" as const },
+      { label: "Siap Diverifikasi", value: ready, action: "Gunakan verifikasi bulk", tone: "good" as const },
+    ]
+  }, [filtered, siapVerifikasi.length])
+
+  const openReviewDrawer = async (id: number) => {
+    setReviewOpen(true)
+    setReviewLoading(true)
+    setReviewError("")
+    setReviewData(null)
+    try {
+      const res = await fetch(`/api/penilaian/${id}/review`)
+      const j = await res.json()
+      if (!res.ok) { setReviewError(j.error ?? "Gagal memuat detail review"); return }
+      setReviewData(j as ReviewData)
+    } catch {
+      setReviewError("Gagal memuat detail review")
+    } finally {
+      setReviewLoading(false)
+    }
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -233,6 +441,8 @@ function ViewKepalaDivisi() {
       </div>
 
       {successMsg && <div className="rounded-lg px-4 py-3 text-sm" style={{ background: "var(--success-bg)", color: "var(--success)" }}>{successMsg}</div>}
+
+      <NotificationCenter title="Notification Center" items={notificationItems} />
 
       {/* Progress bar divisi */}
       <div className="rounded-xl p-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
@@ -262,11 +472,28 @@ function ViewKepalaDivisi() {
         ))}
       </div>
 
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <p className="text-xs" style={{ color: "var(--text-subtle)" }}>Item siap diverifikasi: {siapVerifikasi.length}</p>
+        {selectedIds.length > 0 ? (
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => { setBulkAction("diverifikasi"); setBulkModal(true) }}>
+              <CheckCircle className="h-3.5 w-3.5" />Verifikasi Bulk ({selectedIds.length})
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => { setBulkAction("draft"); setBulkModal(true) }}>
+              Kembalikan Bulk
+            </Button>
+            <Button size="sm" variant="ghost" onClick={clearSelected}>Batal Pilih</Button>
+          </div>
+        ) : siapVerifikasi.length > 0 ? (
+          <Button size="sm" variant="outline" onClick={selectAll}>Pilih Semua Siap Verifikasi</Button>
+        ) : null}
+      </div>
+
       <div className="rounded-xl overflow-hidden overflow-x-auto" style={{ border: "1px solid var(--border)", background: "var(--surface)" }}>
         <table className="w-full text-sm">
           <thead>
             <tr style={{ background: "var(--surface-muted)", borderBottom: "1px solid var(--border)" }}>
-              {["Pegawai", "Status", "Diajukan", "Aksi"].map(h => (
+              {["Pegawai", "Status", "Diajukan/SLA", "Aksi"].map(h => (
                 <th key={h} className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>{h}</th>
               ))}
             </tr>
@@ -279,6 +506,15 @@ function ViewKepalaDivisi() {
                 onMouseEnter={e => (e.currentTarget.style.background = "var(--surface-muted)")}
                 onMouseLeave={e => (e.currentTarget.style.background = "")}>
                 <td className="px-4 py-3">
+                  {row.status === "diajukan" && row.id_penilai_atasan && row.penilaian_id && (
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(Number(row.penilaian_id))}
+                      onChange={() => toggleSelect(Number(row.penilaian_id))}
+                      className="mr-2 h-4 w-4 align-middle"
+                      style={{ accentColor: "var(--primary)" }}
+                    />
+                  )}
                   <p className="font-semibold" style={{ color: "var(--text-900)" }}>{row.nama_karyawan}</p>
                   <p className="text-xs" style={{ color: "var(--text-subtle)" }}>{row.jabatan}</p>
                 </td>
@@ -292,34 +528,45 @@ function ViewKepalaDivisi() {
                   }
                 </td>
                 <td className="px-4 py-3 text-xs" style={{ color: "var(--text-subtle)" }}>
-                  {row.tanggal_diajukan ? new Date(row.tanggal_diajukan).toLocaleDateString("id-ID") : "—"}
+                  <div className="space-y-1">
+                    <p>{row.tanggal_diajukan ? new Date(row.tanggal_diajukan).toLocaleDateString("id-ID") : "—"}</p>
+                    <SlaBadge tanggal={row.tanggal_diajukan} />
+                  </div>
                 </td>
                 <td className="px-4 py-3">
                   {row.status === "diajukan" && row.penilaian_id && (
                     <div className="flex gap-2">
                       {row.id_penilai_atasan ? (
-                        // Sudah dinilai → tombol Verifikasi langsung
+                        // CTA kontekstual: sudah dinilai atasan → verifikasi langsung
                         <Button size="sm"
                           onClick={() => { if (row.penilaian_id) { setActionModal({ id: row.penilaian_id, ke: "diverifikasi" }); setCatatan(""); setErrMsg("") } }}>
-                          <CheckCircle className="h-3.5 w-3.5" />Verifikasi
+                          <CheckCircle className="h-3.5 w-3.5" />Verifikasi Sekarang
                         </Button>
                       ) : (
-                        // Belum dinilai → arahkan ke form Penilaian Atasan
+                        // CTA kontekstual: belum dinilai → isi nilai atasan dulu
                         <Link href="/dashboard/sdm/penilaian-kinerja/atasan">
                           <Button size="sm">
-                            <CheckCircle className="h-3.5 w-3.5" />Verifikasi
+                            <CheckCircle className="h-3.5 w-3.5" />Isi Nilai Atasan
                           </Button>
                         </Link>
                       )}
                       <Button size="sm" variant="outline" onClick={() => { if (row.penilaian_id) { setActionModal({ id: row.penilaian_id, ke: "draft" }); setCatatan(""); setErrMsg("") } }}>
                         Kembalikan
                       </Button>
+                      <Button size="sm" variant="outline" onClick={() => openReviewDrawer(row.penilaian_id!)}>
+                        Review
+                      </Button>
                     </div>
                   )}
                   {(row.status !== "diajukan" || !row.penilaian_id) && row.penilaian_id && (
-                    <Link href="/dashboard/sdm/penilaian-kinerja/atasan">
-                      <Button size="sm" variant="outline"><ArrowRight className="h-3.5 w-3.5" />Lihat Detail</Button>
-                    </Link>
+                    <div className="flex gap-2">
+                      <Link href="/dashboard/sdm/penilaian-kinerja/atasan">
+                        <Button size="sm" variant="outline"><ArrowRight className="h-3.5 w-3.5" />Lihat Progress</Button>
+                      </Link>
+                      <Button size="sm" variant="outline" onClick={() => openReviewDrawer(row.penilaian_id!)}>
+                        Review
+                      </Button>
+                    </div>
                   )}
                 </td>
               </tr>
@@ -341,6 +588,30 @@ function ViewKepalaDivisi() {
           <Button onClick={doAction} disabled={saving}>{saving ? "Memproses..." : "Konfirmasi"}</Button>
         </div>
       </Modal>
+
+      <Modal open={bulkModal} onClose={() => setBulkModal(false)} title={bulkAction === "diverifikasi" ? `Verifikasi Bulk (${selectedIds.length})` : `Kembalikan Bulk (${selectedIds.length})`}>
+        {errMsg && <div className="mb-3 rounded-lg px-3 py-2 text-sm" style={{ background: "var(--danger-bg)", color: "var(--danger)" }}>{errMsg}</div>}
+        <p className="text-sm mb-3" style={{ color: "var(--text-700)" }}>
+          {bulkAction === "diverifikasi"
+            ? `Konfirmasi verifikasi ${selectedIds.length} penilaian sekaligus?`
+            : `Konfirmasi pengembalian ${selectedIds.length} penilaian sekaligus ke Draft?`}
+        </p>
+        {bulkAction === "draft" && (
+          <TextareaField label="Catatan Alasan Pengembalian (wajib)" required value={bulkCatatan} onChange={e => setBulkCatatan(e.target.value)} />
+        )}
+        <div className="flex justify-end gap-2 mt-4">
+          <Button variant="outline" onClick={() => setBulkModal(false)}>Batal</Button>
+          <Button onClick={doBulkAction} disabled={saving}>{saving ? "Memproses..." : "Konfirmasi"}</Button>
+        </div>
+      </Modal>
+
+      <ReviewDrawer
+        open={reviewOpen}
+        loading={reviewLoading}
+        data={reviewData}
+        error={reviewError}
+        onClose={() => setReviewOpen(false)}
+      />
     </div>
   )
 }
@@ -361,10 +632,15 @@ function ViewManager() {
   const { data: daftarBawahan, refetch: refetchDaftar } = useApi<{ list: DaftarKD[] }>("/api/penilaian-atasan")
   const [selected, setSelected] = useState<number[]>([])
   const [bulkModal, setBulkModal] = useState(false)
+  const [bulkAction, setBulkAction] = useState<"disetujui" | "diajukan">("disetujui")
   const [catatan, setCatatan]    = useState("")
   const [saving, setSaving]      = useState(false)
   const [msg, setMsg]            = useState("")
   const [errMsg, setErrMsg]      = useState("")
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [reviewLoading, setReviewLoading] = useState(false)
+  const [reviewError, setReviewError] = useState("")
+  const [reviewData, setReviewData] = useState<ReviewData | null>(null)
   // Verifikasi Kepala Divisi (Manager sebagai atasan langsung Kepala Divisi)
   const [kdActionModal, setKdActionModal] = useState<{ id: number; ke: "diverifikasi" | "draft" } | null>(null)
   const [kdCatatan, setKdCatatan] = useState("")
@@ -398,11 +674,12 @@ function ViewManager() {
 
   const doBulkApprove = async () => {
     if (!selected.length) return
+    if (bulkAction === "diajukan" && !catatan.trim()) { setErrMsg("Catatan alasan wajib diisi untuk pengembalian bulk"); return }
     setSaving(true); setErrMsg("")
     try {
       const res = await fetch("/api/penilaian/bulk-transisi", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: selected, ke: "disetujui", catatan }),
+        body: JSON.stringify({ ids: selected, ke: bulkAction, catatan }),
       })
       const j = await res.json()
       if (!res.ok) { setErrMsg(j.error ?? "Gagal"); return }
@@ -410,6 +687,34 @@ function ViewManager() {
       setBulkModal(false); setSelected([]); setCatatan("")
       refetchMenunggu(); refetchRingkasan()
     } finally { setSaving(false) }
+  }
+
+  const managerNotificationItems = useMemo(() => {
+    const urgentApproval = daftarMenunggu.filter(r => (getAgingDays(r.tanggal_diajukan) ?? 0) > 5).length
+    const waitingKdInput = daftarKepalaDivisi.filter(r => !r.id_penilai_atasan).length
+    const readyApprove = daftarMenunggu.length
+    return [
+      { label: "Approval Urgent > 5 hari", value: urgentApproval, action: "Setujui prioritas dulu", tone: "bad" as const },
+      { label: "Kepala Divisi Belum Menilai", value: waitingKdInput, action: "Dorong pengisian atasan", tone: "warn" as const },
+      { label: "Siap Disetujui", value: readyApprove, action: "Gunakan bulk approval", tone: "good" as const },
+    ]
+  }, [daftarMenunggu, daftarKepalaDivisi])
+
+  const openReviewDrawer = async (id: number) => {
+    setReviewOpen(true)
+    setReviewLoading(true)
+    setReviewError("")
+    setReviewData(null)
+    try {
+      const res = await fetch(`/api/penilaian/${id}/review`)
+      const j = await res.json()
+      if (!res.ok) { setReviewError(j.error ?? "Gagal memuat detail review"); return }
+      setReviewData(j as ReviewData)
+    } catch {
+      setReviewError("Gagal memuat detail review")
+    } finally {
+      setReviewLoading(false)
+    }
   }
 
   const total = ringkasan?.total
@@ -427,6 +732,8 @@ function ViewManager() {
       {msg && <div className="rounded-lg px-4 py-3 text-sm" style={{ background: "var(--success-bg)", color: "var(--success)" }}>{msg}</div>}
       {errMsg && <div className="rounded-lg px-4 py-3 text-sm" style={{ background: "var(--danger-bg)", color: "var(--danger)" }}>{errMsg}</div>}
 
+      <NotificationCenter title="Notification Center" items={managerNotificationItems} />
+
       {/* Verifikasi penilaian Kepala Divisi (Manager = atasan langsung) */}
       <div className="rounded-xl p-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
         <p className="font-bold text-sm mb-3" style={{ color: "var(--text-900)" }}>
@@ -439,6 +746,7 @@ function ViewManager() {
               <div className="flex-1">
                 <p className="font-semibold text-sm" style={{ color: "var(--text-900)" }}>{row.nama_karyawan}</p>
                 <p className="text-xs" style={{ color: "var(--text-subtle)" }}>{row.jabatan}</p>
+                <div className="mt-1"><SlaBadge tanggal={row.tanggal_diajukan} /></div>
               </div>
               {!row.id_penilai_atasan
                 ? <Badge variant="warning">Perlu Dinilai</Badge>
@@ -446,13 +754,16 @@ function ViewManager() {
               <div className="flex gap-2">
                 {row.penilaian_id && (row.id_penilai_atasan ? (
                   <Button size="sm" onClick={() => { setKdActionModal({ id: row.penilaian_id!, ke: "diverifikasi" }); setKdCatatan(""); setErrMsg("") }}>
-                    <CheckCircle className="h-3.5 w-3.5" />Verifikasi
+                    <CheckCircle className="h-3.5 w-3.5" />Verifikasi Sekarang
                   </Button>
                 ) : (
                   <Link href="/dashboard/sdm/penilaian-kinerja/atasan">
-                    <Button size="sm"><CheckCircle className="h-3.5 w-3.5" />Verifikasi</Button>
+                    <Button size="sm"><CheckCircle className="h-3.5 w-3.5" />Isi Nilai Atasan</Button>
                   </Link>
                 ))}
+                {row.penilaian_id && (
+                  <Button size="sm" variant="outline" onClick={() => openReviewDrawer(row.penilaian_id!)}>Review</Button>
+                )}
                 {row.penilaian_id && (
                   <Button size="sm" variant="outline" onClick={() => { setKdActionModal({ id: row.penilaian_id!, ke: "draft" }); setKdCatatan(""); setErrMsg("") }}>
                     Kembalikan
@@ -526,8 +837,11 @@ function ViewManager() {
           {selected.length > 0 ? (
             <div className="flex gap-2">
               <span className="text-xs self-center" style={{ color: "var(--primary)" }}>{selected.length} dipilih</span>
-              <Button size="sm" onClick={() => setBulkModal(true)}>
+              <Button size="sm" onClick={() => { setBulkAction("disetujui"); setBulkModal(true) }}>
                 <CheckCircle className="h-3.5 w-3.5" />Setujui ({selected.length})
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => { setBulkAction("diajukan"); setBulkModal(true) }}>
+                Kembalikan Bulk
               </Button>
               <Button size="sm" variant="outline" onClick={deselectAll}>Batal</Button>
             </div>
@@ -548,22 +862,36 @@ function ViewManager() {
               <div className="flex-1">
                 <p className="font-semibold text-sm" style={{ color: "var(--text-900)" }}>{row.nama_karyawan}</p>
                 <p className="text-xs" style={{ color: "var(--text-subtle)" }}>{row.jabatan} · {row.nama_periode}</p>
+                <div className="mt-1"><SlaBadge tanggal={row.tanggal_diajukan} /></div>
               </div>
               <Badge variant="secondary">Diverifikasi</Badge>
+              <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); openReviewDrawer(row.id) }}>Review</Button>
             </div>
           ))}
         </div>
       </div>
 
-      <Modal open={bulkModal} onClose={() => setBulkModal(false)} title={`Setujui ${selected.length} Penilaian`}>
+      <Modal open={bulkModal} onClose={() => setBulkModal(false)} title={bulkAction === "disetujui" ? `Setujui ${selected.length} Penilaian` : `Kembalikan ${selected.length} Penilaian`}>
         {errMsg && <div className="mb-3 rounded-lg px-3 py-2 text-sm" style={{ background: "var(--danger-bg)", color: "var(--danger)" }}>{errMsg}</div>}
-        <p className="text-sm mb-3" style={{ color: "var(--text-700)" }}>Konfirmasi persetujuan {selected.length} penilaian sekaligus?</p>
-        <TextareaField label="Catatan (opsional)" value={catatan} onChange={e => setCatatan(e.target.value)} />
+        <p className="text-sm mb-3" style={{ color: "var(--text-700)" }}>
+          {bulkAction === "disetujui"
+            ? `Konfirmasi persetujuan ${selected.length} penilaian sekaligus?`
+            : `Konfirmasi pengembalian ${selected.length} penilaian ke tahap diajukan?`}
+        </p>
+        <TextareaField label={bulkAction === "disetujui" ? "Catatan (opsional)" : "Catatan Alasan Pengembalian (wajib)"} value={catatan} onChange={e => setCatatan(e.target.value)} />
         <div className="flex justify-end gap-2 mt-4">
           <Button variant="outline" onClick={() => setBulkModal(false)}>Batal</Button>
-          <Button onClick={doBulkApprove} disabled={saving}>{saving ? "Memproses..." : `Setujui ${selected.length}`}</Button>
+          <Button onClick={doBulkApprove} disabled={saving}>{saving ? "Memproses..." : bulkAction === "disetujui" ? `Setujui ${selected.length}` : `Kembalikan ${selected.length}`}</Button>
         </div>
       </Modal>
+
+      <ReviewDrawer
+        open={reviewOpen}
+        loading={reviewLoading}
+        data={reviewData}
+        error={reviewError}
+        onClose={() => setReviewOpen(false)}
+      />
 
       {/* Modal verifikasi/kembalikan Kepala Divisi */}
       <Modal open={!!kdActionModal} onClose={() => setKdActionModal(null)}
