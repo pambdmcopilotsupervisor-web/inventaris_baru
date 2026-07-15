@@ -20,6 +20,12 @@ services:
       - MINIO_SECRET_ACCESS_KEY=${MINIO_SECRET_ACCESS_KEY}
       - MINIO_BUCKET=${MINIO_BUCKET}
       - MINIO_REGION=${MINIO_REGION}
+      # Status Modul (true = aktif, false = nonaktif)
+      # Ubah nilai lalu restart container — tidak perlu rebuild image.
+      - MODULE_ASET=${MODULE_ASET:-true}
+      - MODULE_SDM=${MODULE_SDM:-true}
+      - MODULE_KINERJA=${MODULE_KINERJA:-true}
+      - MODULE_KEUANGAN=${MODULE_KEUANGAN:-true}
     volumes:
       # Volume persisten untuk foto selfie absensi mobile dan foto sakit
       - inventaris_uploads:/app/public/uploads

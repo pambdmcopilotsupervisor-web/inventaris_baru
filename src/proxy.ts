@@ -23,7 +23,7 @@ type ModuleRule = {
 
 const MODULE_RULES: ModuleRule[] = [
   {
-    envKey: "NEXT_PUBLIC_MODULE_ASET",
+    envKey: "MODULE_ASET",
     modulName: "aset",
     test: (p) =>
       p.startsWith("/dashboard/transaksi/aset") ||
@@ -45,14 +45,14 @@ const MODULE_RULES: ModuleRule[] = [
   {
     // Kinerja diperiksa SEBELUM SDM agar pengecualian SDM tidak perlu
     // menghapus path kinerja secara manual
-    envKey: "NEXT_PUBLIC_MODULE_KINERJA",
+    envKey: "MODULE_KINERJA",
     modulName: "kinerja",
     test: (p) =>
       p.startsWith("/dashboard/sdm/penilaian-kinerja") ||
       p.startsWith("/dashboard/sdm/komponen-penilaian"),
   },
   {
-    envKey: "NEXT_PUBLIC_MODULE_SDM",
+    envKey: "MODULE_SDM",
     modulName: "sdm",
     test: (p) => {
       // Jangan blokir path kinerja — sudah dihandle rule di atas
@@ -72,7 +72,7 @@ const MODULE_RULES: ModuleRule[] = [
     },
   },
   {
-    envKey: "NEXT_PUBLIC_MODULE_KEUANGAN",
+    envKey: "MODULE_KEUANGAN",
     modulName: "keuangan",
     test: (p) =>
       p === "/dashboard/keuangan" ||

@@ -3,7 +3,8 @@
 import { useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useState, Suspense } from "react"
 import { Archive, Users, LogOut, ClipboardCheck, Banknote, Lock } from "lucide-react"
-import { MODULE_STATUS } from "@/lib/modules"
+
+type ModuleStatus = { aset: boolean; sdm: boolean; kinerja: boolean; keuangan: boolean }
 
 interface SessionUser {
   name: string; email: string; role: string | null; jabatan: string | null; nama_karyawan: string | null
@@ -13,10 +14,12 @@ function SelectModuleContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [user, setUser] = useState<SessionUser | null>(null)
+  const [modules, setModules] = useState<ModuleStatus>({ aset: true, sdm: true, kinerja: true, keuangan: true })
   const [blockedMsg, setBlockedMsg] = useState<string | null>(null)
 
   useEffect(() => {
     fetch("/api/auth/me").then(r => r.ok ? r.json() : null).then(d => setUser(d)).catch(() => {})
+    fetch("/api/modules").then(r => r.ok ? r.json() : null).then(d => { if (d) setModules(d) }).catch(() => {})
   }, [])
 
   // Tampilkan pesan jika diredirect karena modul nonaktif
@@ -36,7 +39,7 @@ function SelectModuleContent() {
   }, [searchParams])
 
   const select = (modul: "aset" | "sdm" | "kinerja" | "keuangan") => {
-    if (!MODULE_STATUS[modul]) return  // jangan bisa pilih modul nonaktif
+    if (!modules[modul]) return  // jangan bisa pilih modul nonaktif
     localStorage.setItem("pedami_modul", modul)
     router.push(
       modul === "aset" ? "/dashboard" :
@@ -117,7 +120,7 @@ function SelectModuleContent() {
       {/* Module cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 w-full max-w-6xl">
         {/* ASET Module */}
-        {MODULE_STATUS.aset && (
+        {modules.aset && (
         <button
           onClick={() => select("aset")}
           className="group relative overflow-hidden rounded-2xl p-8 text-left transition-all duration-300 cursor-pointer"
@@ -152,7 +155,7 @@ function SelectModuleContent() {
         )}
 
         {/* SDM Module */}
-        {MODULE_STATUS.sdm && (
+        {modules.sdm && (
         <button
           onClick={() => select("sdm")}
           className="group relative overflow-hidden rounded-2xl p-8 text-left transition-all duration-300 cursor-pointer"
@@ -187,7 +190,7 @@ function SelectModuleContent() {
         )}
 
         {/* KINERJA Module */}
-        {MODULE_STATUS.kinerja && (
+        {modules.kinerja && (
         <button
           onClick={() => select("kinerja")}
           className="group relative overflow-hidden rounded-2xl p-8 text-left transition-all duration-300 cursor-pointer"
@@ -222,7 +225,7 @@ function SelectModuleContent() {
         )}
 
         {/* KEUANGAN Module */}
-        {MODULE_STATUS.keuangan && (
+        {modules.keuangan && (
         <button
           onClick={() => select("keuangan")}
           className="group relative overflow-hidden rounded-2xl p-8 text-left transition-all duration-300 cursor-pointer"
