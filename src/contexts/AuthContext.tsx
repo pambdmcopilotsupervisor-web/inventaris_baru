@@ -19,7 +19,7 @@ export interface AuthUser {
 interface AuthContext {
   user: AuthUser | null
   loading: boolean
-  login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>
+  login: (email: string, password: string) => Promise<{ ok: boolean; error?: string; redirectTo?: string; defaultModule?: string | null }>
   logout: () => Promise<void>
   refetch: () => void
 }
@@ -67,7 +67,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  useEffect(() => { fetchMe() }, [fetchMe])
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      void fetchMe()
+    }, 0)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [fetchMe])
 
   const login = async (email: string, password: string) => {
     try {
@@ -79,7 +85,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const data = await res.json()
       if (!res.ok) return { ok: false, error: data.error ?? "Login gagal" }
       setUser(data)
-      return { ok: true }
+      return { ok: true, redirectTo: data.redirectTo, defaultModule: data.defaultModule }
     } catch {
       return { ok: false, error: "Terjadi kesalahan jaringan" }
     }
@@ -88,6 +94,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     await fetch("/api/auth/logout", { method: "POST" })
     setUser(null)
+    window.localStorage.removeItem("pedami_modul")
     window.location.href = "/login"
   }
 

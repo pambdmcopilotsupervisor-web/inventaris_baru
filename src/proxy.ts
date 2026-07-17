@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { getDefaultModuleRedirectPath } from "@/lib/modules"
 
 // Routes yang tidak memerlukan autentikasi
 const PUBLIC_PATHS = ["/login", "/api/auth/login"]
@@ -93,6 +94,7 @@ function checkModuleAccess(pathname: string, req: NextRequest): NextResponse | n
 
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl
+  const defaultModulePath = getDefaultModuleRedirectPath()
 
   // ── CORS untuk semua endpoint /api/mobile/* ────────────────────────────
   if (pathname.startsWith("/api/mobile")) {
@@ -130,7 +132,11 @@ export function proxy(req: NextRequest) {
 
   // Jika sudah login dan ke halaman /login → redirect ke select-module
   if (sessionCookie?.value && pathname === "/login") {
-    return NextResponse.redirect(new URL("/select-module", req.url))
+    return NextResponse.redirect(new URL(defaultModulePath ?? "/select-module", req.url))
+  }
+
+  if (sessionCookie?.value && pathname === "/" && defaultModulePath) {
+    return NextResponse.redirect(new URL(defaultModulePath, req.url))
   }
 
   // ── Proteksi modul nonaktif ────────────────────────────────────────────

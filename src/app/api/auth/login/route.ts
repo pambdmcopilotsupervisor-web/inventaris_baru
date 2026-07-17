@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import bcrypt from "bcryptjs"
 import { prisma, serialize } from "@/lib/prisma"
 import { getSession } from "@/lib/session"
+import { getDefaultModule, getDefaultModuleRedirectPath } from "@/lib/modules"
 
 // Simple in-memory rate limiter (per-IP, max 10 attempt/menit)
 const loginAttempts = new Map<string, { count: number; resetAt: number }>()
@@ -131,9 +132,14 @@ export async function POST(req: NextRequest) {
     }
     await session.save()
 
+    const defaultModule = getDefaultModule()
+    const redirectTo = getDefaultModuleRedirectPath() ?? "/select-module"
+
     return NextResponse.json(serialize({
       id: user.id, name: user.name, email: user.email,
       role: user.role, karyawan_id: user.karyawan_id, jabatan, nama_karyawan, divisi_id, nama_divisi,
+      defaultModule,
+      redirectTo,
     }))
   } catch (err) {
     // Jangan expose detail error ke client

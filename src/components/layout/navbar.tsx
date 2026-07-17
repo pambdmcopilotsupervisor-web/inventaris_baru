@@ -5,6 +5,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/contexts/AuthContext"
+import { inferModulFromPathname, normalizeModulKey, type ModulKey } from "@/lib/module-navigation"
 import {
   LayoutDashboard, Users, Archive, Truck, BarChart3, Database, BookOpen,
   Bell, ChevronDown, LogOut, User, Settings, Package,
@@ -40,12 +41,11 @@ type NavGroup = {
   items: NavSection[]
 }
 
-type AppModul = "aset" | "sdm" | "kinerja" | "keuangan"
+type AppModul = ModulKey
 
 function readStoredModul(): AppModul | null {
   if (typeof window === "undefined") return null
-  const value = localStorage.getItem("pedami_modul")
-  return value === "aset" || value === "sdm" || value === "kinerja" || value === "keuangan" ? value : null
+  return normalizeModulKey(localStorage.getItem("pedami_modul"))
 }
 
 const modulLabels: Record<AppModul, string> = {
@@ -443,19 +443,32 @@ export function Navbar() {
   const [dropdownLeft, setDropdownLeft] = useState(0)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [userOpen, setUserOpen] = useState(false)
-  const [modul, setModul] = useState<AppModul | null>(null)
+  const [isHydrated, setIsHydrated] = useState(false)
+  const [, setStorageVersion] = useState(0)
   const navRef = useRef<HTMLDivElement>(null)
   const triggerRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+  const inferredModul = inferModulFromPathname(pathname)
+  const storedModul = isHydrated ? readStoredModul() : null
+  const modul = storedModul ?? inferredModul
 
   // Baca localStorage setelah hydration selesai agar SSR dan client match
   useEffect(() => {
-    const timeoutId = window.setTimeout(() => setModul(readStoredModul()), 0)
+    const timeoutId = window.setTimeout(() => setIsHydrated(true), 0)
+
     return () => window.clearTimeout(timeoutId)
   }, [])
 
+  useEffect(() => {
+    if (!inferredModul || storedModul) return
+
+    if (typeof window !== "undefined" && window.localStorage.getItem("pedami_modul") !== inferredModul) {
+      window.localStorage.setItem("pedami_modul", inferredModul)
+    }
+  }, [inferredModul, storedModul])
+
   // Sinkronkan jika localStorage berubah dari tab/window lain.
   useEffect(() => {
-    const handleStorage = () => setModul(readStoredModul())
+    const handleStorage = () => setStorageVersion((value) => value + 1)
     window.addEventListener("storage", handleStorage)
     return () => window.removeEventListener("storage", handleStorage)
   }, [])
@@ -463,7 +476,7 @@ export function Navbar() {
   // Filter menu berdasarkan modul aktif
   const activeGroups = NAV_GROUPS.filter(g => {
     if (!modul) return true // tampilkan semua jika belum pilih
-    if (modul === "aset") return ["dashboard", "aset", "kendaraan", "laporan"].includes(g.key)
+    if (modul === "aset") return ["dashboard", "sdm", "aset", "kendaraan", "laporan", "master"].includes(g.key)
     if (modul === "sdm")  return ["dashboard", "sdm", "jadwal-kerja", "absensi", "pengajuan", "lembur", "penggajian", "master"].includes(g.key)
     if (modul === "kinerja") return ["dashboard-kinerja", "penilaian"].includes(g.key)
     if (modul === "keuangan") return ["keuangan", "keuangan-anggota", "keuangan-laporan", "keuangan-proses"].includes(g.key)

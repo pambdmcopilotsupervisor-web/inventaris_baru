@@ -4,6 +4,7 @@ import React, { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Package, Eye, EyeOff } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
+import { normalizeModulKey } from "@/lib/module-navigation"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -23,7 +24,15 @@ export default function LoginPage() {
     try {
       const result = await login(email, password)
       if (result.ok) {
-        router.push("/select-module")
+        const defaultModule = normalizeModulKey(result.defaultModule)
+
+        if (defaultModule) {
+          window.localStorage.setItem("pedami_modul", defaultModule)
+        } else {
+          window.localStorage.removeItem("pedami_modul")
+        }
+
+        router.push(result.redirectTo ?? "/select-module")
         router.refresh()
       } else {
         setError(result.error ?? "Login gagal")

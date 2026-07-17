@@ -1,8 +1,9 @@
 "use client"
 
 import { useRouter, useSearchParams } from "next/navigation"
-import { useEffect, useState, Suspense } from "react"
+import { useEffect, useMemo, useState, Suspense } from "react"
 import { Archive, Users, LogOut, ClipboardCheck, Banknote, Lock } from "lucide-react"
+import { getModulePath } from "@/lib/module-navigation"
 
 type ModuleStatus = { aset: boolean; sdm: boolean; kinerja: boolean; keuangan: boolean }
 
@@ -15,38 +16,31 @@ function SelectModuleContent() {
   const searchParams = useSearchParams()
   const [user, setUser] = useState<SessionUser | null>(null)
   const [modules, setModules] = useState<ModuleStatus>({ aset: true, sdm: true, kinerja: true, keuangan: true })
-  const [blockedMsg, setBlockedMsg] = useState<string | null>(null)
+  const [dismissedBlocked, setDismissedBlocked] = useState<string | null>(null)
 
   useEffect(() => {
     fetch("/api/auth/me").then(r => r.ok ? r.json() : null).then(d => setUser(d)).catch(() => {})
     fetch("/api/modules").then(r => r.ok ? r.json() : null).then(d => { if (d) setModules(d) }).catch(() => {})
   }, [])
 
-  // Tampilkan pesan jika diredirect karena modul nonaktif
-  useEffect(() => {
-    const blocked = searchParams.get("blocked")
-    if (blocked) {
-      const labels: Record<string, string> = {
-        aset: "Modul Aset",
-        sdm: "Modul SDM",
-        kinerja: "Modul Kinerja",
-        keuangan: "Modul Keuangan",
-      }
-      setBlockedMsg(`${labels[blocked] ?? "Modul"} sedang tidak aktif. Hubungi administrator.`)
-      // Bersihkan query param dari URL tanpa reload
-      window.history.replaceState(null, "", "/select-module")
+  const blocked = searchParams.get("blocked")
+  const blockedMsg = useMemo(() => {
+    if (!blocked || dismissedBlocked === blocked) return null
+
+    const labels: Record<string, string> = {
+      aset: "Modul Aset",
+      sdm: "Modul SDM",
+      kinerja: "Modul Kinerja",
+      keuangan: "Modul Keuangan",
     }
-  }, [searchParams])
+
+    return `${labels[blocked] ?? "Modul"} sedang tidak aktif. Hubungi administrator.`
+  }, [blocked, dismissedBlocked])
 
   const select = (modul: "aset" | "sdm" | "kinerja" | "keuangan") => {
     if (!modules[modul]) return  // jangan bisa pilih modul nonaktif
     localStorage.setItem("pedami_modul", modul)
-    router.push(
-      modul === "aset" ? "/dashboard" :
-      modul === "sdm" ? "/dashboard/sdm" :
-      modul === "kinerja" ? "/dashboard/sdm/penilaian-kinerja/target" :
-      "/dashboard/keuangan"
-    )
+    router.push(getModulePath(modul))
   }
 
   const handleLogout = async () => {
@@ -68,7 +62,10 @@ function SelectModuleContent() {
           <Lock className="h-4 w-4 shrink-0" style={{ color: "#f87171" }} />
           {blockedMsg}
           <button
-            onClick={() => setBlockedMsg(null)}
+            onClick={() => {
+              setDismissedBlocked(blocked)
+              window.history.replaceState(null, "", "/select-module")
+            }}
             className="ml-2 opacity-60 hover:opacity-100 cursor-pointer"
             style={{ color: "#f87171" }}
           >✕</button>

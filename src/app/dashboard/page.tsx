@@ -10,8 +10,9 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts"
 import { Archive, Truck, Users, AlertTriangle, FileText, Calendar, MoreHorizontal, Shield } from "lucide-react"
-import { formatCurrency, formatDate } from "@/lib/utils"
+import { formatDate } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
+import { inferModulFromPathname } from "@/lib/module-navigation"
 
 interface DashboardStats {
   aset: { total: number; komputer: number; kantor: number; kondisi: { status_barang: string; _count: { id: number } }[] }
@@ -30,12 +31,26 @@ const pendapatanBulanan = [
   { bulan: "Mei", r2: 4.5, r4: 26 }, { bulan: "Jun", r2: 3.6, r4: 22 },
 ]
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+type CustomTooltipPayload = {
+  color?: string
+  name?: string
+  value?: number | string
+}
+
+const CustomTooltip = ({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean
+  payload?: CustomTooltipPayload[]
+  label?: string
+}) => {
   if (!active || !payload?.length) return null
   return (
     <div className="rounded-xl px-4 py-3 shadow-xl text-sm" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
       <p className="font-semibold mb-1.5" style={{ color: "var(--text-900)" }}>{label}</p>
-      {payload.map((p: any, i: number) => (
+      {payload.map((p, i) => (
         <p key={i} className="text-xs" style={{ color: p.color }}>{p.name}: <strong>Rp {p.value}jt</strong></p>
       ))}
     </div>
@@ -60,6 +75,14 @@ export default function DashboardPage() {
   // Redirect ke select-module jika belum pilih modul
   React.useEffect(() => {
     const modul = localStorage.getItem("pedami_modul")
+    if (modul) return
+
+    const inferredModul = inferModulFromPathname(window.location.pathname)
+    if (inferredModul) {
+      localStorage.setItem("pedami_modul", inferredModul)
+      return
+    }
+
     if (!modul) {
       window.location.href = "/select-module"
     }
