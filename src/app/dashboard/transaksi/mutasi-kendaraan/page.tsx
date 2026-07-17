@@ -10,6 +10,8 @@ import { TextField, FormField } from "@/components/ui/form-field"
 import { Plus, Eye, Trash2, RefreshCw, Search, ArrowRight, Info } from "lucide-react"
 import { formatDate } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
+import { useAuth } from "@/contexts/AuthContext"
+import { canCreateOrEditTransaksi, canDeleteTransaksi } from "@/lib/transaksi-role"
 
 /* ── Types ─────────────────────────────────────────────────────── */
 interface MutasiR2R4 {
@@ -35,6 +37,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 const EMPTY = { data_r2r4_id: "", pemegang_tujuan: "", departemen_tujuan: "", tgl_mutasi: "", deskripsi: "" }
 
 export default function MutasiKendaraanPage() {
+  const { user } = useAuth()
   const { data, loading, refetch } = useApi<MutasiR2R4[]>("/api/mutasi-kendaraan")
   const { data: allKendaraans }    = useApi<Kendaraan[]>("/api/kendaraan")
   // Ambil karyawan dengan info divisi untuk search pemegang tujuan
@@ -42,6 +45,8 @@ export default function MutasiKendaraanPage() {
   const { data: allDivisis }       = useApi<{ id: number; nama_divisi: string }[]>("/api/divisi")
   const { data: allSubdivisis }    = useApi<{ id: number; divisi_id: number; nama_sub: string }[]>("/api/subdivisi")
   const list = data ?? []
+  const canManageData = canCreateOrEditTransaksi(user?.role)
+  const canDeleteData = canDeleteTransaksi(user?.role)
 
   const [modalOpen, setModalOpen]   = useState(false)
   const [viewOpen, setViewOpen]     = useState(false)
@@ -111,6 +116,7 @@ export default function MutasiKendaraanPage() {
   }
 
   const openAdd = () => {
+    if (!canManageData) return
     setSelected(null); setErrors({})
     setForm({ ...EMPTY, tgl_mutasi: new Date().toISOString().split("T")[0] })
     setKendaraanSearch(""); setKendaraanInfo(null)
@@ -118,6 +124,7 @@ export default function MutasiKendaraanPage() {
   }
 
   const handleSubmit = async () => {
+    if (!canManageData) return
     const e: Record<string, string> = {}
     if (!form.data_r2r4_id)      e.data_r2r4_id      = "Pilih kendaraan"
     if (!form.pemegang_tujuan)   e.pemegang_tujuan   = "Wajib diisi"
@@ -144,7 +151,7 @@ export default function MutasiKendaraanPage() {
   }
 
   const handleDelete = async () => {
-    if (!selected) return
+    if (!selected || !canDeleteData) return
     setDeleting(true)
     try {
       await fetch(`/api/mutasi-kendaraan/${selected.id}`, { method: "DELETE" })
@@ -181,7 +188,7 @@ export default function MutasiKendaraanPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={refetch}><RefreshCw className="h-3.5 w-3.5" /></Button>
-          <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Buat Mutasi</Button>
+          {canManageData && <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Buat Mutasi</Button>}
         </div>
       </div>
 
@@ -202,8 +209,8 @@ export default function MutasiKendaraanPage() {
             <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--info)" }}
               onClick={() => { setSelected(row); setViewOpen(true) }}><Eye className="h-3.5 w-3.5" /></Button>
             {/* Pedami tidak punya edit untuk mutasi R2R4 */}
-            <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--danger)" }}
-              onClick={() => { setSelected(row); setDeleteOpen(true) }}><Trash2 className="h-3.5 w-3.5" /></Button>
+            {canDeleteData && <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--danger)" }}
+              onClick={() => { setSelected(row); setDeleteOpen(true) }}><Trash2 className="h-3.5 w-3.5" /></Button>}
           </div>
         )}
       />
@@ -214,9 +221,9 @@ export default function MutasiKendaraanPage() {
         description="Pemegang asal diambil otomatis dari data kendaraan saat ini"
         footer={<>
           <Button variant="outline" onClick={() => setModalOpen(false)}>Batal</Button>
-          <Button onClick={handleSubmit} disabled={saving}>
+          {canManageData && <Button onClick={handleSubmit} disabled={saving}>
             {saving ? "Menyimpan..." : "Simpan & Update Kendaraan"}
-          </Button>
+          </Button>}
         </>}
       >
         <div className="space-y-5">

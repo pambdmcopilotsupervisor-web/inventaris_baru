@@ -11,6 +11,8 @@ import { TextField, FormField } from "@/components/ui/form-field"
 import { Plus, Trash2, RefreshCw, Search, AlertTriangle, Info } from "lucide-react"
 import { formatDate, formatCurrency } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
+import { useAuth } from "@/contexts/AuthContext"
+import { canCreateOrEditTransaksi, canDeleteTransaksi } from "@/lib/transaksi-role"
 
 /* ── Types ─────────────────────────────────────────────────────── */
 interface PenjualanR2r4 {
@@ -37,6 +39,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 const EMPTY = { data_r2r4_id: "", tgl_jual: "", hrg_jual: "", nm_pembeli: "" }
 
 export default function PenjualanKendaraanPage() {
+  const { user } = useAuth()
   const { data, loading, refetch } = useApi<PenjualanR2r4[]>("/api/penjualan-kendaraan")
   // Hanya tampilkan kendaraan yang BELUM terjual (stat !== 'Terjual') untuk dipilih
   const { data: allKendaraans } = useApi<Kendaraan[]>("/api/kendaraan")
@@ -49,6 +52,8 @@ export default function PenjualanKendaraanPage() {
   const [deleting, setDeleting]     = useState(false)
   const [form, setForm]             = useState(EMPTY)
   const [errors, setErrors]         = useState<Record<string, string>>({})
+  const canManageData = canCreateOrEditTransaksi(user?.role)
+  const canDeleteData = canDeleteTransaksi(user?.role)
 
   // Info kendaraan auto-fill (READ-ONLY — sesuai Filament afterStateUpdated)
   const [vehicleInfo, setVehicleInfo] = useState<{
@@ -92,6 +97,7 @@ export default function PenjualanKendaraanPage() {
   }
 
   const openAdd = () => {
+    if (!canManageData) return
     setSelected(null); setErrors({})
     setForm({ ...EMPTY, tgl_jual: new Date().toISOString().split("T")[0] })
     setKendaraanSearch(""); setVehicleInfo(null)
@@ -99,6 +105,7 @@ export default function PenjualanKendaraanPage() {
   }
 
   const handleSubmit = async () => {
+    if (!canManageData) return
     const e: Record<string, string> = {}
     if (!form.data_r2r4_id) e.data_r2r4_id = "Pilih kendaraan"
     setErrors(e); if (Object.keys(e).length) return
@@ -121,7 +128,7 @@ export default function PenjualanKendaraanPage() {
   }
 
   const handleDelete = async () => {
-    if (!selected) return
+    if (!selected || !canDeleteData) return
     setDeleting(true)
     try {
       await fetch(`/api/penjualan-kendaraan/${selected.id}`, { method: "DELETE" })
@@ -168,7 +175,7 @@ export default function PenjualanKendaraanPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={refetch}><RefreshCw className="h-3.5 w-3.5" /></Button>
-          <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Tambah Penjualan</Button>
+          {canManageData && <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Tambah Penjualan</Button>}
         </div>
       </div>
 
@@ -202,10 +209,12 @@ export default function PenjualanKendaraanPage() {
         searchKeys={["nm_pembeli"]} loading={loading}
         emptyMessage="Tidak ada data penjualan"
         actions={(row: any) => (
-          <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--danger)" }}
-            onClick={() => { setSelected(row); setDeleteOpen(true) }}>
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
+          canDeleteData ? (
+            <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--danger)" }}
+              onClick={() => { setSelected(row); setDeleteOpen(true) }}>
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          ) : null
         )}
       />
 
@@ -215,10 +224,10 @@ export default function PenjualanKendaraanPage() {
         description="Pilih kendaraan yang akan dijual"
         footer={<>
           <Button variant="outline" onClick={() => setModalOpen(false)}>Batal</Button>
-          <Button onClick={handleSubmit} disabled={saving}
+          {canManageData && <Button onClick={handleSubmit} disabled={saving}
             style={{ background: "var(--danger)", color: "#fff" }}>
             {saving ? "Menyimpan..." : "Simpan & Set Terjual"}
-          </Button>
+          </Button>}
         </>}
       >
         <div className="space-y-5">

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
+import { requireSession } from "@/lib/auth"
 import { prisma, serialize } from "@/lib/prisma"
+import { canCreateOrEditTransaksi, canDeleteTransaksi, getTransaksiActionError, hasRequiredJabatan } from "@/lib/transaksi-role"
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -13,6 +15,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireSession(req)
+  if ("error" in auth) return auth.error
+
   try {
     const { id } = await params
     const body = await req.json()
@@ -23,6 +28,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     // ── Verifikasi Manager ───────────────────────────────────────────
     if (action === "verif_manager") {
+      if (!hasRequiredJabatan(auth.user.jabatan, "Manager")) {
+        return NextResponse.json({ error: "Hanya user dengan jabatan Manager yang dapat melakukan verifikasi manager" }, { status: 403 })
+      }
       if (record.verif_manager === 1) {
         return NextResponse.json({ error: "Sudah diverifikasi oleh Manager" }, { status: 400 })
       }
@@ -39,6 +47,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     // ── Verifikasi Ketua ─────────────────────────────────────────────
     // Syarat: Manager harus sudah verifikasi dulu
     if (action === "verif_ketua") {
+      if (!hasRequiredJabatan(auth.user.jabatan, "Ketua")) {
+        return NextResponse.json({ error: "Hanya user dengan jabatan Ketua yang dapat melakukan verifikasi ketua" }, { status: 403 })
+      }
       if (!record.verif_manager) {
         return NextResponse.json({ error: "Harus diverifikasi Manager terlebih dahulu" }, { status: 400 })
       }
@@ -64,6 +75,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     // ── Edit biasa ─── hanya boleh jika belum ada verifikasi
+    if (!canCreateOrEditTransaksi(auth.user.role)) {
+      return NextResponse.json({ error: getTransaksiActionError("update") }, { status: 403 })
+    }
+
     if (record.verif_manager !== 0 || record.verif_ketua !== 0) {
       return NextResponse.json({ error: "Tidak dapat diubah — sudah dalam proses verifikasi" }, { status: 400 })
     }
@@ -83,7 +98,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireSession(req)
+  if ("error" in auth) return auth.error
+  if (!canDeleteTransaksi(auth.user.role)) {
+    return NextResponse.json({ error: getTransaksiActionError("delete") }, { status: 403 })
+  }
+
   try {
     const { id } = await params
     const record = await prisma.permohonan_disposal.findUnique({ where: { id: BigInt(id) } })

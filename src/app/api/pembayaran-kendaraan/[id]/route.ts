@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireSession } from "@/lib/auth"
-import { prisma, serialize } from "@/lib/prisma"
+import { prisma } from "@/lib/prisma"
 import { canDeleteTransaksi, getTransaksiActionError } from "@/lib/transaksi-role"
 
-// Pedami tidak punya edit untuk mutasi R2R4 — hanya delete
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireSession(req)
   if ("error" in auth) return auth.error
@@ -13,7 +12,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   try {
     const { id } = await params
-    await prisma.mutasi_r2r4s.delete({ where: { id: BigInt(id) } })
+    await prisma.riwayat_pembayaran_r2r4s.delete({ where: { id: BigInt(id) } })
     return NextResponse.json({ success: true })
   } catch {
     return NextResponse.json({ error: "Gagal menghapus" }, { status: 500 })

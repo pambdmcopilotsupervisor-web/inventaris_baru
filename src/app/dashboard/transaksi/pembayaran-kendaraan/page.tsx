@@ -11,6 +11,8 @@ import { Plus, Trash2, RefreshCw, Search, AlertTriangle, CheckCircle } from "luc
 import { formatDate, formatCurrency } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
 import { useCrud } from "@/hooks/useCrud"
+import { useAuth } from "@/contexts/AuthContext"
+import { canCreateOrEditTransaksi, canDeleteTransaksi } from "@/lib/transaksi-role"
 
 /* ── Types ─────────────────────────────────────────────────────── */
 interface Pembayaran {
@@ -54,10 +56,13 @@ const isJatuhTempoDekat = (tgl: string | null) => {
 }
 
 export default function PembayaranKendaraanPage() {
+  const { user } = useAuth()
   const { data, loading, refetch } = useApi<Pembayaran[]>("/api/pembayaran-kendaraan")
   const { data: allKendaraans }    = useApi<Kendaraan[]>("/api/kendaraan")
   const list = data ?? []
   const { remove, deleting } = useCrud<Pembayaran>({ apiPath: "/api/pembayaran-kendaraan", onSuccess: refetch })
+  const canManageData = canCreateOrEditTransaksi(user?.role)
+  const canDeleteData = canDeleteTransaksi(user?.role)
 
   const [modalOpen, setModalOpen]   = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -97,6 +102,7 @@ export default function PembayaranKendaraanPage() {
   }
 
   const openAdd = () => {
+    if (!canManageData) return
     setSelected(null); setErrors({})
     setForm({ ...EMPTY, tanggal_pembayaran: new Date().toISOString().split("T")[0] })
     setKendaraanSearch(""); setVehicleInfo(null)
@@ -104,6 +110,7 @@ export default function PembayaranKendaraanPage() {
   }
 
   const handleSubmit = async () => {
+    if (!canManageData) return
     const e: Record<string, string> = {}
     if (!form.data_r2r4_id)        e.data_r2r4_id        = "Pilih kendaraan"
     if (!form.jenis_pembayaran)     e.jenis_pembayaran    = "Pilih jenis pembayaran"
@@ -131,7 +138,7 @@ export default function PembayaranKendaraanPage() {
   }
 
   const handleDelete = async () => {
-    if (!selected) return
+    if (!selected || !canDeleteData) return
     const ok = await remove(selected.id)
     if (ok) setDeleteOpen(false)
   }
@@ -209,7 +216,7 @@ export default function PembayaranKendaraanPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={refetch}><RefreshCw className="h-3.5 w-3.5" /></Button>
-          <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Tambah Pembayaran</Button>
+          {canManageData && <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Tambah Pembayaran</Button>}
         </div>
       </div>
 
@@ -250,10 +257,12 @@ export default function PembayaranKendaraanPage() {
         searchKeys={["jenis_pembayaran"]} loading={loading}
         emptyMessage="Tidak ada data pembayaran"
         actions={(row: any) => (
-          <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--danger)" }}
-            onClick={() => { setSelected(row); setDeleteOpen(true) }}>
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
+          canDeleteData ? (
+            <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--danger)" }}
+              onClick={() => { setSelected(row); setDeleteOpen(true) }}>
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          ) : null
         )}
       />
 
@@ -263,7 +272,7 @@ export default function PembayaranKendaraanPage() {
         description="Catat riwayat pembayaran dokumen kendaraan"
         footer={<>
           <Button variant="outline" onClick={() => setModalOpen(false)}>Batal</Button>
-          <Button onClick={handleSubmit} disabled={saving}>{saving ? "Menyimpan..." : "Simpan"}</Button>
+          {canManageData && <Button onClick={handleSubmit} disabled={saving}>{saving ? "Menyimpan..." : "Simpan"}</Button>}
         </>}
       >
         <div className="space-y-5">

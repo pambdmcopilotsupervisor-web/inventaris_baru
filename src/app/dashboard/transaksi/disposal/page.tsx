@@ -11,7 +11,8 @@ import { TextField, SelectField, TextareaField, FormField } from "@/components/u
 import { Plus, Eye, Pencil, Trash2, RefreshCw, Search, CheckCircle, Clock, AlertTriangle, Printer, Info } from "lucide-react"
 import { formatDate, formatCurrency } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
-import { useAuth, canVerifManager, canVerifKetua, isAdmin } from "@/contexts/AuthContext"
+import { useAuth, canVerifManager, canVerifKetua } from "@/contexts/AuthContext"
+import { canCreateOrEditTransaksi, canDeleteTransaksi } from "@/lib/transaksi-role"
 
 /* ── Types ─────────────────────────────────────────────────────── */
 interface Disposal {
@@ -61,6 +62,8 @@ export default function DisposalPage() {
   const { data: allKaryawans } = useApi<Karyawan[]>("/api/karyawan")
   const { user: authUser }     = useAuth()
   const list = data ?? []
+  const canManageData = canCreateOrEditTransaksi(authUser?.role)
+  const canDeleteData = canDeleteTransaksi(authUser?.role)
 
   const [modalOpen, setModalOpen]     = useState(false)
   const [viewOpen, setViewOpen]       = useState(false)
@@ -109,6 +112,7 @@ export default function DisposalPage() {
   }
 
   const openAdd = () => {
+    if (!canManageData) return
     setSelected(null); setErrors({})
     setForm({ nomor: "", asset_id: "", tgl_pengajuan: new Date().toISOString().split("T")[0], kondisi: "", keterangan: "", dibuat_oleh: "" })
     setAssetSearch(""); setAssetInfo(null)
@@ -116,6 +120,7 @@ export default function DisposalPage() {
   }
 
   const openEdit = (row: Disposal) => {
+    if (!canManageData) return
     // Edit hanya boleh jika KEDUA verifikasi = 0
     if (row.verif_manager !== 0 || row.verif_ketua !== 0) return
     setSelected(row)
@@ -144,6 +149,7 @@ export default function DisposalPage() {
   }
 
   const handleSubmit = async () => {
+    if (!canManageData) return
     const e: Record<string, string> = {}
     if (!form.asset_id)      e.asset_id      = "Pilih aset"
     if (!form.tgl_pengajuan) e.tgl_pengajuan = "Isi tanggal pengajuan"
@@ -186,7 +192,7 @@ export default function DisposalPage() {
   }
 
   const handleDelete = async () => {
-    if (!selected) return
+    if (!selected || !canDeleteData) return
     setDeleting(true)
     try {
       await fetch(`/api/disposal/${selected.id}`, { method: "DELETE" })
@@ -226,7 +232,7 @@ export default function DisposalPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={refetch}><RefreshCw className="h-3.5 w-3.5" /></Button>
-          <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Buat Permohonan</Button>
+          {canManageData && <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Buat Permohonan</Button>}
         </div>
       </div>
 
@@ -265,7 +271,7 @@ export default function DisposalPage() {
               <Eye className="h-3.5 w-3.5" />
             </Button>
             {/* Edit — hanya jika belum ada verifikasi DAN user adalah admin */}
-            {row.verif_manager === 0 && row.verif_ketua === 0 && isAdmin(authUser) && (
+            {row.verif_manager === 0 && row.verif_ketua === 0 && canManageData && (
               <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--warning)" }}
                 title="Edit" onClick={() => openEdit(row)}>
                 <Pencil className="h-3.5 w-3.5" />
@@ -295,10 +301,12 @@ export default function DisposalPage() {
               </Button>
             )}
             {/* Delete */}
-            <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--danger)" }}
-              title="Hapus" onClick={() => { setSelected(row); setDeleteOpen(true) }}>
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
+            {canDeleteData && (
+              <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--danger)" }}
+                title="Hapus" onClick={() => { setSelected(row); setDeleteOpen(true) }}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
           </div>
         )}
       />
@@ -309,7 +317,7 @@ export default function DisposalPage() {
         description={selected ? "Edit hanya bisa dilakukan sebelum verifikasi dimulai" : "Isi detail permohonan penghapusan aset"}
         footer={<>
           <Button variant="outline" onClick={() => setModalOpen(false)}>Batal</Button>
-          <Button onClick={handleSubmit} disabled={saving}>{saving ? "Menyimpan..." : "Simpan Permohonan"}</Button>
+          {canManageData && <Button onClick={handleSubmit} disabled={saving}>{saving ? "Menyimpan..." : "Simpan Permohonan"}</Button>}
         </>}
       >
         <div className="space-y-4">

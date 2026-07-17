@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
+import { requireSession } from "@/lib/auth"
 import { prisma, serialize } from "@/lib/prisma"
+import { canCreateOrEditTransaksi, getTransaksiActionError } from "@/lib/transaksi-role"
 
 const BULAN_ROMAWI: Record<number, string> = {
   1:'I', 2:'II', 3:'III', 4:'IV', 5:'V', 6:'VI',
@@ -44,6 +46,12 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireSession(req)
+  if ("error" in auth) return auth.error
+  if (!canCreateOrEditTransaksi(auth.user.role)) {
+    return NextResponse.json({ error: getTransaksiActionError("create") }, { status: 403 })
+  }
+
   try {
     const body = await req.json()
     const { nomor, asset_id, tgl_pengajuan, kondisi, keterangan, dibuat_oleh } = body

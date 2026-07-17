@@ -13,13 +13,23 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params
     const body = await req.json()
-    const { tanggal_service, jenis_pekerjaan, biaya, teknisi, keterangan } = body
-    const data = await prisma.riwayat_service_acs.update({
+    const { tanggal_servis, jenis_servis, biaya, bengkel, keterangan } = body
+
+    const data = await prisma.riwayat_servis_r2r4s.update({
       where: { id: BigInt(id) },
-      data: { tanggal_service: new Date(tanggal_service), jenis_pekerjaan, biaya: biaya ? Number(biaya) : 0, teknisi: teknisi ?? null, keterangan: keterangan ?? null },
+      data: {
+        tanggal_servis: new Date(tanggal_servis),
+        jenis_servis,
+        biaya: biaya ? Number(biaya) : 0,
+        bengkel: bengkel ?? null,
+        keterangan: keterangan ?? null,
+      },
     })
+
     return NextResponse.json(serialize(data))
-  } catch { return NextResponse.json({ error: "Gagal memperbarui" }, { status: 500 }) }
+  } catch {
+    return NextResponse.json({ error: "Gagal memperbarui" }, { status: 500 })
+  }
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -31,7 +41,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   try {
     const { id } = await params
-    await prisma.riwayat_service_acs.delete({ where: { id: BigInt(id) } })
+    await prisma.riwayat_servis_r2r4s.delete({ where: { id: BigInt(id) } })
     return NextResponse.json({ success: true })
-  } catch { return NextResponse.json({ error: "Gagal menghapus" }, { status: 500 }) }
+  } catch {
+    return NextResponse.json({ error: "Gagal menghapus" }, { status: 500 })
+  }
 }

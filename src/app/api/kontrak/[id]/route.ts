@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
+import { requireSession } from "@/lib/auth"
 import { prisma, serialize } from "@/lib/prisma"
+import { canCreateOrEditTransaksi, canDeleteTransaksi, getTransaksiActionError } from "@/lib/transaksi-role"
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -11,6 +13,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireSession(req)
+  if ("error" in auth) return auth.error
+  if (!canCreateOrEditTransaksi(auth.user.role)) {
+    return NextResponse.json({ error: getTransaksiActionError("update") }, { status: 403 })
+  }
+
   try {
     const { id } = await params
     const body = await req.json()
@@ -39,7 +47,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireSession(req)
+  if ("error" in auth) return auth.error
+  if (!canDeleteTransaksi(auth.user.role)) {
+    return NextResponse.json({ error: getTransaksiActionError("delete") }, { status: 403 })
+  }
+
   try {
     const { id } = await params
     await prisma.kontrak_details.deleteMany({ where: { kontrak_id: Number(id) } })

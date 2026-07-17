@@ -11,6 +11,8 @@ import { TextField } from "@/components/ui/form-field"
 import { Plus, Eye, Pencil, Trash2, RefreshCw, Search, X, AlertCircle, Info } from "lucide-react"
 import { formatDate } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
+import { useAuth } from "@/contexts/AuthContext"
+import { canCreateOrEditTransaksi, canDeleteTransaksi } from "@/lib/transaksi-role"
 
 /* ── Types ─────────────────────────────────────────────────────── */
 interface KendaraanDetail { id: number; data_r2r4_id: number | null; plat: string; nm_brg: string; jns_brg: string }
@@ -41,9 +43,12 @@ function getMasaSewa(tglAwal: string, tglAkhir: string): number {
 
 /* ── Main Page ──────────────────────────────────────────────────── */
 export default function KontrakPage() {
+  const { user } = useAuth()
   const { data, loading, refetch } = useApi<Kontrak[]>("/api/kontrak")
   const { data: allKendaraans }    = useApi<Kendaraan[]>("/api/kendaraan")
   const list = data ?? []
+  const canManageData = canCreateOrEditTransaksi(user?.role)
+  const canDeleteData = canDeleteTransaksi(user?.role)
 
   const [modalOpen, setModalOpen]   = useState(false)
   const [viewOpen, setViewOpen]     = useState(false)
@@ -78,6 +83,7 @@ export default function KontrakPage() {
   ).slice(0, 20)
 
   const openAdd = () => {
+    if (!canManageData) return
     setEditMode(false); setSelected(null); setErrors({})
     setForm({ no_kontrak: "", judul: "", tgl_awal: "", tgl_akhir: "" })
     setSelectedKendaraans([])
@@ -86,6 +92,7 @@ export default function KontrakPage() {
   }
 
   const openEdit = (row: Kontrak) => {
+    if (!canManageData) return
     setEditMode(true); setSelected(row); setErrors({})
     setForm({ no_kontrak: row.no_kontrak ?? "", judul: row.judul, tgl_awal: row.tgl_awal?.split("T")[0] ?? "", tgl_akhir: row.tgl_akhir?.split("T")[0] ?? "" })
     setSelectedKendaraans((row.kendaraan_list ?? []).map(d => d.data_r2r4_id!).filter(Boolean))
@@ -106,6 +113,7 @@ export default function KontrakPage() {
   const getKendaraanInfo = (id: number) => (allKendaraans ?? []).find(k => k.id === id)
 
   const handleSubmit = async () => {
+    if (!canManageData) return
     const e: Record<string, string> = {}
     if (!form.judul)    e.judul    = "Wajib diisi"
     if (!form.tgl_awal) e.tgl_awal = "Wajib diisi"
@@ -126,7 +134,7 @@ export default function KontrakPage() {
   }
 
   const handleDelete = async () => {
-    if (!selected) return
+    if (!selected || !canDeleteData) return
     setDeleting(true)
     try {
       await fetch(`/api/kontrak/${selected.id}`, { method: "DELETE" })
@@ -191,7 +199,7 @@ export default function KontrakPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={refetch}><RefreshCw className="h-3.5 w-3.5" /></Button>
-          <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Tambah Kontrak</Button>
+          {canManageData && <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Tambah Kontrak</Button>}
         </div>
       </div>
 
@@ -235,10 +243,10 @@ export default function KontrakPage() {
           <div className="flex items-center justify-center gap-1">
             <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--info)" }}
               onClick={() => { setSelected(row); setViewOpen(true) }}><Eye className="h-3.5 w-3.5" /></Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--warning)" }}
-              onClick={() => openEdit(row)}><Pencil className="h-3.5 w-3.5" /></Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--danger)" }}
-              onClick={() => { setSelected(row); setDeleteOpen(true) }}><Trash2 className="h-3.5 w-3.5" /></Button>
+            {canManageData && <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--warning)" }}
+              onClick={() => openEdit(row)}><Pencil className="h-3.5 w-3.5" /></Button>}
+            {canDeleteData && <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--danger)" }}
+              onClick={() => { setSelected(row); setDeleteOpen(true) }}><Trash2 className="h-3.5 w-3.5" /></Button>}
           </div>
         )}
       />
@@ -246,7 +254,7 @@ export default function KontrakPage() {
       {/* ── Create / Edit Modal ────────────────────────────────── */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} size="lg"
         title={editMode ? "Edit Kontrak" : "Tambah Kontrak Baru"}
-        footer={<><Button variant="outline" onClick={() => setModalOpen(false)}>Batal</Button><Button onClick={handleSubmit} disabled={saving}>{saving ? "Menyimpan..." : "Simpan"}</Button></>}
+        footer={<><Button variant="outline" onClick={() => setModalOpen(false)}>Batal</Button>{canManageData && <Button onClick={handleSubmit} disabled={saving}>{saving ? "Menyimpan..." : "Simpan"}</Button>}</>}
       >
         <div className="space-y-5">
           {errors._ && <div className="rounded-lg px-4 py-3 text-sm" style={{ background: "var(--danger-bg)", color: "var(--danger)" }}>{errors._}</div>}

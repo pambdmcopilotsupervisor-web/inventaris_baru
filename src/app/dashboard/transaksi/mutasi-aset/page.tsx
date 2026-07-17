@@ -12,6 +12,8 @@ import { Plus, Pencil, Eye, Trash2, RefreshCw, Search, ArrowRight, Info } from "
 import { formatDate } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
 import { useCrud } from "@/hooks/useCrud"
+import { useAuth } from "@/contexts/AuthContext"
+import { canCreateOrEditTransaksi, canDeleteTransaksi } from "@/lib/transaksi-role"
 
 /* ── Types ─────────────────────────────────────────────────────── */
 interface MutasiAset {
@@ -78,6 +80,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 /* ── Main Page ──────────────────────────────────────────────────── */
 export default function MutasiAsetPage() {
+  const { user } = useAuth()
   const { data, loading, refetch } = useApi<MutasiAset[]>("/api/mutasi-aset")
   const { data: ruangans } = useApi<Ruangan[]>("/api/ruangan")
   const { data: karyawans } = useApi<Karyawan[]>("/api/karyawan")
@@ -88,6 +91,8 @@ export default function MutasiAsetPage() {
     apiPath: "/api/mutasi-aset",
     onSuccess: refetch,
   })
+  const canManageData = canCreateOrEditTransaksi(user?.role)
+  const canDeleteData = canDeleteTransaksi(user?.role)
 
   // Modal state
   const [modalOpen, setModalOpen]   = useState(false)
@@ -136,6 +141,7 @@ export default function MutasiAsetPage() {
 
   // Buka modal tambah
   const openAdd = () => {
+    if (!canManageData) return
     setEditMode(false)
     setSelected(null)
     setForm(EMPTY_FORM)
@@ -147,6 +153,7 @@ export default function MutasiAsetPage() {
 
   // Buka modal edit
   const openEdit = (row: MutasiAset) => {
+    if (!canManageData) return
     setEditMode(true)
     setSelected(row)
     setForm({
@@ -184,6 +191,7 @@ export default function MutasiAsetPage() {
 
   // Submit
   const handleSubmit = async () => {
+    if (!canManageData) return
     if (!validate()) return
     setSaving(true)
     try {
@@ -214,7 +222,7 @@ export default function MutasiAsetPage() {
   }
 
   const handleDelete = async () => {
-    if (!selected) return
+    if (!selected || !canDeleteData) return
     const ok = await remove(selected.id)
     if (ok) setDeleteOpen(false)
   }
@@ -271,7 +279,7 @@ export default function MutasiAsetPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={refetch}><RefreshCw className="h-3.5 w-3.5" /></Button>
-          <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Buat Mutasi</Button>
+          {canManageData && <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Buat Mutasi</Button>}
         </div>
       </div>
 
@@ -295,14 +303,18 @@ export default function MutasiAsetPage() {
               onClick={() => { setSelected(row); setViewOpen(true) }}>
               <Eye className="h-3.5 w-3.5" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--warning)" }}
-              onClick={() => openEdit(row)}>
-              <Pencil className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--danger)" }}
-              onClick={() => { setSelected(row); setDeleteOpen(true) }}>
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
+            {canManageData && (
+              <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--warning)" }}
+                onClick={() => openEdit(row)}>
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            {canDeleteData && (
+              <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--danger)" }}
+                onClick={() => { setSelected(row); setDeleteOpen(true) }}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
           </div>
         )}
       />
@@ -319,9 +331,11 @@ export default function MutasiAsetPage() {
         footer={
           <>
             <Button variant="outline" onClick={() => setModalOpen(false)}>Batal</Button>
-            <Button onClick={handleSubmit} disabled={saving}>
-              {saving ? "Menyimpan..." : editMode ? "Simpan Perubahan" : "Simpan & Update Aset"}
-            </Button>
+            {canManageData && (
+              <Button onClick={handleSubmit} disabled={saving}>
+                {saving ? "Menyimpan..." : editMode ? "Simpan Perubahan" : "Simpan & Update Aset"}
+              </Button>
+            )}
           </>
         }
       >

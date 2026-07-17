@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
+import { requireSession } from "@/lib/auth"
 import { prisma, serialize } from "@/lib/prisma"
+import { canCreateOrEditTransaksi, getTransaksiActionError } from "@/lib/transaksi-role"
 
 export async function GET() {
   try {
@@ -37,6 +39,12 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireSession(req)
+  if ("error" in auth) return auth.error
+  if (!canCreateOrEditTransaksi(auth.user.role)) {
+    return NextResponse.json({ error: getTransaksiActionError("create") }, { status: 403 })
+  }
+
   try {
     const body = await req.json()
     const { asset_id, tanggal_service, jenis_pekerjaan, biaya, teknisi, keterangan } = body

@@ -18,6 +18,8 @@ import {
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
 import { useCrud } from "@/hooks/useCrud"
+import { useAuth } from "@/contexts/AuthContext"
+import { canCreateOrEditTransaksi, canDeleteTransaksi } from "@/lib/transaksi-role"
 
 /* ── Types ─────────────────────────────────────────────────────── */
 interface Asset {
@@ -55,10 +57,13 @@ function gambarSrc(assetId: number, gambar: string | null): string | null {
 
 /* ── Main Page ──────────────────────────────────────────────────── */
 export default function AsetPage() {
+  const { user } = useAuth()
   const { data, loading, refetch } = useApi<Asset[]>("/api/aset")
   const { data: ruangans }   = useApi<Ruangan[]>("/api/ruangan")
   const { data: karyawans }  = useApi<Karyawan[]>("/api/karyawan")
   const list = data ?? []
+  const canManageData = canCreateOrEditTransaksi(user?.role)
+  const canDeleteData = canDeleteTransaksi(user?.role)
 
   const { create, update, remove, saving, deleting } = useCrud<Asset>({ apiPath: "/api/aset", onSuccess: refetch })
 
@@ -107,10 +112,17 @@ export default function AsetPage() {
   /* ── Form helpers ───────────────────────────────────────────── */
   const set = (k: keyof Asset, v: string) => setForm(f => ({ ...f, [k]: v || null }))
 
-  const openAdd = () => { setEditMode(false); setSelected(null); setForm(EMPTY); setErrors({}); setLocalPreview(null); setModalOpen(true) }
-  const openEdit = (row: Asset) => { setEditMode(true); setSelected(row); setForm(row); setErrors({}); setLocalPreview(null); setModalOpen(true) }
+  const openAdd = () => {
+    if (!canManageData) return
+    setEditMode(false); setSelected(null); setForm(EMPTY); setErrors({}); setLocalPreview(null); setModalOpen(true)
+  }
+  const openEdit = (row: Asset) => {
+    if (!canManageData) return
+    setEditMode(true); setSelected(row); setForm(row); setErrors({}); setLocalPreview(null); setModalOpen(true)
+  }
 
   const handleSubmit = async () => {
+    if (!canManageData) return
     const e: Record<string, string> = {}
     if (!form.kode_asset)  e.kode_asset  = "Wajib diisi"
     if (!form.nama_asset)  e.nama_asset  = "Wajib diisi"
@@ -122,7 +134,7 @@ export default function AsetPage() {
     if (ok) setModalOpen(false)
   }
   const handleDelete = async () => {
-    if (!selected) return
+    if (!selected || !canDeleteData) return
     const ok = await remove(selected.id)
     if (ok) setDeleteOpen(false)
   }
@@ -275,7 +287,7 @@ export default function AsetPage() {
             <FileText className="h-3.5 w-3.5 mr-1.5" />
             Cetak Laporan
           </Button>
-          <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Tambah Aset</Button>
+          {canManageData && <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Tambah Aset</Button>}
         </div>
       </div>
 
@@ -400,16 +412,20 @@ export default function AsetPage() {
                         onClick={() => { setSelected(row); setViewOpen(true) }}>
                         <Eye className="h-3.5 w-3.5" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit"
-                        style={{ color: "var(--warning)" }}
-                        onClick={() => openEdit(row)}>
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" title="Hapus"
-                        style={{ color: "var(--danger)" }}
-                        onClick={() => { setSelected(row); setDeleteOpen(true) }}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      {canManageData && (
+                        <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit"
+                          style={{ color: "var(--warning)" }}
+                          onClick={() => openEdit(row)}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      {canDeleteData && (
+                        <Button variant="ghost" size="icon" className="h-7 w-7" title="Hapus"
+                          style={{ color: "var(--danger)" }}
+                          onClick={() => { setSelected(row); setDeleteOpen(true) }}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -554,7 +570,7 @@ export default function AsetPage() {
         title={editMode ? "Edit Aset" : "Tambah Aset Baru"}
         footer={<>
           <Button variant="outline" onClick={() => setModalOpen(false)}>Batal</Button>
-          <Button onClick={handleSubmit} disabled={saving}>{saving ? "Menyimpan..." : "Simpan"}</Button>
+          {canManageData && <Button onClick={handleSubmit} disabled={saving}>{saving ? "Menyimpan..." : "Simpan"}</Button>}
         </>}
       >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -614,7 +630,7 @@ export default function AsetPage() {
                   style={{ border: "1px solid var(--border)" }}
                 />
                 {/* Tombol hapus */}
-                {editMode && selected && (
+                {editMode && selected && canManageData && (
                   <button
                     type="button"
                     disabled={uploading}
@@ -630,7 +646,7 @@ export default function AsetPage() {
             )}
 
             {/* Upload area */}
-            {editMode && selected ? (
+            {editMode && selected && canManageData ? (
               /* Edit mode: langsung upload ke API */
               <label
                 className="flex items-center gap-2 w-fit rounded-lg px-4 py-2 text-sm font-medium cursor-pointer transition-colors"

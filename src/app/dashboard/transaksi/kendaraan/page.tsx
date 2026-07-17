@@ -12,6 +12,8 @@ import { Plus, Pencil, Trash2, Eye, AlertTriangle, RefreshCw, ChevronLeft, Chevr
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
 import { useCrud } from "@/hooks/useCrud"
+import { useAuth } from "@/contexts/AuthContext"
+import { canCreateOrEditTransaksi, canDeleteTransaksi } from "@/lib/transaksi-role"
 
 /* ── Types ─────────────────────────────────────────────────────── */
 interface KontrakInfo {
@@ -69,9 +71,12 @@ const PER_PAGE = 10
 
 /* ── Main Page ──────────────────────────────────────────────────── */
 export default function KendaraanPage() {
+  const { user } = useAuth()
   const { data, loading, refetch } = useApi<Kendaraan[]>("/api/kendaraan")
   const list = data ?? []
   const { create, update, remove, saving, deleting } = useCrud<Kendaraan>({ apiPath: "/api/kendaraan", onSuccess: refetch })
+  const canManageData = canCreateOrEditTransaksi(user?.role)
+  const canDeleteData = canDeleteTransaksi(user?.role)
 
   const [modalOpen, setModalOpen]   = useState(false)
   const [viewOpen, setViewOpen]     = useState(false)
@@ -114,10 +119,12 @@ export default function KendaraanPage() {
   })
 
   const openAdd = () => {
+    if (!canManageData) return
     setEditMode(false); setSelected(null); setForm(EMPTY); setErrors({}); setLocalPreviews({})
     setModalOpen(true)
   }
   const openEdit = (row: Kendaraan) => {
+    if (!canManageData) return
     setEditMode(true); setSelected(row); setForm(row); setErrors({}); setLocalPreviews({})
     setModalOpen(true)
   }
@@ -140,6 +147,7 @@ export default function KendaraanPage() {
   }
 
   const handleSubmit = async () => {
+    if (!canManageData) return
     const e: Record<string, string> = {}
     if (!form.kode_brg) e.kode_brg = "Wajib diisi"
     if (!form.jns_brg)  e.jns_brg  = "Wajib dipilih"
@@ -154,7 +162,7 @@ export default function KendaraanPage() {
   }
 
   const handleDelete = async () => {
-    if (!selected) return
+    if (!selected || !canDeleteData) return
     const ok = await remove(selected.id)
     if (ok) setDeleteOpen(false)
   }
@@ -273,7 +281,7 @@ export default function KendaraanPage() {
             <FileText className="h-3.5 w-3.5 mr-1.5" />
             Cetak Laporan
           </Button>
-          <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Tambah Kendaraan</Button>
+          {canManageData && <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Tambah Kendaraan</Button>}
         </div>
       </div>
 
@@ -392,8 +400,8 @@ export default function KendaraanPage() {
                   <td className="px-3 py-3">
                     <div className="flex items-center gap-0.5">
                       <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--info)" }} title="Detail + Riwayat" onClick={() => openView(row)}><Eye className="h-3.5 w-3.5" /></Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--warning)" }} title="Edit" onClick={() => openEdit(row)}><Pencil className="h-3.5 w-3.5" /></Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--danger)" }} title="Hapus" onClick={() => { setSelected(row); setDeleteOpen(true) }}><Trash2 className="h-3.5 w-3.5" /></Button>
+                      {canManageData && <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--warning)" }} title="Edit" onClick={() => openEdit(row)}><Pencil className="h-3.5 w-3.5" /></Button>}
+                      {canDeleteData && <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--danger)" }} title="Hapus" onClick={() => { setSelected(row); setDeleteOpen(true) }}><Trash2 className="h-3.5 w-3.5" /></Button>}
                     </div>
                   </td>
                 </tr>
@@ -420,7 +428,7 @@ export default function KendaraanPage() {
       {/* ── Create / Edit Modal ──────────────────────────────────── */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} size="xl"
         title={editMode ? "Edit Data Kendaraan" : "Tambah Data Kendaraan"}
-        footer={<><Button variant="outline" onClick={() => setModalOpen(false)}>Batal</Button><Button onClick={handleSubmit} disabled={saving}>{saving ? "Menyimpan..." : "Simpan"}</Button></>}
+        footer={<><Button variant="outline" onClick={() => setModalOpen(false)}>Batal</Button>{canManageData && <Button onClick={handleSubmit} disabled={saving}>{saving ? "Menyimpan..." : "Simpan"}</Button>}</>}
       >
         {errors._ && <div className="mb-4 rounded-lg px-4 py-3 text-sm" style={{ background: "var(--danger-bg)", color: "var(--danger)" }}>{errors._}</div>}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -482,7 +490,7 @@ export default function KendaraanPage() {
           <TextareaField label="Deskripsi" value={form.deskripsi ?? ""} onChange={e => setF("deskripsi", e.target.value)} className="md:col-span-3" />
 
           {/* ── Upload Gambar (edit mode only) ───────────────────── */}
-          {editMode && selected && (
+          {editMode && selected && canManageData && (
             <div className="md:col-span-3 space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Gambar</p>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

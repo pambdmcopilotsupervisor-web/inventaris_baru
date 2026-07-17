@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
+import { requireSession } from "@/lib/auth"
 import { prisma, serialize } from "@/lib/prisma"
+import { canDeleteTransaksi, getTransaksiActionError } from "@/lib/transaksi-role"
 
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireSession(req)
+  if ("error" in auth) return auth.error
+  if (!canDeleteTransaksi(auth.user.role)) {
+    return NextResponse.json({ error: getTransaksiActionError("delete") }, { status: 403 })
+  }
+
   try {
     const { id } = await params
     // Ambil dulu untuk tahu kendaraan_id

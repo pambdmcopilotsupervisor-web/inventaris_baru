@@ -10,6 +10,8 @@ import { TextField, TextareaField, FormField } from "@/components/ui/form-field"
 import { Plus, Pencil, Trash2, RefreshCw, Search, Info } from "lucide-react"
 import { formatDate, formatCurrency } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
+import { useAuth } from "@/contexts/AuthContext"
+import { canCreateOrEditTransaksi, canDeleteTransaksi } from "@/lib/transaksi-role"
 
 /* ── Types ─────────────────────────────────────────────────────── */
 interface ServiceAC {
@@ -37,9 +39,12 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 const EMPTY = { asset_id: "", tanggal_service: "", jenis_pekerjaan: "", biaya: "0", teknisi: "", keterangan: "" }
 
 export default function ServiceACPage() {
+  const { user } = useAuth()
   const { data, loading, refetch } = useApi<ServiceAC[]>("/api/service-ac")
   const { data: allAssets, loading: assetsLoading } = useApi<Asset[]>("/api/aset")
   const list = data ?? []
+  const canManageData = canCreateOrEditTransaksi(user?.role)
+  const canDeleteData = canDeleteTransaksi(user?.role)
 
   const [modalOpen, setModalOpen]   = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -81,6 +86,7 @@ export default function ServiceACPage() {
   const setF = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
 
   const openAdd = () => {
+    if (!canManageData) return
     setEditMode(false); setSelected(null); setErrors({})
     setForm({ ...EMPTY, tanggal_service: new Date().toISOString().split("T")[0] })
     setAssetSearch(""); setAssetInfo(null)
@@ -88,6 +94,7 @@ export default function ServiceACPage() {
   }
 
   const openEdit = (row: ServiceAC) => {
+    if (!canManageData) return
     setEditMode(true); setSelected(row); setErrors({})
     const a = allAssets?.find(a => a.id === row.asset_id)
     setAssetSearch(a ? `${a.kode_asset} — ${a.nama_asset}` : row.nama_asset ?? `ID ${row.asset_id}`)
@@ -110,6 +117,7 @@ export default function ServiceACPage() {
   }
 
   const handleSubmit = async () => {
+    if (!canManageData) return
     const e: Record<string, string> = {}
     if (!form.asset_id)        e.asset_id        = "Pilih aset"
     if (!form.tanggal_service) e.tanggal_service  = "Isi tanggal service"
@@ -137,7 +145,7 @@ export default function ServiceACPage() {
   }
 
   const handleDelete = async () => {
-    if (!selected) return
+    if (!selected || !canDeleteData) return
     setDeleting(true)
     try {
       await fetch(`/api/service-ac/${selected.id}`, { method: "DELETE" })
@@ -187,7 +195,7 @@ export default function ServiceACPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={refetch}><RefreshCw className="h-3.5 w-3.5" /></Button>
-          <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Tambah Service</Button>
+          {canManageData && <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Tambah Service</Button>}
         </div>
       </div>
 
@@ -213,10 +221,10 @@ export default function ServiceACPage() {
         searchKeys={["nama_asset", "kode_asset", "jenis_pekerjaan", "teknisi"]} loading={loading}
         actions={(row: any) => (
           <div className="flex items-center justify-center gap-1">
-            <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--warning)" }}
-              onClick={() => openEdit(row)}><Pencil className="h-3.5 w-3.5" /></Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--danger)" }}
-              onClick={() => { setSelected(row); setDeleteOpen(true) }}><Trash2 className="h-3.5 w-3.5" /></Button>
+            {canManageData && <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--warning)" }}
+              onClick={() => openEdit(row)}><Pencil className="h-3.5 w-3.5" /></Button>}
+            {canDeleteData && <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--danger)" }}
+              onClick={() => { setSelected(row); setDeleteOpen(true) }}><Trash2 className="h-3.5 w-3.5" /></Button>}
           </div>
         )}
       />
@@ -227,7 +235,7 @@ export default function ServiceACPage() {
         description="Catat riwayat pemeliharaan atau perbaikan aset"
         footer={<>
           <Button variant="outline" onClick={() => setModalOpen(false)}>Batal</Button>
-          <Button onClick={handleSubmit} disabled={saving}>{saving ? "Menyimpan..." : "Simpan"}</Button>
+          {canManageData && <Button onClick={handleSubmit} disabled={saving}>{saving ? "Menyimpan..." : "Simpan"}</Button>}
         </>}
       >
         <div className="space-y-5">

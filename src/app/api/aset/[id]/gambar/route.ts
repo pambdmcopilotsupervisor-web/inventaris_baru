@@ -80,7 +80,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireRole(req, ["admin", "hrd", "operator"])
+  const auth = await requireRole(req, ["admin", "operator"])
   if ("error" in auth) return auth.error
 
   try {
@@ -134,7 +134,7 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireRole(req, ["admin", "hrd", "operator"])
+  const auth = await requireRole(req, ["admin", "operator"])
   if ("error" in auth) return auth.error
 
   try {

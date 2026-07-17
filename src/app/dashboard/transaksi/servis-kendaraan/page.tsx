@@ -11,6 +11,8 @@ import { Plus, Pencil, Trash2, RefreshCw, Search, Info } from "lucide-react"
 import { formatDate, formatCurrency } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
 import { useCrud } from "@/hooks/useCrud"
+import { useAuth } from "@/contexts/AuthContext"
+import { canCreateOrEditTransaksi, canDeleteTransaksi } from "@/lib/transaksi-role"
 
 /* ── Types ─────────────────────────────────────────────────────── */
 interface ServisKendaraan {
@@ -38,10 +40,13 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 const EMPTY = { data_r2r4_id: "", tanggal_servis: "", jenis_servis: "", biaya: "0", bengkel: "", keterangan: "" }
 
 export default function ServisKendaraanPage() {
+  const { user } = useAuth()
   const { data, loading, refetch } = useApi<ServisKendaraan[]>("/api/servis-kendaraan")
   const { data: allKendaraans }    = useApi<Kendaraan[]>("/api/kendaraan")
   const list = data ?? []
   const { remove, deleting } = useCrud<ServisKendaraan>({ apiPath: "/api/servis-kendaraan", onSuccess: refetch })
+  const canManageData = canCreateOrEditTransaksi(user?.role)
+  const canDeleteData = canDeleteTransaksi(user?.role)
 
   const [modalOpen, setModalOpen]   = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -86,6 +91,7 @@ export default function ServisKendaraanPage() {
   }
 
   const openAdd = () => {
+    if (!canManageData) return
     setEditMode(false); setSelected(null); setErrors({})
     setForm({ ...EMPTY, tanggal_servis: new Date().toISOString().split("T")[0] })
     setKendaraanSearch(""); setVehicleInfo(null)
@@ -93,6 +99,7 @@ export default function ServisKendaraanPage() {
   }
 
   const openEdit = (row: ServisKendaraan) => {
+    if (!canManageData) return
     setEditMode(true); setSelected(row); setErrors({})
     const k = (allKendaraans ?? []).find(k => k.id === row.data_r2r4_id)
     setKendaraanSearch(k ? `${k.plat} - ${k.nm_brg}${k.departemen ? ` (${k.departemen})` : ""}` : row.plat ?? `ID ${row.data_r2r4_id}`)
@@ -109,6 +116,7 @@ export default function ServisKendaraanPage() {
   }
 
   const handleSubmit = async () => {
+    if (!canManageData) return
     const e: Record<string, string> = {}
     if (!form.data_r2r4_id)    e.data_r2r4_id    = "Pilih kendaraan"
     if (!form.tanggal_servis)  e.tanggal_servis  = "Isi tanggal servis"
@@ -137,7 +145,7 @@ export default function ServisKendaraanPage() {
   }
 
   const handleDelete = async () => {
-    if (!selected) return
+    if (!selected || !canDeleteData) return
     const ok = await remove(selected.id)
     if (ok) setDeleteOpen(false)
   }
@@ -184,7 +192,7 @@ export default function ServisKendaraanPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={refetch}><RefreshCw className="h-3.5 w-3.5" /></Button>
-          <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Tambah Service</Button>
+          {canManageData && <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Tambah Service</Button>}
         </div>
       </div>
 
@@ -210,10 +218,10 @@ export default function ServisKendaraanPage() {
         searchKeys={["jenis_servis", "bengkel"]} loading={loading}
         actions={(row: any) => (
           <div className="flex items-center justify-center gap-1">
-            <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--warning)" }}
-              onClick={() => openEdit(row)}><Pencil className="h-3.5 w-3.5" /></Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--danger)" }}
-              onClick={() => { setSelected(row); setDeleteOpen(true) }}><Trash2 className="h-3.5 w-3.5" /></Button>
+            {canManageData && <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--warning)" }}
+              onClick={() => openEdit(row)}><Pencil className="h-3.5 w-3.5" /></Button>}
+            {canDeleteData && <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--danger)" }}
+              onClick={() => { setSelected(row); setDeleteOpen(true) }}><Trash2 className="h-3.5 w-3.5" /></Button>}
           </div>
         )}
       />
@@ -224,7 +232,7 @@ export default function ServisKendaraanPage() {
         description="Catat riwayat service & perbaikan kendaraan"
         footer={<>
           <Button variant="outline" onClick={() => setModalOpen(false)}>Batal</Button>
-          <Button onClick={handleSubmit} disabled={saving}>{saving ? "Menyimpan..." : "Simpan"}</Button>
+          {canManageData && <Button onClick={handleSubmit} disabled={saving}>{saving ? "Menyimpan..." : "Simpan"}</Button>}
         </>}
       >
         <div className="space-y-5">
