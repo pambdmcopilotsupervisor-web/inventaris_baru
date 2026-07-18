@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Users, Building2, GitBranch, DoorOpen, UserCog,
   Archive, Truck, FileText, ArrowLeftRight, UserMinus, Trash2,
   Wrench, AirVent, CreditCard, ShoppingCart, UserX, BarChart3,
-  TrendingUp, Receipt, ChevronDown, ChevronRight, Package, X,
+  TrendingUp, Receipt, ChevronDown, ChevronRight, Package,
     Clock, CalendarDays, CalendarOff, CalendarCheck, AlertTriangle, CalendarX,
     MapPin, Banknote, Settings2, ClipboardList, PlayCircle, Wallet,
 } from "lucide-react"

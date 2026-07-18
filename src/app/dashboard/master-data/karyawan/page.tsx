@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useCallback } from "react"
+import React, { useState, useEffect } from "react"
 import { DataTable, Column } from "@/components/ui/data-table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -9,7 +9,7 @@ import { Modal } from "@/components/ui/modal"
 import { ConfirmDelete } from "@/components/ui/confirm-delete"
 import { TextField, SelectField, TextareaField } from "@/components/ui/form-field"
 import { SearchableSelect } from "@/components/ui/searchable-select"
-import { Plus, Pencil, Trash2, Eye, RefreshCw, Users, IdCard, Wallet } from "lucide-react"
+import { Plus, Pencil, Trash2, Eye, RefreshCw } from "lucide-react"
 import { formatDate } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
 
@@ -225,8 +225,6 @@ export default function KaryawanPage() {
         actions={(row: any) => (
           <div className="flex items-center justify-center gap-1">
             <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--info)" }}    onClick={() => { setSelected(row); setViewOpen(true) }}><Eye className="h-3.5 w-3.5" /></Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "#166534" }} title="Cetak ID Card" onClick={() => window.open(`/cetak-id-karyawan/${row.id}`, "_blank")}><IdCard className="h-3.5 w-3.5" /></Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--primary)" }} title="Komponen Gaji" onClick={() => { window.location.href = `/dashboard/payroll/employees/${row.id}/salary` }}><Wallet className="h-3.5 w-3.5" /></Button>
             <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--warning)" }} onClick={() => openEdit(row)}><Pencil className="h-3.5 w-3.5" /></Button>
             <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--danger)" }}  onClick={() => { setSelected(row); setDeleteOpen(true) }}><Trash2 className="h-3.5 w-3.5" /></Button>
           </div>

@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input"
 import {
   Plus, Pencil, Trash2, Eye, QrCode, Printer, RefreshCw,
   Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-  Package2, Filter, FileText, ImagePlus, X, ImageOff,
+  FileText, ImagePlus, X,
 } from "lucide-react"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
@@ -34,6 +34,34 @@ interface Asset {
 }
 interface Ruangan { id: number; ruangan: string; lokasi: string }
 interface Karyawan { id: number; nik: string; nama_karyawan: string }
+interface AssetReportRow {
+  kode_asset: string
+  nama_asset: string
+  kelompok_asset: string
+  tgl_beli: string | null
+  hrg_beli: number | null
+  nama_ruangan?: string | null
+  lokasi?: string | null
+  nama_pj?: string | null
+  nama_pemakai?: string | null
+  status_barang: string
+}
+interface BarcodePrintAsset {
+  id: number
+  kode_asset: string
+  nama_asset: string
+  kelompok_asset: string
+  divisi_pj: string | null
+  status_barang: string
+  nama_ruangan?: string | null
+  lokasi?: string | null
+}
+interface BarcodePrintMeta {
+  ruangan: string | null
+  kondisi: string | null
+  lokasi: string | null
+  total: number
+}
 
 const EMPTY: Partial<Asset> = { kelompok_asset: "komputer", status_barang: "Baik" }
 const PER_PAGE = 10
@@ -61,7 +89,7 @@ export default function AsetPage() {
   const { data, loading, refetch } = useApi<Asset[]>("/api/aset")
   const { data: ruangans }   = useApi<Ruangan[]>("/api/ruangan")
   const { data: karyawans }  = useApi<Karyawan[]>("/api/karyawan")
-  const list = data ?? []
+  const list = useMemo(() => data ?? [], [data])
   const canManageData = canCreateOrEditTransaksi(user?.role)
   const canDeleteData = canDeleteTransaksi(user?.role)
 
@@ -84,27 +112,83 @@ export default function AsetPage() {
   /* ── Filters & pagination ───────────────────────────────────── */
   const [search, setSearch]       = useState("")
   const [kelompokFilter, setKelompokFilter] = useState<string>("")
+  const [divisiFilter, setDivisiFilter] = useState<string>("")
+  const [ruanganFilter, setRuanganFilter] = useState<string>("")
   const [page, setPage]           = useState(1)
+
+  const divisiOptions = useMemo(() => {
+    return Array.from(
+      new Set(
+        list
+          .map((asset) => asset.divisi_pj?.trim())
+          .filter((value): value is string => Boolean(value))
+      )
+    ).sort((a, b) => a.localeCompare(b, "id"))
+  }, [list])
+
+  const ruanganOptions = useMemo(() => {
+    return Array.from(
+      new Set(
+        list
+          .map((asset) => asset.nama_ruangan?.trim())
+          .filter((value): value is string => Boolean(value))
+      )
+    ).sort((a, b) => a.localeCompare(b, "id"))
+  }, [list])
+
+  const lokasiOptions = useMemo(() => {
+    return Array.from(
+      new Set(
+        list
+          .map((asset) => asset.lokasi?.trim())
+          .filter((value): value is string => Boolean(value))
+      )
+    ).sort((a, b) => a.localeCompare(b, "id"))
+  }, [list])
 
   /* ── Multi-select untuk cetak barcode massal ────────────────── */
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [barcodeOpen, setBarcodeOpen] = useState(false)
+  const [barcodeRuangan, setBarcodeRuangan] = useState("")
+  const [barcodeKondisi, setBarcodeKondisi] = useState("")
+  const [barcodeLokasi, setBarcodeLokasi] = useState("")
+  const [barcodeDownloading, setBarcodeDownloading] = useState(false)
 
   const toggleSelect = (id: number) =>
-    setSelectedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+    setSelectedIds(prev => {
+      const s = new Set(prev)
+      if (s.has(id)) {
+        s.delete(id)
+      } else {
+        s.add(id)
+      }
+      return s
+    })
   const toggleAll = () => {
     if (selectedIds.size === filtered.length) setSelectedIds(new Set())
     else setSelectedIds(new Set(filtered.map(a => a.id)))
   }
 
   /* ── Filter data ────────────────────────────────────────────── */
-  const filtered = useMemo(() => {
-    return list.filter(a => {
-      const matchSearch = !search || [a.kode_asset, a.nama_asset, a.pemakai ?? "", a.nama_pj ?? ""]
-        .some(v => v.toLowerCase().includes(search.toLowerCase()))
-      const matchKelompok = !kelompokFilter || a.kelompok_asset === kelompokFilter
-      return matchSearch && matchKelompok
-    })
-  }, [list, search, kelompokFilter])
+  const filtered = list.filter(a => {
+    const matchSearch = !search || [a.kode_asset, a.nama_asset, a.pemakai ?? "", a.nama_pj ?? "", a.divisi_pj ?? "", a.nama_ruangan ?? ""]
+      .some(v => v.toLowerCase().includes(search.toLowerCase()))
+    const matchKelompok = !kelompokFilter || a.kelompok_asset === kelompokFilter
+    const matchDivisi = !divisiFilter || (a.divisi_pj ?? "") === divisiFilter
+    const matchRuangan = !ruanganFilter || (a.nama_ruangan ?? "") === ruanganFilter
+    return matchSearch && matchKelompok && matchDivisi && matchRuangan
+  })
+
+  const barcodeSource = selectedIds.size > 0
+    ? list.filter((asset) => selectedIds.has(asset.id))
+    : filtered
+
+  const barcodeFilteredAssets = barcodeSource.filter((asset) => {
+    const matchRuangan = !barcodeRuangan || (asset.nama_ruangan ?? "") === barcodeRuangan
+    const matchKondisi = !barcodeKondisi || asset.status_barang === barcodeKondisi
+    const matchLokasi = !barcodeLokasi || (asset.lokasi ?? "") === barcodeLokasi
+    return matchRuangan && matchKondisi && matchLokasi
+  })
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE))
   const paginated  = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE)
@@ -129,7 +213,22 @@ export default function AsetPage() {
     if (!form.kelompok_asset) e.kelompok_asset = "Wajib dipilih"
     setErrors(e); if (Object.keys(e).length) return
 
-    const { nama_ruangan: _nr, lokasi: _l, nama_pj: _np, divisi_pj: _dp, nama_pemakai: _npm, ...payload } = form as any
+    const payload: Partial<Asset> = {
+      id: form.id,
+      kode_asset: form.kode_asset,
+      nama_asset: form.nama_asset,
+      kelompok_asset: form.kelompok_asset,
+      ruangan_id: form.ruangan_id,
+      penanggung_jawab_id: form.penanggung_jawab_id,
+      karyawan_id: form.karyawan_id,
+      pemakai: form.pemakai,
+      status_barang: form.status_barang,
+      tgl_beli: form.tgl_beli,
+      hrg_beli: form.hrg_beli,
+      deskripsi: form.deskripsi,
+      gambar: form.gambar,
+      kode_nama: form.kode_nama,
+    }
     const ok = editMode && selected ? await update(selected.id, payload) : await create(payload)
     if (ok) setModalOpen(false)
   }
@@ -181,18 +280,65 @@ export default function AsetPage() {
   }
 
   /* ── Cetak barcode massal ───────────────────────────────────── */
-  const handleCetakBarcode = () => {
-    const ids = selectedIds.size > 0 ? selectedIds : new Set(filtered.map(a => a.id))
-    const cetakData = list.filter(a => ids.has(a.id)).map(a => ({
-      id:           a.id,
-      kode_asset:   a.kode_asset,
-      nama_asset:   a.nama_asset,
+  const openBarcodeModal = () => {
+    setBarcodeRuangan("")
+    setBarcodeKondisi("")
+    setBarcodeLokasi("")
+    setBarcodeOpen(true)
+  }
+
+  const handleCetakBarcode = async (assetsToPrint: BarcodePrintAsset[]) => {
+    const cetakData = assetsToPrint.map((a) => ({
+      id: a.id,
+      kode_asset: a.kode_asset,
+      nama_asset: a.nama_asset,
       kelompok_asset: a.kelompok_asset,
-      divisi_pj:    a.divisi_pj,
+      divisi_pj: a.divisi_pj,
       status_barang: a.status_barang,
+      nama_ruangan: a.nama_ruangan ?? null,
+      lokasi: a.lokasi ?? null,
     }))
-    sessionStorage.setItem("cetak-barcode-assets", JSON.stringify(cetakData))
-    window.open("/cetak-barcode", "_blank")
+
+    const meta: BarcodePrintMeta = {
+      ruangan: barcodeRuangan || null,
+      kondisi: barcodeKondisi || null,
+      lokasi: barcodeLokasi || null,
+      total: cetakData.length,
+    }
+
+    setBarcodeDownloading(true)
+    try {
+      const response = await fetch("/api/aset/barcode-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assets: cetakData, meta }),
+      })
+
+      if (!response.ok) {
+        let message = "Gagal mengunduh PDF barcode"
+        try {
+          const json = await response.json() as { error?: string }
+          message = json.error ?? message
+        } catch {}
+        throw new Error(message)
+      }
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = `Barcode_Aset_${new Date().toISOString().slice(0, 10)}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      setBarcodeOpen(false)
+      setQrOpen(false)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Gagal mengunduh PDF barcode")
+    } finally {
+      setBarcodeDownloading(false)
+    }
   }
 
   /* ── Cetak Laporan ─────────────────────────────────────────── */
@@ -219,7 +365,7 @@ export default function AsetPage() {
         // Excel export menggunakan xlsx
         const qs = new URLSearchParams(params)
         const res = await fetch(`/api/laporan/aset?${qs}`)
-        const rows = await res.json()
+        const rows: AssetReportRow[] = await res.json()
 
         const { utils, writeFile } = await import("xlsx")
         const wb = utils.book_new()
@@ -231,7 +377,7 @@ export default function AsetPage() {
           [`Dicetak pada: ${new Date().toLocaleString("id-ID")}`],
           [],
           ["No", "Kode Aset", "Nama Aset", "Kelompok", "Tgl Beli", "Harga Beli", "Lokasi/Ruangan", "Penanggung Jawab", "Pemakai", "Kondisi"],
-          ...rows.map((r: any, i: number) => [
+          ...rows.map((r, i: number) => [
             i + 1,
             r.kode_asset,
             r.nama_asset,
@@ -243,7 +389,7 @@ export default function AsetPage() {
             r.nama_pemakai ?? "-",
             r.status_barang,
           ]),
-          ["", "", "", "", "Total Nilai Aset:", rows.reduce((s: number, r: any) => s + (Number(r.hrg_beli) || 0), 0)],
+          ["", "", "", "", "Total Nilai Aset:", rows.reduce((s: number, r) => s + (Number(r.hrg_beli) || 0), 0)],
         ]
 
         const ws = utils.aoa_to_sheet(wsData)
@@ -278,9 +424,9 @@ export default function AsetPage() {
         </div>
         <div className="flex gap-2 flex-wrap">
           <Button variant="outline" size="sm" onClick={refetch}><RefreshCw className="h-3.5 w-3.5" /></Button>
-          <Button variant="outline" size="sm" onClick={handleCetakBarcode}>
+          <Button variant="outline" size="sm" onClick={openBarcodeModal}>
             <Printer className="h-3.5 w-3.5 mr-1.5" />
-            Cetak Barcode {selectedIds.size > 0 ? `(${selectedIds.size})` : `(${filtered.length})`}
+            Unduh Barcode PDF {selectedIds.size > 0 ? `(${selectedIds.size})` : `(${filtered.length})`}
           </Button>
           <Button variant="outline" size="sm" style={{ color: "var(--info)", borderColor: "var(--info)" }}
             onClick={() => { setLaporanKelompok(""); setLaporanRuangan(""); setLaporanStatus(""); setLaporanFormat("pdf"); setLaporanOpen(true) }}>
@@ -305,7 +451,7 @@ export default function AsetPage() {
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 min-w-48 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5" style={{ color: "var(--text-subtle)" }} />
-          <Input placeholder="Cari kode, nama, pemakai..." value={search}
+          <Input placeholder="Cari kode, nama, pemakai, divisi, ruangan..." value={search}
             onChange={e => { setSearch(e.target.value); setPage(1) }} className="pl-9 h-8" />
         </div>
         <select
@@ -318,8 +464,30 @@ export default function AsetPage() {
           <option value="komputer">Peralatan Komputer</option>
           <option value="kantor">Perabotan Kantor</option>
         </select>
-        {(search || kelompokFilter) && (
-          <Button variant="ghost" size="sm" onClick={() => { setSearch(""); setKelompokFilter(""); setPage(1) }}>
+        <select
+          value={divisiFilter}
+          onChange={e => { setDivisiFilter(e.target.value); setPage(1) }}
+          className="h-8 rounded-lg px-3 text-sm cursor-pointer"
+          style={{ border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--text-900)" }}
+        >
+          <option value="">Semua Divisi</option>
+          {divisiOptions.map((divisi) => (
+            <option key={divisi} value={divisi}>{divisi}</option>
+          ))}
+        </select>
+        <select
+          value={ruanganFilter}
+          onChange={e => { setRuanganFilter(e.target.value); setPage(1) }}
+          className="h-8 rounded-lg px-3 text-sm cursor-pointer"
+          style={{ border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--text-900)" }}
+        >
+          <option value="">Semua Ruangan</option>
+          {ruanganOptions.map((ruangan) => (
+            <option key={ruangan} value={ruangan}>{ruangan}</option>
+          ))}
+        </select>
+        {(search || kelompokFilter || divisiFilter || ruanganFilter) && (
+          <Button variant="ghost" size="sm" onClick={() => { setSearch(""); setKelompokFilter(""); setDivisiFilter(""); setRuanganFilter(""); setPage(1) }}>
             Reset Filter
           </Button>
         )}
@@ -498,18 +666,105 @@ export default function AsetPage() {
             {/* Print single */}
             <div className="flex justify-center mt-4">
               <Button variant="outline" size="sm" onClick={() => {
-                sessionStorage.setItem("cetak-barcode-assets", JSON.stringify([{
-                  id: selected.id, kode_asset: selected.kode_asset,
-                  nama_asset: selected.nama_asset, kelompok_asset: selected.kelompok_asset,
-                  divisi_pj: selected.divisi_pj, status_barang: selected.status_barang,
-                }]))
-                window.open("/cetak-barcode", "_blank")
+                handleCetakBarcode([{
+                  id: selected.id,
+                  kode_asset: selected.kode_asset,
+                  nama_asset: selected.nama_asset,
+                  kelompok_asset: selected.kelompok_asset,
+                  divisi_pj: selected.divisi_pj,
+                  status_barang: selected.status_barang,
+                  nama_ruangan: selected.nama_ruangan,
+                  lokasi: selected.lokasi,
+                }])
               }}>
-                <Printer className="h-3.5 w-3.5 mr-1.5" /> Cetak Stiker Ini
+                <Printer className="h-3.5 w-3.5 mr-1.5" /> Unduh PDF Stiker Ini
               </Button>
             </div>
           </div>
         )}
+      </Modal>
+
+      <Modal
+        open={barcodeOpen}
+        onClose={() => setBarcodeOpen(false)}
+        size="md"
+        title="Unduh Barcode Aset ke PDF"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setBarcodeOpen(false)} disabled={barcodeDownloading}>Batal</Button>
+            <Button
+              onClick={() => handleCetakBarcode(barcodeFilteredAssets)}
+              disabled={barcodeFilteredAssets.length === 0 || barcodeDownloading}
+            >
+              <Printer className="h-3.5 w-3.5 mr-1.5" />
+              {barcodeDownloading ? "Mengunduh..." : "Unduh Barcode PDF"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-xs" style={{ color: "var(--text-subtle)" }}>
+            Filter tambahan untuk unduh barcode. Sistem akan langsung membuat dan menyimpan file PDF.
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Ruangan</label>
+              <select
+                value={barcodeRuangan}
+                onChange={(e) => setBarcodeRuangan(e.target.value)}
+                className="h-8 w-full rounded-lg px-3 text-sm"
+                style={{ border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--text-900)" }}
+              >
+                <option value="">Semua Ruangan</option>
+                {ruanganOptions.map((ruangan) => (
+                  <option key={ruangan} value={ruangan}>{ruangan}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Kondisi</label>
+              <select
+                value={barcodeKondisi}
+                onChange={(e) => setBarcodeKondisi(e.target.value)}
+                className="h-8 w-full rounded-lg px-3 text-sm"
+                style={{ border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--text-900)" }}
+              >
+                <option value="">Semua Kondisi</option>
+                <option value="Baik">Baik</option>
+                <option value="Rusak Ringan">Rusak Ringan</option>
+                <option value="Disposal">Disposal</option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Lokasi</label>
+              <select
+                value={barcodeLokasi}
+                onChange={(e) => setBarcodeLokasi(e.target.value)}
+                className="h-8 w-full rounded-lg px-3 text-sm"
+                style={{ border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--text-900)" }}
+              >
+                <option value="">Semua Lokasi</option>
+                {lokasiOptions.map((lokasi) => (
+                  <option key={lokasi} value={lokasi}>{lokasi}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="rounded-xl p-4" style={{ background: "var(--surface-muted)", border: "1px solid var(--border)" }}>
+            <p className="text-sm font-semibold" style={{ color: "var(--text-900)" }}>
+              {selectedIds.size > 0
+                ? `${selectedIds.size} aset dipilih manual`
+                : `${filtered.length} aset mengikuti filter tabel saat ini`}
+            </p>
+            <p className="text-xs mt-1" style={{ color: "var(--text-subtle)" }}>
+              Hasil cetak setelah filter barcode: <span className="font-semibold">{barcodeFilteredAssets.length}</span> aset
+            </p>
+          </div>
+        </div>
       </Modal>
 
       {/* ── Detail View Modal ────────────────────────────────────── */}

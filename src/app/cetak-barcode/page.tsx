@@ -10,18 +10,36 @@ interface AssetData {
   kelompok_asset: string
   divisi_pj: string | null
   status_barang: string
+  nama_ruangan?: string | null
+  lokasi?: string | null
+}
+
+interface BarcodePrintMeta {
+  ruangan: string | null
+  kondisi: string | null
+  lokasi: string | null
+  total: number
 }
 
 export default function CetakBarcodePage() {
-  const [assets, setAssets] = useState<AssetData[]>([])
-
-  useEffect(() => {
-    // Baca daftar aset dari localStorage (dikirim dari halaman inventaris)
+  const [assets] = useState<AssetData[]>(() => {
+    if (typeof window === "undefined") return []
     try {
       const raw = sessionStorage.getItem("cetak-barcode-assets")
-      if (raw) setAssets(JSON.parse(raw))
-    } catch {}
-  }, [])
+      return raw ? JSON.parse(raw) : []
+    } catch {
+      return []
+    }
+  })
+  const [meta] = useState<BarcodePrintMeta | null>(() => {
+    if (typeof window === "undefined") return null
+    try {
+      const rawMeta = sessionStorage.getItem("cetak-barcode-meta")
+      return rawMeta ? JSON.parse(rawMeta) : null
+    } catch {
+      return null
+    }
+  })
 
   // Auto print setelah load
   useEffect(() => {
@@ -75,6 +93,61 @@ export default function CetakBarcodePage() {
           color: #ef4444; padding: 4px 6px;
           border-top: 1px dashed #cbd5e1;
         }
+        .print-summary {
+          margin: 12px;
+          padding: 10px 12px;
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+        }
+        .summary-title {
+          font-size: 12px;
+          font-weight: 700;
+          color: #0f172a;
+          margin-bottom: 6px;
+        }
+        .summary-grid {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 8px;
+        }
+        .summary-item {
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          border-radius: 6px;
+          padding: 8px;
+        }
+        .summary-label {
+          font-size: 10px;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          color: #64748b;
+          margin-bottom: 2px;
+        }
+        .summary-value {
+          font-size: 12px;
+          font-weight: 600;
+          color: #0f172a;
+        }
+        @media print {
+          .print-summary {
+            margin: 0 0 8px;
+            padding: 8px 10px;
+          }
+          .summary-grid {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 6px;
+          }
+          .summary-item {
+            padding: 6px;
+          }
+          .summary-label {
+            font-size: 9px;
+          }
+          .summary-value {
+            font-size: 10px;
+          }
+        }
       `}</style>
 
       {/* Controls - only visible on screen, not print */}
@@ -83,7 +156,7 @@ export default function CetakBarcodePage() {
           onClick={() => window.print()}
           style={{ background: "#1E40AF", color: "#fff", padding: "8px 20px", borderRadius: 8, border: "none", fontWeight: 600, cursor: "pointer", fontSize: 14 }}
         >
-          Cetak / Print
+          Simpan / Cetak PDF
         </button>
         <button
           onClick={() => window.close()}
@@ -92,61 +165,91 @@ export default function CetakBarcodePage() {
           Tutup
         </button>
         <span style={{ color: "#64748B", fontSize: 13 }}>
-          {assets.length} stiker akan dicetak ({Math.ceil(assets.length / 2)} baris)
+          {assets.length} stiker siap diubah ke PDF ({Math.ceil(assets.length / 2)} baris)
         </span>
       </div>
 
       {assets.length === 0 ? (
         <div style={{ padding: 40, textAlign: "center", color: "#94A3B8" }}>
           <p style={{ fontSize: 16 }}>Tidak ada aset yang dipilih untuk dicetak.</p>
-          <p style={{ fontSize: 13, marginTop: 8 }}>Kembali ke halaman Inventaris Aset dan pilih aset terlebih dahulu.</p>
+          <p style={{ fontSize: 13, marginTop: 8 }}>Kembali ke halaman Inventaris Aset dan pilih/filter aset terlebih dahulu.</p>
         </div>
       ) : (
-        /* 2 stiker per baris — lebar fixed 88mm */
-        <div className="sticker-grid">
-          {assets.map((asset) => (
-            <div key={asset.id} className="sticker">
-              {/* Header */}
-              <div className="sticker-header">
-                Inventaris Koperasi Konsumen Pedami
+        <>
+          <div className="print-summary">
+            <div className="summary-title">Ringkasan Cetak Barcode PDF</div>
+            <div className="summary-grid">
+              <div className="summary-item">
+                <div className="summary-label">Total Aset</div>
+                <div className="summary-value">{meta?.total ?? assets.length}</div>
               </div>
-
-              {/* Body */}
-              <div className="sticker-body">
-                {/* Info */}
-                <div className="sticker-info">
-                  <div className="asset-code">{asset.kode_asset}</div>
-                  <div className="asset-name">
-                    {asset.nama_asset.length > 32
-                      ? asset.nama_asset.slice(0, 32) + "..."
-                      : asset.nama_asset}
-                  </div>
-                  <div className="asset-divisi">
-                    {asset.divisi_pj ?? "Tanpa Divisi"}
-                  </div>
-                </div>
-
-                {/* QR Code */}
-                <div className="sticker-qr">
-                  <div style={{ border: "1px solid #e2e8f0", padding: 3, borderRadius: 4, display: "inline-block", background: "#fff" }}>
-                    <QRCodeSVG
-                      value={`${origin}/info-asset/${asset.id}`}
-                      size={52}
-                      bgColor="#ffffff"
-                      fgColor="#0f172a"
-                      level="M"
-                    />
-                  </div>
-                </div>
+              <div className="summary-item">
+                <div className="summary-label">Ruangan</div>
+                <div className="summary-value">{meta?.ruangan ?? "Semua Ruangan"}</div>
               </div>
-
-              {/* Footer */}
-              <div className="sticker-footer">
-                Dilarang mencabut/melepas stiker ini!
+              <div className="summary-item">
+                <div className="summary-label">Kondisi</div>
+                <div className="summary-value">{meta?.kondisi ?? "Semua Kondisi"}</div>
+              </div>
+              <div className="summary-item">
+                <div className="summary-label">Lokasi</div>
+                <div className="summary-value">{meta?.lokasi ?? "Semua Lokasi"}</div>
               </div>
             </div>
-          ))}
-        </div>
+          </div>
+
+          {/* 2 stiker per baris — lebar fixed 88mm */}
+          <div className="sticker-grid">
+            {assets.map((asset) => (
+              <div key={asset.id} className="sticker">
+                {/* Header */}
+                <div className="sticker-header">
+                  Inventaris Koperasi Konsumen Pedami
+                </div>
+
+                {/* Body */}
+                <div className="sticker-body">
+                  {/* Info */}
+                  <div className="sticker-info">
+                    <div className="asset-code">{asset.kode_asset}</div>
+                    <div className="asset-name">
+                      {asset.nama_asset.length > 32
+                        ? asset.nama_asset.slice(0, 32) + "..."
+                        : asset.nama_asset}
+                    </div>
+                    <div className="asset-divisi">
+                      {asset.divisi_pj ?? "Tanpa Divisi"}
+                    </div>
+                    {(asset.nama_ruangan || asset.lokasi) && (
+                      <div className="asset-name" style={{ marginTop: 4, fontSize: 8.5 }}>
+                        {asset.nama_ruangan ?? "Tanpa Ruangan"}
+                        {asset.lokasi ? ` • ${asset.lokasi}` : ""}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* QR Code */}
+                  <div className="sticker-qr">
+                    <div style={{ border: "1px solid #e2e8f0", padding: 3, borderRadius: 4, display: "inline-block", background: "#fff" }}>
+                      <QRCodeSVG
+                        value={`${origin}/info-asset/${asset.id}`}
+                        size={52}
+                        bgColor="#ffffff"
+                        fgColor="#0f172a"
+                        level="M"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div className="sticker-footer">
+                  Dilarang mencabut/melepas stiker ini!
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   )
