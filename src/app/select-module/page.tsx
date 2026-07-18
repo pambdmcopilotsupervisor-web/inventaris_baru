@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useMemo, useState, Suspense } from "react"
 import { Archive, Users, LogOut, ClipboardCheck, Banknote, Lock } from "lucide-react"
 import { getModulePath } from "@/lib/module-navigation"
+import { AppLogo } from "@/components/layout/app-logo"
 
 type ModuleStatus = { aset: boolean; sdm: boolean; kinerja: boolean; keuangan: boolean }
 
@@ -97,10 +98,7 @@ function SelectModuleContent() {
       {/* Header */}
       <div className="text-center mb-12">
         <div className="inline-flex items-center gap-3 mb-4">
-          <div className="h-12 w-12 rounded-xl flex items-center justify-center"
-            style={{ background: "#1E40AF" }}>
-            <Archive className="h-6 w-6 text-white" />
-          </div>
+          <AppLogo className="h-12 w-12 rounded-xl" priority />
           <div className="text-left">
             <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "#94A3B8" }}>
               Koperasi Konsumen

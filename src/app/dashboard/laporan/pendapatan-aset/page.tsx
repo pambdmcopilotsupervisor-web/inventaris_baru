@@ -3,16 +3,25 @@
 import React, { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Modal } from "@/components/ui/modal"
 import { Select } from "@/components/ui/select"
-import { RefreshCw } from "lucide-react"
-import { formatCurrency } from "@/lib/utils"
+import { FileText, RefreshCw } from "lucide-react"
 import { useApi } from "@/hooks/useApi"
 
 /* ── Types ─────────────────────────────────────────────────────── */
 interface IncomeRow {
   label: string; months: Record<number, number>; total: number
 }
-interface TrendEntry { added: any[]; removed: any[] }
+interface TrendVehicleItem {
+  id: number
+  kode: string
+  plat: string
+  nama: string
+  pemegang: string
+  departemen: string
+  hrg: number
+}
+interface TrendEntry { added: TrendVehicleItem[]; removed: TrendVehicleItem[] }
 interface ReportData {
   periodLabel: string; year: number; startMonth: number; endMonth: number
   months: number[]; monthLabels: Record<number, string>
@@ -99,12 +108,12 @@ function buildNotes(
       const identitas: string[] = []
 
       if (status === "kenaikan" && trend.added.length > 0) {
-        identitas.push("kendaraan bertambah: " + trend.added.map((v: any) =>
+        identitas.push("kendaraan bertambah: " + trend.added.map((v: TrendVehicleItem) =>
           `${v.kode ?? "-"} / ${v.plat ?? "-"} / ${v.nama ?? "-"} / ${v.pemegang ?? "-"} / ${v.departemen ?? "-"}`
         ).join("; "))
       }
       if (status === "penurunan" && trend.removed.length > 0) {
-        identitas.push("kendaraan berkurang: " + trend.removed.map((v: any) =>
+        identitas.push("kendaraan berkurang: " + trend.removed.map((v: TrendVehicleItem) =>
           `${v.kode ?? "-"} / ${v.plat ?? "-"} / ${v.nama ?? "-"} / ${v.pemegang ?? "-"} / ${v.departemen ?? "-"}`
         ).join("; "))
       }
@@ -132,17 +141,100 @@ export default function PendapatanAsetPage() {
   const [startMonth, setStartMonth] = useState(String(now.getMonth() + 1))
   const [endMonth,   setEndMonth]   = useState(String(now.getMonth() + 1))
   const [year, setYear]             = useState(String(now.getFullYear()))
+  const [laporanOpen, setLaporanOpen] = useState(false)
+  const [laporanLoading, setLaporanLoading] = useState(false)
+  const [laporanFormat, setLaporanFormat] = useState<"pdf" | "excel">("pdf")
   const [queryParams, setQueryParams] = useState(
     `start_month=${now.getMonth()+1}&end_month=${now.getMonth()+1}&year=${now.getFullYear()}`
   )
 
   const { data, loading, error } = useApi<ReportData>(`/api/laporan/pendapatan-aset?${queryParams}`)
 
+  const getEffectivePeriod = () => {
+    const sm = parseInt(startMonth)
+    const em = parseInt(endMonth)
+    const effEnd = em >= sm ? em : sm
+    return { startMonth: sm, endMonth: effEnd, year: parseInt(year) }
+  }
+
   const handleLoad = () => {
-    const sm = parseInt(startMonth), em = parseInt(endMonth)
-    const eff = em >= sm ? em : sm
-    setEndMonth(String(eff))
-    setQueryParams(`start_month=${sm}&end_month=${eff}&year=${year}`)
+    const period = getEffectivePeriod()
+    setEndMonth(String(period.endMonth))
+    setQueryParams(`start_month=${period.startMonth}&end_month=${period.endMonth}&year=${period.year}`)
+  }
+
+  const handleCetakLaporan = async () => {
+    const period = getEffectivePeriod()
+    setLaporanLoading(true)
+    try {
+      if (laporanFormat === "pdf") {
+        const qs = new URLSearchParams({
+          start_month: String(period.startMonth),
+          end_month: String(period.endMonth),
+          year: String(period.year),
+        })
+        const response = await fetch(`/api/laporan/pendapatan-aset/pdf?${qs.toString()}`)
+        if (!response.ok) throw new Error("Gagal mengunduh PDF")
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const link = document.createElement("a")
+        link.href = url
+        link.download = `Laporan_Pendapatan_Aset_${period.year}_${String(period.startMonth).padStart(2, "0")}-${String(period.endMonth).padStart(2, "0")}.pdf`
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+        window.URL.revokeObjectURL(url)
+        setLaporanOpen(false)
+        return
+      }
+
+      const qs = new URLSearchParams({
+        start_month: String(period.startMonth),
+        end_month: String(period.endMonth),
+        year: String(period.year),
+      })
+      const response = await fetch(`/api/laporan/pendapatan-aset?${qs.toString()}`)
+      const report = await response.json() as ReportData
+
+      const { utils, writeFile } = await import("xlsx")
+      const wb = utils.book_new()
+      const incomeSheetData: (string | number)[][] = [
+        ["LAPORAN PENDAPATAN ASET"],
+        ["KOPERASI KONSUMEN PEDAMI"],
+        [`Periode: ${report.periodLabel}`],
+        [`Dicetak pada: ${new Date().toLocaleString("id-ID")}`],
+        [],
+        ["No", "Jenis Pendapatan", ...report.months.map((month) => report.monthLabels[month]), "Total"],
+        ...report.incomeRows.map((row, index) => [
+          index + 1,
+          row.label,
+          ...report.months.map((month) => row.months[month] ?? 0),
+          row.total,
+        ]),
+        ["", "TOTAL PENDAPATAN", ...report.months.map((month) => report.incomeTotalsByMonth[month] ?? 0), report.grandTotal],
+        [],
+        ["No", "Jumlah Unit Aktif", ...report.months.map((month) => report.monthLabels[month]), "Total"],
+        ...report.unitRows.map((row, index) => [
+          index + 1,
+          row.label,
+          ...report.months.map((month) => row.months[month] ?? 0),
+          row.total,
+        ]),
+      ]
+
+      const ws = utils.aoa_to_sheet(incomeSheetData)
+      ws["!cols"] = [
+        { wch: 5 },
+        { wch: 32 },
+        ...report.months.map(() => ({ wch: 14 })),
+        { wch: 16 },
+      ]
+      utils.book_append_sheet(wb, ws, "Pendapatan Aset")
+      writeFile(wb, `Laporan_Pendapatan_Aset_${period.year}_${String(period.startMonth).padStart(2, "0")}-${String(period.endMonth).padStart(2, "0")}.xlsx`)
+      setLaporanOpen(false)
+    } finally {
+      setLaporanLoading(false)
+    }
   }
 
   /* ── Compute totals per month ──────────────────────────────────── */
@@ -177,6 +269,9 @@ export default function PendapatanAsetPage() {
             Rekapitulasi pendapatan dari sewa kendaraan dan penjualan aset
           </p>
         </div>
+        <Button variant="outline" size="sm" style={{ color: "var(--info)", borderColor: "var(--info)" }} onClick={() => { setLaporanFormat("pdf"); setLaporanOpen(true) }}>
+          <FileText className="h-3.5 w-3.5 mr-1.5" /> Cetak Laporan
+        </Button>
       </div>
 
       {/* Filter */}
@@ -381,6 +476,61 @@ export default function PendapatanAsetPage() {
           </div>
         </>
       )}
+
+      <Modal
+        open={laporanOpen}
+        onClose={() => setLaporanOpen(false)}
+        size="md"
+        title="Cetak Laporan Pendapatan Aset"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setLaporanOpen(false)}>Batal</Button>
+            <Button onClick={handleCetakLaporan} disabled={laporanLoading} style={{ background: "var(--info)", color: "#fff" }}>
+              <FileText className="h-3.5 w-3.5 mr-1.5" />
+              {laporanLoading ? "Menyiapkan..." : "Unduh Laporan"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-xs" style={{ color: "var(--text-subtle)" }}>
+            Gunakan filter periode di atas untuk menentukan dari bulan, sampai bulan, dan tahun laporan yang akan dicetak.
+          </p>
+
+          <div className="rounded-xl p-4" style={{ background: "var(--surface-muted)", border: "1px solid var(--border)" }}>
+            <p className="text-sm font-semibold" style={{ color: "var(--text-900)" }}>
+              Periode terpilih: {MONTHS.find((month) => month.value === startMonth)?.label} {year}
+              {Number(endMonth) !== Number(startMonth) ? ` s/d ${MONTHS.find((month) => month.value === String(getEffectivePeriod().endMonth))?.label} ${year}` : ""}
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Format Laporan</label>
+            <div className="flex gap-3">
+              {(["pdf", "excel"] as const).map((format) => (
+                <button
+                  key={format}
+                  type="button"
+                  onClick={() => setLaporanFormat(format)}
+                  className="flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all"
+                  style={{
+                    border: `2px solid ${laporanFormat === format ? "var(--primary)" : "var(--border)"}`,
+                    background: laporanFormat === format ? "var(--primary-light)" : "var(--surface)",
+                    color: laporanFormat === format ? "var(--primary)" : "var(--text-muted)",
+                  }}
+                >
+                  {format === "pdf" ? "📄 PDF (.pdf)" : "📊 Excel (.xlsx)"}
+                </button>
+              ))}
+            </div>
+            {laporanFormat === "pdf" && (
+              <p className="text-xs" style={{ color: "var(--text-subtle)" }}>
+                Akan membuka tab baru — gunakan Ctrl+P / Cmd+P untuk mencetak atau simpan sebagai PDF.
+              </p>
+            )}
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

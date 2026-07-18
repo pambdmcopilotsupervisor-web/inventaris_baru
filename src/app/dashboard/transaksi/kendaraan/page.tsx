@@ -32,7 +32,7 @@ interface Kendaraan {
   gambar_stnk: string | null; gbr_barang: string | null
   kontrak_info?: KontrakInfo[]
 }
-interface RiwayatServis { id: number; tanggal_servis: string; jenis_servis: string; biaya: number; bengkel: string | null; keterangan: string | null }
+interface RiwayatServis { id: number; tanggal_servis: string; jenis_servis: string; biaya: number; bengkel: string | null; keterangan: string | null; struk_foto?: string | null }
 interface RiwayatPembayaran { id: number; jenis_pembayaran: string; tanggal_pembayaran: string; biaya: number; jatuh_tempo_berikutnya: string | null; keterangan: string | null }
 
 /* ── Helper: src gambar via proxy ───────────────────────────────── */
@@ -47,6 +47,12 @@ function gambarSrc(id: number, key: string | null, field: ImgField): string | nu
   if (!key) return null
   if (key.startsWith("http://") || key.startsWith("https://") || key.startsWith("/")) return key
   return `/api/kendaraan/${id}/gambar?field=${field}`
+}
+
+function servisFotoSrc(id: number, key: string | null | undefined): string | null {
+  if (!key) return null
+  if (key.startsWith("http://") || key.startsWith("https://") || key.startsWith("/")) return key
+  return `/api/servis-kendaraan/${id}/foto`
 }
 
 const JNS_VARIANT: Record<string, "default" | "info" | "success" | "warning"> = {  "R4 Operasional": "default", "R4 Dinas": "info", "R2 Operasional": "success", "R2 Dinas": "warning"
@@ -156,7 +162,8 @@ export default function KendaraanPage() {
     setErrors(e); if (Object.keys(e).length) return
 
     // Hapus computed fields
-    const { kontrak_info: _ki, ...payload } = form as any
+    const payload = { ...form }
+    delete payload.kontrak_info
     const ok = editMode && selected ? await update(selected.id, payload) : await create(payload)
     if (ok) setModalOpen(false)
   }
@@ -171,21 +178,23 @@ export default function KendaraanPage() {
   const [uploadErr, setUploadErr]   = useState<string | null>(null)
   const [localPreviews, setLocalPreviews] = useState<Partial<Record<ImgField, string>>>({})
 
-  const handleUploadGambar = async (file: File, kendaraanId: number, field: ImgField) => {
-    // Preview instan sebelum upload selesai
+  const handleUploadGambar = async (file: File, kendaraanId: number, field: Exclude<ImgField, "gbr_barang">) => {
     const objectUrl = URL.createObjectURL(file)
     setLocalPreviews(p => ({ ...p, [field]: objectUrl }))
-    setUploading(field); setUploadErr(null)
+    setUploading(field)
+    setUploadErr(null)
     try {
-      const fd = new FormData(); fd.append("file", file)
-      const res  = await fetch(`/api/kendaraan/${kendaraanId}/gambar?field=${field}`, { method: "POST", body: fd })
+      const fd = new FormData()
+      fd.append("file", file)
+      const res = await fetch(`/api/kendaraan/${kendaraanId}/gambar?field=${field}`, { method: "POST", body: fd })
       const json = await res.json()
       if (!res.ok) {
         setUploadErr(json.error ?? "Gagal upload")
         URL.revokeObjectURL(objectUrl)
-        setLocalPreviews(p => { const n = { ...p }; delete n[field]; return n })
+        setLocalPreviews(p => { const next = { ...p }; delete next[field]; return next })
         return
       }
+
       const newKey = json.kendaraan?.[field] ?? null
       setForm(f => ({ ...f, [field]: newKey }))
       setSelected(s => s ? { ...s, [field]: newKey } : s)
@@ -193,19 +202,26 @@ export default function KendaraanPage() {
     } catch {
       setUploadErr("Gagal upload gambar")
       URL.revokeObjectURL(objectUrl)
-      setLocalPreviews(p => { const n = { ...p }; delete n[field]; return n })
-    } finally  { setUploading(null) }
+      setLocalPreviews(p => { const next = { ...p }; delete next[field]; return next })
+    } finally {
+      setUploading(null)
+    }
   }
 
-  const handleHapusGambar = async (kendaraanId: number, field: ImgField) => {
-    if (localPreviews[field]) { URL.revokeObjectURL(localPreviews[field]!); setLocalPreviews(p => { const n = { ...p }; delete n[field]; return n }) }
+  const handleHapusGambar = async (kendaraanId: number, field: Exclude<ImgField, "gbr_barang">) => {
+    if (localPreviews[field]) {
+      URL.revokeObjectURL(localPreviews[field]!)
+      setLocalPreviews(p => { const next = { ...p }; delete next[field]; return next })
+    }
     setUploading(field)
     try {
       await fetch(`/api/kendaraan/${kendaraanId}/gambar?field=${field}`, { method: "DELETE" })
       setForm(f => ({ ...f, [field]: null }))
       setSelected(s => s ? { ...s, [field]: null } : s)
       refetch()
-    } finally { setUploading(null) }
+    } finally {
+      setUploading(null)
+    }
   }
 
   const stats = [
@@ -247,7 +263,7 @@ export default function KendaraanPage() {
           [`Dicetak pada: ${new Date().toLocaleString("id-ID")}`],
           [],
           ["No", "Kode", "Jenis", "Plat", "Nama Barang", "Tahun", "Pajak", "STNK", "Pemegang", "Departemen", "Status", "Harga Sewa"],
-          ...rows.map((r: any, i: number) => [
+          ...rows.map((r: Record<string, unknown>, i: number) => [
             i + 1,
             r.kode_brg, r.jns_brg, r.plat, r.nm_brg, r.thn ?? "-",
             r.pajak ? new Date(r.pajak).toLocaleDateString("id-ID") : "-",
@@ -255,7 +271,7 @@ export default function KendaraanPage() {
             r.pemegang ?? "-", r.departemen ?? "-", r.stat ?? "-",
             Number(r.hrg_sewa) || 0,
           ]),
-          ["", "", "", "", "", "", "", "", "", "", "Total:", rows.reduce((s: number, r: any) => s + (Number(r.hrg_sewa) || 0), 0)],
+          ["", "", "", "", "", "", "", "", "", "", "Total:", rows.reduce((s: number, r: Record<string, unknown>) => s + (Number(r.hrg_sewa) || 0), 0)],
         ]
         const ws = utils.aoa_to_sheet(wsData)
         ws["!cols"] = [{wch:4},{wch:8},{wch:14},{wch:10},{wch:25},{wch:6},{wch:10},{wch:10},{wch:18},{wch:16},{wch:20},{wch:14}]
@@ -489,14 +505,14 @@ export default function KendaraanPage() {
 
           <TextareaField label="Deskripsi" value={form.deskripsi ?? ""} onChange={e => setF("deskripsi", e.target.value)} className="md:col-span-3" />
 
-          {/* ── Upload Gambar (edit mode only) ───────────────────── */}
+          {/* ── Upload Foto Dokumen Kendaraan (edit mode only) ───── */}
           {editMode && selected && canManageData && (
             <div className="md:col-span-3 space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Gambar</p>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {(["gambar_fisik","gambar_pajak","gambar_stnk","gbr_barang"] as ImgField[]).map(field => {
-                  const key  = form[field] as string | null
-                  const src  = localPreviews[field] ?? gambarSrc(selected.id, key, field)
+              <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Foto Dokumen Kendaraan</p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {(["gambar_fisik", "gambar_pajak", "gambar_stnk"] as const).map(field => {
+                  const key = form[field] as string | null
+                  const src = localPreviews[field] ?? gambarSrc(selected.id, key, field)
                   const busy = uploading === field
                   return (
                     <div key={field} className="space-y-1.5">
@@ -505,40 +521,46 @@ export default function KendaraanPage() {
                         {src ? (
                           <>
                             {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={src} alt={IMG_LABELS[field]}
-                              className="w-full h-24 rounded-lg object-cover"
-                              style={{ border: "1px solid var(--border)" }} />
-                            <button type="button" disabled={busy}
+                            <img src={src} alt={IMG_LABELS[field]} className="w-full h-24 rounded-lg object-cover" style={{ border: "1px solid var(--border)" }} />
+                            <button
+                              type="button"
+                              disabled={busy}
                               onClick={() => handleHapusGambar(selected.id, field)}
                               className="absolute -top-2 -right-2 h-5 w-5 rounded-full flex items-center justify-center text-white"
-                              style={{ background: "var(--danger)", opacity: busy ? 0.5 : 1 }}>
+                              style={{ background: "var(--danger)", opacity: busy ? 0.5 : 1 }}
+                            >
                               <X className="h-3 w-3" />
                             </button>
                           </>
                         ) : (
-                          <div className="w-full h-24 rounded-lg flex items-center justify-center"
-                            style={{ border: "1px dashed var(--border-strong)", background: "var(--surface-muted)" }}>
+                          <div className="w-full h-24 rounded-lg flex items-center justify-center" style={{ border: "1px dashed var(--border-strong)", background: "var(--surface-muted)" }}>
                             <ImageOff className="h-5 w-5" style={{ color: "var(--text-subtle)" }} />
                           </div>
                         )}
                       </div>
-                      <label className="flex items-center justify-center gap-1.5 w-full rounded-lg px-2 py-1.5 text-xs font-medium cursor-pointer transition-colors"
+                      <label
+                        className="flex items-center justify-center gap-1.5 w-full rounded-lg px-2 py-1.5 text-xs font-medium cursor-pointer transition-colors"
                         style={{
                           border: "1px solid var(--border-strong)",
                           background: "var(--surface-muted)",
                           color: "var(--text-700)",
                           opacity: busy ? 0.6 : 1,
                           pointerEvents: busy ? "none" : "auto",
-                        }}>
+                        }}
+                      >
                         <ImagePlus className="h-3.5 w-3.5" />
                         {busy ? "Uploading..." : src ? "Ganti" : "Upload"}
-                        <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          className="hidden"
                           disabled={busy}
                           onChange={e => {
                             const file = e.target.files?.[0]
                             if (file) handleUploadGambar(file, selected.id, field)
                             e.target.value = ""
-                          }} />
+                          }}
+                        />
                       </label>
                     </div>
                   )
@@ -548,6 +570,7 @@ export default function KendaraanPage() {
               <p className="text-xs" style={{ color: "var(--text-subtle)" }}>JPG, PNG, atau WEBP · Maks 5 MB per gambar</p>
             </div>
           )}
+
         </div>
 
         {/* Business logic info */}
@@ -555,7 +578,7 @@ export default function KendaraanPage() {
           <div className="mt-4 flex items-start gap-2 rounded-xl p-3 text-xs" style={{ background: "var(--warning-bg)", border: "1px solid #FDE68A" }}>
             <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" style={{ color: "var(--warning)" }} />
             <span style={{ color: "#92400E" }}>
-              Mengisi <strong>Tanggal Stop Tagihan</strong> akan otomatis mengubah status menjadi <strong>"Sewa dihentikan"</strong>. Kosongkan kembali untuk kembali ke "Sewa - Kontrak Berjalan".
+              Mengisi <strong>Tanggal Stop Tagihan</strong> akan otomatis mengubah status menjadi <strong>&quot;Sewa dihentikan&quot;</strong>. Kosongkan kembali untuk kembali ke &quot;Sewa - Kontrak Berjalan&quot;.
             </span>
           </div>
         )}
@@ -573,7 +596,7 @@ export default function KendaraanPage() {
                 { key: "servis",      label: `Riwayat Servis (${riwayatServis.length})`, icon: <Wrench className="h-3.5 w-3.5" /> },
                 { key: "pembayaran",  label: `Riwayat Pembayaran (${riwayatPembayaran.length})`, icon: <CreditCard className="h-3.5 w-3.5" /> },
               ].map(tab => (
-                <button key={tab.key} onClick={() => setDetailTab(tab.key as any)}
+                <button key={tab.key} onClick={() => setDetailTab(tab.key as "info" | "foto" | "servis" | "pembayaran")}
                   className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors duration-150 cursor-pointer"
                   style={{
                     borderBottomColor: detailTab === tab.key ? "var(--primary)" : "transparent",
@@ -674,6 +697,26 @@ export default function KendaraanPage() {
                           <p className="text-sm font-semibold" style={{ color: "var(--text-900)" }}>{s.jenis_servis}</p>
                           <p className="text-xs mt-0.5" style={{ color: "var(--text-subtle)" }}>{formatDate(s.tanggal_servis)} · {s.bengkel ?? "—"}</p>
                           {s.keterangan && <p className="text-xs mt-0.5 italic" style={{ color: "var(--text-subtle)" }}>{s.keterangan}</p>}
+                          {servisFotoSrc(s.id, s.struk_foto) && (
+                            <div className="mt-2 space-y-2">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={servisFotoSrc(s.id, s.struk_foto) ?? ""}
+                                alt={`Bukti servis ${s.jenis_servis}`}
+                                className="h-28 rounded-lg object-cover"
+                                style={{ border: "1px solid var(--border)", background: "var(--surface)" }}
+                              />
+                              <a
+                                href={servisFotoSrc(s.id, s.struk_foto) ?? "#"}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 text-xs font-semibold"
+                                style={{ color: "var(--primary)" }}
+                              >
+                                <ImagePlus className="h-3.5 w-3.5" /> Lihat bukti foto
+                              </a>
+                            </div>
+                          )}
                         </div>
                         <span className="font-mono font-semibold text-sm shrink-0" style={{ color: "var(--warning)" }}>{formatCurrency(Number(s.biaya))}</span>
                       </div>

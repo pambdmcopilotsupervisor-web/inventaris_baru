@@ -5,10 +5,11 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/contexts/AuthContext"
+import { AppLogo } from "@/components/layout/app-logo"
 import { inferModulFromPathname, normalizeModulKey, type ModulKey } from "@/lib/module-navigation"
 import {
   LayoutDashboard, Users, Archive, Truck, BarChart3, Database, BookOpen,
-  Bell, ChevronDown, LogOut, User, Settings, Package,
+  Bell, ChevronDown, LogOut, User, Settings,
   ArrowLeftRight, UserX, Trash2, AirVent,
   Building2, GitBranch, DoorOpen, UserCog, FileText, Wrench,
   CreditCard, ShoppingCart, Receipt, TrendingUp,
@@ -524,9 +525,7 @@ export function Navbar() {
       >
         {/* Logo */}
         <Link href="/dashboard" className="flex items-center gap-2.5 shrink-0 mr-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ background: "var(--primary)" }}>
-            <Package className="h-4 w-4 text-white" />
-          </div>
+          <AppLogo className="h-7 w-7" priority />
           <span className="hidden sm:block text-sm font-bold text-white tracking-wide">PEDAMI</span>
         </Link>
 

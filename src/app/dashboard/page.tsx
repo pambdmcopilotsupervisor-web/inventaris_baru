@@ -9,7 +9,7 @@ import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts"
-import { Archive, Truck, Users, AlertTriangle, FileText, Calendar, MoreHorizontal, Shield } from "lucide-react"
+import { Archive, Truck, Users, AlertTriangle, FileText, Calendar, MoreHorizontal, Shield, Wrench } from "lucide-react"
 import { formatDate } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
 import { inferModulFromPathname } from "@/lib/module-navigation"
@@ -21,6 +21,8 @@ interface DashboardStats {
   kontrakAktif: { id: number; no_kontrak: string | null; judul: string; tgl_akhir: string }[]
   alertPajak: { id: number; plat: string; nm_brg: string; pajak: string }[]
   alertStnk: { id: number; plat: string; nm_brg: string; stnk: string; jns_brg: string }[]
+  jadwalKir: { id: number; plat: string; nm_brg: string; jns_brg: string; tgl_akhir_kir: string }[]
+  jadwalService: { id: number; plat: string; nm_brg: string; jns_brg: string; service: string }[]
   genderPerDivisi: { divisi: string; laki_laki: number; perempuan: number; campuran: number }[]
 }
 
@@ -270,6 +272,79 @@ export default function DashboardPage() {
                       <div className="text-right shrink-0">
                         <Badge variant={sisa <= 14 ? "destructive" : "warning"}>{sisa}h lagi</Badge>
                         <p className="text-[10px] mt-0.5" style={{ color: "var(--text-subtle)" }}>{formatDate(s.pajak)}</p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Row: Jadwal KIR & Service Mendatang */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <Card>
+          <CardHeader className="pb-0">
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Calendar className="h-4 w-4" style={{ color: "var(--info)" }} />Jadwal KIR (0–3 Bulan)
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-4">
+            {loading ? (
+              <div className="space-y-2">{[1,2,3].map(i => <div key={i} className="h-12 rounded-lg animate-pulse" style={{ background: "var(--surface-muted)" }} />)}</div>
+            ) : (stats?.jadwalKir ?? []).length === 0 ? (
+              <p className="text-sm text-center py-6" style={{ color: "var(--text-subtle)" }}>Tidak ada jadwal KIR dalam 3 bulan ke depan</p>
+            ) : (
+              <div className="space-y-2">
+                {(stats?.jadwalKir ?? []).map((item, i) => {
+                  const sisa = getSisaHari(item.tgl_akhir_kir)
+                  return (
+                    <div key={i} className="flex items-center justify-between gap-3 rounded-lg p-3" style={{ background: "var(--surface-muted)" }}>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold" style={{ color: "var(--text-900)" }}>{item.nm_brg}</p>
+                        <p className="text-[10px] mt-0.5" style={{ color: "var(--text-subtle)" }}>{item.plat} · {item.jns_brg}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <Badge variant={sisa <= 30 ? "warning" : "info"}>{formatDate(item.tgl_akhir_kir)}</Badge>
+                        <p className="text-[10px] mt-0.5" style={{ color: "var(--text-subtle)" }}>{sisa}h lagi</p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-0">
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Wrench className="h-4 w-4" style={{ color: "var(--warning)" }} />Jadwal Service (0–3 Bulan)
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-4">
+            {loading ? (
+              <div className="space-y-2">{[1,2,3].map(i => <div key={i} className="h-12 rounded-lg animate-pulse" style={{ background: "var(--surface-muted)" }} />)}</div>
+            ) : (stats?.jadwalService ?? []).length === 0 ? (
+              <p className="text-sm text-center py-6" style={{ color: "var(--text-subtle)" }}>Tidak ada jadwal service dalam 3 bulan ke depan</p>
+            ) : (
+              <div className="space-y-2">
+                {(stats?.jadwalService ?? []).map((item, i) => {
+                  const sisa = getSisaHari(item.service)
+                  return (
+                    <div key={i} className="flex items-center justify-between gap-3 rounded-lg p-3" style={{ background: "var(--surface-muted)" }}>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold" style={{ color: "var(--text-900)" }}>{item.nm_brg}</p>
+                        <p className="text-[10px] mt-0.5" style={{ color: "var(--text-subtle)" }}>{item.plat} · {item.jns_brg}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <Badge variant={sisa <= 30 ? "warning" : "secondary"}>{formatDate(item.service)}</Badge>
+                        <p className="text-[10px] mt-0.5" style={{ color: "var(--text-subtle)" }}>{sisa}h lagi</p>
                       </div>
                     </div>
                   )

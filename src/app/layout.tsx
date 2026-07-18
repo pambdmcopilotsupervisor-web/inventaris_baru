@@ -20,6 +20,11 @@ const firaCode = Fira_Code({
 export const metadata: Metadata = {
   title: "PEDAMI Inventaris",
   description: "Sistem Inventaris Koperasi Konsumen Pedami",
+  icons: {
+    icon: "/pedami-logo.png",
+    shortcut: "/pedami-logo.png",
+    apple: "/pedami-logo.png",
+  },
 };
 
 export default function RootLayout({

@@ -10,6 +10,12 @@ const EXCLUDED_DIVISI = [
 
 export async function GET() {
   try {
+    const now = new Date()
+    const today = new Date(now)
+    today.setHours(0, 0, 0, 0)
+    const threeMonthsAhead = new Date(today)
+    threeMonthsAhead.setMonth(threeMonthsAhead.getMonth() + 3)
+
     const [
       totalAset,
       asetKomputer,
@@ -28,6 +34,8 @@ export async function GET() {
       kontrakAktif,
       alertPajak,
       alertStnk,
+      jadwalKir,
+      jadwalService,
     ] = await Promise.all([
       prisma.assets.count(),
       prisma.assets.count({ where: { kelompok_asset: "komputer" } }),
@@ -72,6 +80,30 @@ export async function GET() {
         orderBy: { stnk: "asc" },
         take: 8,
       }),
+      prisma.data_r2r4s.findMany({
+        where: {
+          tgl_akhir_kir: {
+            gte: today,
+            lte: threeMonthsAhead,
+          },
+          stat: { not: "Jual" },
+        },
+        select: { id: true, plat: true, nm_brg: true, jns_brg: true, tgl_akhir_kir: true },
+        orderBy: { tgl_akhir_kir: "asc" },
+        take: 8,
+      }),
+      prisma.data_r2r4s.findMany({
+        where: {
+          service: {
+            gte: today,
+            lte: threeMonthsAhead,
+          },
+          stat: { not: "Jual" },
+        },
+        select: { id: true, plat: true, nm_brg: true, jns_brg: true, service: true },
+        orderBy: { service: "asc" },
+        take: 8,
+      }),
     ])
 
     // Gender per Divisi — sesuai KaryawanGenderPerDivisiChart
@@ -114,6 +146,8 @@ export async function GET() {
         kontrakAktif,
         alertPajak,
         alertStnk,
+        jadwalKir,
+        jadwalService,
         genderPerDivisi: genderPerDivisi.map(r => ({
           divisi: r.divisi,
           laki_laki: Number(r.laki_laki),

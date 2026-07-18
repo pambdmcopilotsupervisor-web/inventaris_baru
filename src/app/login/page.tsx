@@ -2,9 +2,10 @@
 
 import React, { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Package, Eye, EyeOff } from "lucide-react"
+import { Eye, EyeOff } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { normalizeModulKey } from "@/lib/module-navigation"
+import { AppLogo } from "@/components/layout/app-logo"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -48,9 +49,7 @@ export default function LoginPage() {
       {/* Left panel — branding */}
       <div className="hidden lg:flex flex-col justify-between w-[42%] p-10" style={{ background: "var(--sb-bg)" }}>
         <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: "var(--primary)" }}>
-            <Package className="h-4 w-4 text-white" />
-          </div>
+          <AppLogo className="h-8 w-8" priority />
           <span className="text-sm font-bold text-white tracking-wide">PEDAMI Inventaris</span>
         </div>
 
@@ -90,9 +89,7 @@ export default function LoginPage() {
 
           {/* Mobile logo */}
           <div className="flex items-center gap-3 mb-8 lg:hidden">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: "var(--primary)" }}>
-              <Package className="h-4 w-4 text-white" />
-            </div>
+            <AppLogo className="h-8 w-8" priority />
             <span className="text-sm font-bold text-white">PEDAMI Inventaris</span>
           </div>
 

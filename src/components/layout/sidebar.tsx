@@ -4,11 +4,12 @@ import React, { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { AppLogo } from "@/components/layout/app-logo"
 import {
   LayoutDashboard, Users, Building2, GitBranch, DoorOpen, UserCog,
   Archive, Truck, FileText, ArrowLeftRight, UserMinus, Trash2,
   Wrench, AirVent, CreditCard, ShoppingCart, UserX, BarChart3,
-  TrendingUp, Receipt, ChevronDown, ChevronRight, Package,
+  TrendingUp, Receipt, ChevronDown, ChevronRight,
     Clock, CalendarDays, CalendarOff, CalendarCheck, AlertTriangle, CalendarX,
     MapPin, Banknote, Settings2, ClipboardList, PlayCircle, Wallet,
 } from "lucide-react"
@@ -100,9 +101,7 @@ export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
     >
       {/* Brand */}
       <div className="flex h-14 shrink-0 items-center gap-3 px-4" style={{ borderBottom: "1px solid var(--sb-border)" }}>
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg" style={{ background: "var(--primary)" }}>
-          <Package className="h-4 w-4 text-white" />
-        </div>
+        <AppLogo className="h-7 w-7" priority />
         {!collapsed && (
           <span className="text-sm font-bold tracking-wide text-white truncate">PEDAMI Inventaris</span>
         )}

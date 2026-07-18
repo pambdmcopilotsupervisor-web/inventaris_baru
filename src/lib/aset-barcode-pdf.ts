@@ -1,3 +1,5 @@
+import { existsSync } from "fs"
+import path from "path"
 import PDFDocument from "pdfkit"
 import QRCode from "qrcode"
 
@@ -19,7 +21,6 @@ export interface BarcodePdfMeta {
   total?: number
 }
 
-const PAGE_WIDTH = 595.28
 const PAGE_HEIGHT = 841.89
 const PAGE_MARGIN = 28
 const STICKER_GAP = 10
@@ -28,11 +29,14 @@ const STICKER_HEIGHT = 68
 const STICKERS_PER_ROW = 3
 const STICKER_BODY_X = 8
 const STICKER_BODY_Y = 17
+const LOGO_BOX_SIZE = 26
+const LOGO_GAP = 6
 const QR_BOX_SIZE = 34
 const QR_INNER_SIZE = 28
 const HEADER_HEIGHT = 13
 const FOOTER_HEIGHT = 9
-const SUMMARY_HEIGHT = 58
+const APP_LOGO_PATH = path.join(process.cwd(), "public", "pedami-logo.png")
+const HAS_APP_LOGO = existsSync(APP_LOGO_PATH)
 
 function truncateText(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, max)}...` : value
@@ -83,28 +87,23 @@ async function drawQrCode(doc: PDFKit.PDFDocument, value: string, x: number, y: 
   doc.restore()
 }
 
-function drawSummaryBox(doc: PDFKit.PDFDocument, x: number, y: number, w: number, label: string, value: string) {
-  doc.roundedRect(x, y, w, 28, 6).fillColor("#f8fafc").fill().strokeColor("#e2e8f0").lineWidth(1).stroke()
-  doc.fillColor("#64748b").font("Helvetica-Bold").fontSize(7).text(label.toUpperCase(), x + 8, y + 5, { width: w - 16 })
-  doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(9).text(value, x + 8, y + 14, { width: w - 16 })
-}
-
-function drawSummary(doc: PDFKit.PDFDocument, meta: BarcodePdfMeta, itemCount: number) {
-  const startX = PAGE_MARGIN
-  const boxY = PAGE_MARGIN + 18
-  const totalWidth = PAGE_WIDTH - PAGE_MARGIN * 2
-  const boxGap = 8
-  const boxWidth = (totalWidth - boxGap * 3) / 4
-
-  doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(13).text("RINGKASAN UNDUH BARCODE PDF", PAGE_MARGIN, PAGE_MARGIN)
-  drawSummaryBox(doc, startX, boxY, boxWidth, "Total Aset", String(meta.total ?? itemCount))
-  drawSummaryBox(doc, startX + (boxWidth + boxGap), boxY, boxWidth, "Ruangan", meta.ruangan ?? "Semua Ruangan")
-  drawSummaryBox(doc, startX + (boxWidth + boxGap) * 2, boxY, boxWidth, "Kondisi", meta.kondisi ?? "Semua Kondisi")
-  drawSummaryBox(doc, startX + (boxWidth + boxGap) * 3, boxY, boxWidth, "Lokasi", meta.lokasi ?? "Semua Lokasi")
-}
-
 function fitBadgeWidth(doc: PDFKit.PDFDocument, text: string): number {
   return Math.min(Math.max(doc.widthOfString(text) + 8, 50), 90)
+}
+
+function drawAppLogo(doc: PDFKit.PDFDocument, x: number, y: number, size: number) {
+  if (!HAS_APP_LOGO) return
+
+  doc.roundedRect(x, y, size, size, 4).fillColor("#ffffff").fill()
+  doc.save()
+  doc.roundedRect(x, y, size, size, 4).clip()
+  doc.image(APP_LOGO_PATH, x, y, {
+    cover: [size, size],
+    align: "center",
+    valign: "center",
+  })
+  doc.restore()
+  doc.roundedRect(x, y, size, size, 4).strokeColor("#e2e8f0").lineWidth(0.6).stroke()
 }
 
 async function drawSticker(doc: PDFKit.PDFDocument, asset: BarcodePdfAsset, x: number, y: number, origin: string) {
@@ -121,17 +120,24 @@ async function drawSticker(doc: PDFKit.PDFDocument, asset: BarcodePdfAsset, x: n
   const qrOuterX = x + STICKER_WIDTH - STICKER_BODY_X - QR_BOX_SIZE
   const qrOuterY = y + STICKER_BODY_Y + 1
   const qrPadding = (QR_BOX_SIZE - QR_INNER_SIZE) / 2
-  const textWidth = STICKER_WIDTH - QR_BOX_SIZE - STICKER_BODY_X * 3
+  const logoX = infoX
+  const logoY = infoY + 5
+  const textX = logoX + LOGO_BOX_SIZE + LOGO_GAP
+  const textWidth = qrOuterX - textX - LOGO_GAP
 
-  doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(11).text(asset.kode_asset, infoX, infoY)
-  doc.fillColor("#475569").font("Helvetica-Bold").fontSize(7.2).text(truncateText(asset.nama_asset, 22), infoX, infoY + 12, {
+  drawAppLogo(doc, logoX, logoY, LOGO_BOX_SIZE)
+
+  doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(10).text(truncateText(asset.kode_asset, 18), textX, infoY, {
+    width: textWidth,
+  })
+  doc.fillColor("#475569").font("Helvetica-Bold").fontSize(7.2).text(truncateText(asset.nama_asset, 20), textX, infoY + 12, {
     width: textWidth,
   })
 
   const badgeText = asset.divisi_pj ?? "Tanpa Divisi"
   const badgeWidth = Math.min(fitBadgeWidth(doc, badgeText), textWidth)
-  doc.roundedRect(infoX, infoY + 27, badgeWidth, 12, 4).fillColor("#f1f5f9").fill()
-  doc.fillColor("#64748b").font("Helvetica-Bold").fontSize(6.7).text(truncateText(badgeText, 18), infoX + 4, infoY + 30.5, { width: badgeWidth - 8 })
+  doc.roundedRect(textX, infoY + 27, badgeWidth, 12, 4).fillColor("#f1f5f9").fill()
+  doc.fillColor("#64748b").font("Helvetica-Bold").fontSize(6.7).text(truncateText(badgeText, 16), textX + 4, infoY + 30.5, { width: badgeWidth - 8 })
 
   doc.roundedRect(qrOuterX, qrOuterY, QR_BOX_SIZE, QR_BOX_SIZE, 4).fillColor("#ffffff").fill().strokeColor("#e2e8f0").lineWidth(1).stroke()
   await drawQrCode(doc, `${origin}/info-asset/${asset.id}`, qrOuterX + qrPadding, qrOuterY + qrPadding, QR_INNER_SIZE)
@@ -152,9 +158,9 @@ export function generateAsetBarcodePdf(assets: BarcodePdfAsset[], meta: BarcodeP
     doc.on("error", reject)
 
     ;(async () => {
-      drawSummary(doc, meta, assets.length)
+      void meta
 
-      const startY = PAGE_MARGIN + SUMMARY_HEIGHT
+      const startY = PAGE_MARGIN
       const availableHeight = PAGE_HEIGHT - PAGE_MARGIN - startY
       const maxRowsPerPage = Math.max(1, Math.floor((availableHeight + STICKER_GAP) / (STICKER_HEIGHT + STICKER_GAP)))
 
@@ -162,7 +168,6 @@ export function generateAsetBarcodePdf(assets: BarcodePdfAsset[], meta: BarcodeP
         const perPage = maxRowsPerPage * STICKERS_PER_ROW
         if (index > 0 && index % perPage === 0) {
           doc.addPage()
-          drawSummary(doc, meta, assets.length)
         }
 
         const indexInPage = index % perPage
