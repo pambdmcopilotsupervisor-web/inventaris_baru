@@ -21,6 +21,7 @@ interface Kontrak {
   tgl_awal: string; tgl_akhir: string; file: string | null
   // computed (dari API)
   status: string; masa_sewa: number; kendaraan_list?: KendaraanDetail[]
+  [key: string]: unknown
 }
 interface Kendaraan { id: number; plat: string; nm_brg: string; jns_brg: string }
 

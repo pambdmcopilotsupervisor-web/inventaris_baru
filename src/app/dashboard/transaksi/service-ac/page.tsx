@@ -21,6 +21,7 @@ interface ServiceAC {
   // enriched
   kode_asset?: string; nama_asset?: string; kondisi_aset?: string
   nama_ruangan?: string; nama_pj?: string
+  [key: string]: unknown
 }
 
 interface Asset {

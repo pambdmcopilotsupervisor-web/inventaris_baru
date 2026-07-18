@@ -253,7 +253,7 @@ export default function KendaraanPage() {
       } else {
         const qs = new URLSearchParams(params)
         const res = await fetch(`/api/laporan/kendaraan?${qs}`)
-        const rows = await res.json()
+        const rows = await res.json() as Array<Record<string, string | number | null>>
 
         const { utils, writeFile } = await import("xlsx")
         const wb = utils.book_new()
@@ -263,15 +263,15 @@ export default function KendaraanPage() {
           [`Dicetak pada: ${new Date().toLocaleString("id-ID")}`],
           [],
           ["No", "Kode", "Jenis", "Plat", "Nama Barang", "Tahun", "Pajak", "STNK", "Pemegang", "Departemen", "Status", "Harga Sewa"],
-          ...rows.map((r: Record<string, unknown>, i: number) => [
+          ...rows.map((r, i: number) => [
             i + 1,
             r.kode_brg, r.jns_brg, r.plat, r.nm_brg, r.thn ?? "-",
-            r.pajak ? new Date(r.pajak).toLocaleDateString("id-ID") : "-",
-            r.stnk  ? new Date(r.stnk).toLocaleDateString("id-ID")  : "-",
+            typeof r.pajak === "string" || typeof r.pajak === "number" ? new Date(r.pajak).toLocaleDateString("id-ID") : "-",
+            typeof r.stnk === "string" || typeof r.stnk === "number" ? new Date(r.stnk).toLocaleDateString("id-ID") : "-",
             r.pemegang ?? "-", r.departemen ?? "-", r.stat ?? "-",
             Number(r.hrg_sewa) || 0,
           ]),
-          ["", "", "", "", "", "", "", "", "", "", "Total:", rows.reduce((s: number, r: Record<string, unknown>) => s + (Number(r.hrg_sewa) || 0), 0)],
+          ["", "", "", "", "", "", "", "", "", "", "Total:", rows.reduce((s: number, r) => s + (Number(r.hrg_sewa) || 0), 0)],
         ]
         const ws = utils.aoa_to_sheet(wsData)
         ws["!cols"] = [{wch:4},{wch:8},{wch:14},{wch:10},{wch:25},{wch:6},{wch:10},{wch:10},{wch:18},{wch:16},{wch:20},{wch:14}]

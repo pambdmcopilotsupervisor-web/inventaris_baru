@@ -190,6 +190,17 @@ export default function AsetPage() {
     return matchRuangan && matchKondisi && matchLokasi
   })
 
+  const barcodePrintableAssets: BarcodePrintAsset[] = barcodeFilteredAssets.map((asset) => ({
+    id: asset.id,
+    kode_asset: asset.kode_asset,
+    nama_asset: asset.nama_asset,
+    kelompok_asset: asset.kelompok_asset,
+    divisi_pj: asset.divisi_pj ?? null,
+    status_barang: asset.status_barang,
+    nama_ruangan: asset.nama_ruangan ?? null,
+    lokasi: asset.lokasi ?? null,
+  }))
+
   const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE))
   const paginated  = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE)
 
@@ -671,7 +682,7 @@ export default function AsetPage() {
                   kode_asset: selected.kode_asset,
                   nama_asset: selected.nama_asset,
                   kelompok_asset: selected.kelompok_asset,
-                  divisi_pj: selected.divisi_pj,
+                  divisi_pj: selected.divisi_pj ?? null,
                   status_barang: selected.status_barang,
                   nama_ruangan: selected.nama_ruangan,
                   lokasi: selected.lokasi,
@@ -693,8 +704,8 @@ export default function AsetPage() {
           <>
             <Button variant="outline" onClick={() => setBarcodeOpen(false)} disabled={barcodeDownloading}>Batal</Button>
             <Button
-              onClick={() => handleCetakBarcode(barcodeFilteredAssets)}
-              disabled={barcodeFilteredAssets.length === 0 || barcodeDownloading}
+              onClick={() => handleCetakBarcode(barcodePrintableAssets)}
+              disabled={barcodePrintableAssets.length === 0 || barcodeDownloading}
             >
               <Printer className="h-3.5 w-3.5 mr-1.5" />
               {barcodeDownloading ? "Mengunduh..." : "Unduh Barcode PDF"}
@@ -761,7 +772,7 @@ export default function AsetPage() {
                 : `${filtered.length} aset mengikuti filter tabel saat ini`}
             </p>
             <p className="text-xs mt-1" style={{ color: "var(--text-subtle)" }}>
-              Hasil cetak setelah filter barcode: <span className="font-semibold">{barcodeFilteredAssets.length}</span> aset
+              Hasil cetak setelah filter barcode: <span className="font-semibold">{barcodePrintableAssets.length}</span> aset
             </p>
           </div>
         </div>

@@ -30,7 +30,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const baseName = sanitizeFilename(kontrak.no_kontrak ?? kontrak.judul ?? `kontrak-${id}`) || `kontrak-${id}`
     const filename = baseName.toLowerCase().endsWith(".pdf") ? baseName : `${baseName}.pdf`
 
-    return new NextResponse(buffer, {
+    return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {
         "Content-Type": contentType || "application/pdf",

@@ -22,6 +22,7 @@ interface ServisKendaraan {
   // enriched
   kode_brg?: string; plat?: string; nm_brg?: string
   data_r2r4s?: { kode_brg: string; plat: string; nm_brg: string }
+  [key: string]: unknown
 }
 interface Kendaraan {
   id: number; kode_brg: string; plat: string; nm_brg: string
