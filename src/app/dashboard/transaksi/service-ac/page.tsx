@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Modal } from "@/components/ui/modal"
 import { ConfirmDelete } from "@/components/ui/confirm-delete"
 import { TextField, TextareaField, FormField } from "@/components/ui/form-field"
-import { Plus, Pencil, Trash2, RefreshCw, Search, Info } from "lucide-react"
+import { Plus, Pencil, Trash2, RefreshCw, Search, ImagePlus, X, ExternalLink } from "lucide-react"
 import { formatDate, formatCurrency } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
 import { useAuth } from "@/contexts/AuthContext"
@@ -17,6 +17,7 @@ import { canCreateOrEditTransaksi, canDeleteTransaksi } from "@/lib/transaksi-ro
 interface ServiceAC {
   id: number; asset_id: number; tanggal_service: string
   jenis_pekerjaan: string; biaya: number; teknisi: string | null; keterangan: string | null
+  bukti_foto?: string | null
   // enriched
   kode_asset?: string; nama_asset?: string; kondisi_aset?: string
   nama_ruangan?: string; nama_pj?: string
@@ -37,6 +38,13 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 }
 
 const EMPTY = { asset_id: "", tanggal_service: "", jenis_pekerjaan: "", biaya: "0", teknisi: "", keterangan: "" }
+const MAX_FOTO_MB = 5
+
+function serviceAcFotoUrl(row: Pick<ServiceAC, "id" | "bukti_foto">): string | null {
+  if (!row.bukti_foto) return null
+  if (row.bukti_foto.startsWith("http://") || row.bukti_foto.startsWith("https://") || row.bukti_foto.startsWith("/")) return row.bukti_foto
+  return `/api/service-ac/${row.id}/foto`
+}
 
 export default function ServiceACPage() {
   const { user } = useAuth()
@@ -54,6 +62,9 @@ export default function ServiceACPage() {
   const [deleting, setDeleting]     = useState(false)
   const [form, setForm]             = useState(EMPTY)
   const [errors, setErrors]         = useState<Record<string, string>>({})
+  const [fotoFile, setFotoFile]     = useState<File | null>(null)
+  const [fotoPreview, setFotoPreview] = useState<string | null>(null)
+  const [fileInputKey, setFileInputKey] = useState(0)
 
   // Info aset auto-fill (READ-ONLY sesuai Filament)
   const [assetInfo, setAssetInfo] = useState<{
@@ -90,6 +101,7 @@ export default function ServiceACPage() {
     setEditMode(false); setSelected(null); setErrors({})
     setForm({ ...EMPTY, tanggal_service: new Date().toISOString().split("T")[0] })
     setAssetSearch(""); setAssetInfo(null)
+    setFotoFile(null); setFotoPreview(null); setFileInputKey(v => v + 1)
     setModalOpen(true)
   }
 
@@ -113,7 +125,50 @@ export default function ServiceACPage() {
       teknisi:         row.teknisi ?? "",
       keterangan:      row.keterangan ?? "",
     })
+    setFotoFile(null); setFotoPreview(null); setFileInputKey(v => v + 1)
     setModalOpen(true)
+  }
+
+  const handleFotoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null
+    if (fotoPreview) URL.revokeObjectURL(fotoPreview)
+
+    if (!file) {
+      setFotoFile(null)
+      setFotoPreview(null)
+      setErrors(prev => {
+        const next = { ...prev }
+        delete next.foto
+        return next
+      })
+      return
+    }
+
+    const isImage = ["image/jpeg", "image/jpg", "image/png", "image/webp"].includes(file.type) || /\.(jpg|jpeg|png|webp)$/i.test(file.name)
+    if (!isImage) {
+      setFotoFile(null)
+      setFotoPreview(null)
+      setErrors(prev => ({ ...prev, foto: "Bukti foto harus berupa JPG, PNG, atau WEBP" }))
+      event.target.value = ""
+      return
+    }
+
+    if (file.size > MAX_FOTO_MB * 1024 * 1024) {
+      setFotoFile(null)
+      setFotoPreview(null)
+      setErrors(prev => ({ ...prev, foto: `Ukuran foto maksimal ${MAX_FOTO_MB} MB` }))
+      event.target.value = ""
+      return
+    }
+
+    const objectUrl = URL.createObjectURL(file)
+    setFotoFile(file)
+    setFotoPreview(objectUrl)
+    setErrors(prev => {
+      const next = { ...prev }
+      delete next.foto
+      return next
+    })
   }
 
   const handleSubmit = async () => {
@@ -128,19 +183,22 @@ export default function ServiceACPage() {
     try {
       const url    = editMode && selected ? `/api/service-ac/${selected.id}` : "/api/service-ac"
       const method = editMode ? "PUT" : "POST"
+      const formData = new FormData()
+      formData.append("asset_id", String(Number(form.asset_id)))
+      formData.append("tanggal_service", form.tanggal_service)
+      formData.append("jenis_pekerjaan", form.jenis_pekerjaan)
+      formData.append("biaya", String(Number(form.biaya) || 0))
+      formData.append("teknisi", form.teknisi)
+      formData.append("keterangan", form.keterangan)
+      if (fotoFile) formData.append("foto", fotoFile)
+
       const res = await fetch(url, {
-        method, headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          asset_id:        Number(form.asset_id),
-          tanggal_service: form.tanggal_service,
-          jenis_pekerjaan: form.jenis_pekerjaan,
-          biaya:           Number(form.biaya) || 0,
-          teknisi:         form.teknisi || null,
-          keterangan:      form.keterangan || null,
-        }),
+        method,
+        body: formData,
       })
       if (!res.ok) { const j = await res.json(); setErrors({ _: j.error ?? "Gagal" }); return }
-      setModalOpen(false); refetch()
+      if (fotoPreview) URL.revokeObjectURL(fotoPreview)
+      setModalOpen(false); setFotoFile(null); setFotoPreview(null); setFileInputKey(v => v + 1); refetch()
     } finally { setSaving(false) }
   }
 
@@ -177,6 +235,19 @@ export default function ServiceACPage() {
       cell: (r) => <span className="font-mono text-sm font-semibold">{formatCurrency(Number(r.biaya))}</span>,
     },
     { key: "teknisi", header: "Teknisi / Vendor", cell: (r) => r.teknisi ?? "—" },
+    {
+      key: "bukti_foto",
+      header: "Bukti Foto",
+      cell: (r) => {
+        const fotoUrl = serviceAcFotoUrl(r)
+        if (!fotoUrl) return <span className="text-xs" style={{ color: "var(--text-subtle)" }}>Belum ada</span>
+        return (
+          <a href={fotoUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: "var(--primary)" }}>
+            <ExternalLink className="h-3.5 w-3.5" /> Lihat Foto
+          </a>
+        )
+      },
+    },
   ]
 
   /* ── Total biaya ────────────────────────────────────────────── */
@@ -216,10 +287,10 @@ export default function ServiceACPage() {
       </div>
 
       {/* Table */}
-      <DataTable
-        data={list as any} columns={columns as any}
+      <DataTable<ServiceAC>
+        data={list} columns={columns}
         searchKeys={["nama_asset", "kode_asset", "jenis_pekerjaan", "teknisi"]} loading={loading}
-        actions={(row: any) => (
+        actions={(row) => (
           <div className="flex items-center justify-center gap-1">
             {canManageData && <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--warning)" }}
               onClick={() => openEdit(row)}><Pencil className="h-3.5 w-3.5" /></Button>}
@@ -274,7 +345,7 @@ export default function ServiceACPage() {
                         </div>
                       ) : filteredAssets.length === 0 ? (
                         <div className="px-4 py-3 text-xs" style={{ color: "var(--text-subtle)" }}>
-                          Tidak ada aset yang cocok dengan "{assetSearch}"
+                          Tidak ada aset yang cocok dengan &quot;{assetSearch}&quot;
                         </div>
                       ) : (
                         filteredAssets.map(a => (
@@ -330,6 +401,59 @@ export default function ServiceACPage() {
               <TextareaField label="Catatan Tambahan"
                 value={form.keterangan} onChange={e => setF("keterangan", e.target.value)}
                 className="md:col-span-2" />
+
+              <div className="md:col-span-2">
+                <FormField label="Bukti Foto" error={errors.foto}>
+                  <div className="space-y-3">
+                    <input
+                      key={fileInputKey}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                      onChange={handleFotoChange}
+                      className="block w-full rounded-lg border px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:px-3 file:py-1.5 file:text-xs file:font-semibold"
+                      style={{
+                        borderColor: errors.foto ? "var(--danger)" : "var(--border-strong)",
+                        background: "var(--surface)",
+                        color: "var(--text-900)",
+                      }}
+                    />
+                    <div className="rounded-xl p-3" style={{ background: "var(--surface-muted)", border: "1px solid var(--border)" }}>
+                      {fotoPreview ? (
+                        <div className="space-y-2">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={fotoPreview} alt="Preview bukti foto" className="h-40 rounded-lg object-cover" />
+                          <div className="flex items-center justify-between gap-3 text-xs">
+                            <span className="truncate" style={{ color: "var(--text-muted)" }}>{fotoFile?.name}</span>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 font-semibold cursor-pointer"
+                              style={{ color: "var(--danger)" }}
+                              onClick={() => {
+                                if (fotoPreview) URL.revokeObjectURL(fotoPreview)
+                                setFotoFile(null)
+                                setFotoPreview(null)
+                                setFileInputKey(v => v + 1)
+                              }}
+                            >
+                              <X className="h-3.5 w-3.5" /> Hapus Pilihan
+                            </button>
+                          </div>
+                        </div>
+                      ) : selected?.bukti_foto ? (
+                        <div className="space-y-2">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={serviceAcFotoUrl(selected) ?? ""} alt="Bukti foto tersimpan" className="h-40 rounded-lg object-cover" />
+                          <a href={serviceAcFotoUrl(selected) ?? "#"} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: "var(--primary)" }}>
+                            <ImagePlus className="h-3.5 w-3.5" /> Lihat bukti foto tersimpan
+                          </a>
+                        </div>
+                      ) : (
+                        <p className="text-xs" style={{ color: "var(--text-subtle)" }}>Upload bukti foto service. Maksimal {MAX_FOTO_MB} MB.</p>
+                      )}
+                    </div>
+                  </div>
+                </FormField>
+              </div>
             </div>
           </div>
         </div>

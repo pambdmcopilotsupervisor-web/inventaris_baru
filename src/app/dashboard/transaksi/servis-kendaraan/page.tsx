@@ -3,11 +3,10 @@
 import React, { useState } from "react"
 import { DataTable, Column } from "@/components/ui/data-table"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { Modal } from "@/components/ui/modal"
 import { ConfirmDelete } from "@/components/ui/confirm-delete"
 import { TextField, TextareaField, FormField } from "@/components/ui/form-field"
-import { Plus, Pencil, Trash2, RefreshCw, Search, Info } from "lucide-react"
+import { Plus, Pencil, Trash2, RefreshCw, Search, ImagePlus, X, ExternalLink } from "lucide-react"
 import { formatDate, formatCurrency } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
 import { useCrud } from "@/hooks/useCrud"
@@ -19,6 +18,7 @@ interface ServisKendaraan {
   id: number; data_r2r4_id: number
   tanggal_servis: string; jenis_servis: string
   biaya: number; bengkel: string | null; keterangan: string | null
+  struk_foto?: string | null
   // enriched
   kode_brg?: string; plat?: string; nm_brg?: string
   data_r2r4s?: { kode_brg: string; plat: string; nm_brg: string }
@@ -38,6 +38,13 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 }
 
 const EMPTY = { data_r2r4_id: "", tanggal_servis: "", jenis_servis: "", biaya: "0", bengkel: "", keterangan: "" }
+const MAX_FOTO_MB = 5
+
+function servisFotoUrl(row: Pick<ServisKendaraan, "id" | "struk_foto">): string | null {
+  if (!row.struk_foto) return null
+  if (row.struk_foto.startsWith("http://") || row.struk_foto.startsWith("https://") || row.struk_foto.startsWith("/")) return row.struk_foto
+  return `/api/servis-kendaraan/${row.id}/foto`
+}
 
 export default function ServisKendaraanPage() {
   const { user } = useAuth()
@@ -55,6 +62,9 @@ export default function ServisKendaraanPage() {
   const [saving, setSaving]         = useState(false)
   const [form, setForm]             = useState(EMPTY)
   const [errors, setErrors]         = useState<Record<string, string>>({})
+  const [fotoFile, setFotoFile]     = useState<File | null>(null)
+  const [fotoPreview, setFotoPreview] = useState<string | null>(null)
+  const [fileInputKey, setFileInputKey] = useState(0)
 
   // Info kendaraan auto-fill (READ-ONLY — sesuai Filament Placeholder 'vehicle_info')
   const [vehicleInfo, setVehicleInfo] = useState<{
@@ -95,6 +105,7 @@ export default function ServisKendaraanPage() {
     setEditMode(false); setSelected(null); setErrors({})
     setForm({ ...EMPTY, tanggal_servis: new Date().toISOString().split("T")[0] })
     setKendaraanSearch(""); setVehicleInfo(null)
+    setFotoFile(null); setFotoPreview(null); setFileInputKey(v => v + 1)
     setModalOpen(true)
   }
 
@@ -112,7 +123,50 @@ export default function ServisKendaraanPage() {
       bengkel:        row.bengkel ?? "",
       keterangan:     row.keterangan ?? "",
     })
+    setFotoFile(null); setFotoPreview(null); setFileInputKey(v => v + 1)
     setModalOpen(true)
+  }
+
+  const handleFotoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null
+    if (fotoPreview) URL.revokeObjectURL(fotoPreview)
+
+    if (!file) {
+      setFotoFile(null)
+      setFotoPreview(null)
+      setErrors(prev => {
+        const next = { ...prev }
+        delete next.foto
+        return next
+      })
+      return
+    }
+
+    const isImage = ["image/jpeg", "image/jpg", "image/png", "image/webp"].includes(file.type) || /\.(jpg|jpeg|png|webp)$/i.test(file.name)
+    if (!isImage) {
+      setFotoFile(null)
+      setFotoPreview(null)
+      setErrors(prev => ({ ...prev, foto: "Bukti foto harus berupa JPG, PNG, atau WEBP" }))
+      event.target.value = ""
+      return
+    }
+
+    if (file.size > MAX_FOTO_MB * 1024 * 1024) {
+      setFotoFile(null)
+      setFotoPreview(null)
+      setErrors(prev => ({ ...prev, foto: `Ukuran foto maksimal ${MAX_FOTO_MB} MB` }))
+      event.target.value = ""
+      return
+    }
+
+    const objectUrl = URL.createObjectURL(file)
+    setFotoFile(file)
+    setFotoPreview(objectUrl)
+    setErrors(prev => {
+      const next = { ...prev }
+      delete next.foto
+      return next
+    })
   }
 
   const handleSubmit = async () => {
@@ -128,19 +182,22 @@ export default function ServisKendaraanPage() {
     try {
       const url    = editMode && selected ? `/api/servis-kendaraan/${selected.id}` : "/api/servis-kendaraan"
       const method = editMode ? "PUT" : "POST"
+      const formData = new FormData()
+      formData.append("data_r2r4_id", String(Number(form.data_r2r4_id)))
+      formData.append("tanggal_servis", form.tanggal_servis)
+      formData.append("jenis_servis", form.jenis_servis)
+      formData.append("biaya", String(Number(form.biaya) || 0))
+      formData.append("bengkel", form.bengkel)
+      formData.append("keterangan", form.keterangan)
+      if (fotoFile) formData.append("foto", fotoFile)
+
       const res = await fetch(url, {
-        method, headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          data_r2r4_id:  Number(form.data_r2r4_id),
-          tanggal_servis: form.tanggal_servis,
-          jenis_servis:  form.jenis_servis,
-          biaya:         Number(form.biaya) || 0,
-          bengkel:       form.bengkel || null,
-          keterangan:    form.keterangan || null,
-        }),
+        method,
+        body: formData,
       })
       if (!res.ok) { const j = await res.json(); setErrors({ _: j.error ?? "Gagal" }); return }
-      setModalOpen(false); refetch()
+      if (fotoPreview) URL.revokeObjectURL(fotoPreview)
+      setModalOpen(false); setFotoFile(null); setFotoPreview(null); setFileInputKey(v => v + 1); refetch()
     } finally { setSaving(false) }
   }
 
@@ -177,6 +234,19 @@ export default function ServisKendaraanPage() {
       cell: (r) => <span className="font-mono font-semibold">{formatCurrency(Number(r.biaya))}</span>,
     },
     { key: "bengkel", header: "Bengkel", cell: (r) => r.bengkel ?? "—" },
+    {
+      key: "struk_foto",
+      header: "Bukti Foto",
+      cell: (r) => {
+        const fotoUrl = servisFotoUrl(r)
+        if (!fotoUrl) return <span className="text-xs" style={{ color: "var(--text-subtle)" }}>Belum ada</span>
+        return (
+          <a href={fotoUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: "var(--primary)" }}>
+            <ExternalLink className="h-3.5 w-3.5" /> Lihat Foto
+          </a>
+        )
+      },
+    },
   ]
 
   return (
@@ -213,10 +283,10 @@ export default function ServisKendaraanPage() {
       </div>
 
       {/* Table */}
-      <DataTable
-        data={list as any} columns={columns as any}
+      <DataTable<ServisKendaraan>
+        data={list} columns={columns}
         searchKeys={["jenis_servis", "bengkel"]} loading={loading}
-        actions={(row: any) => (
+        actions={(row) => (
           <div className="flex items-center justify-center gap-1">
             {canManageData && <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--warning)" }}
               onClick={() => openEdit(row)}><Pencil className="h-3.5 w-3.5" /></Button>}
@@ -326,6 +396,57 @@ export default function ServisKendaraanPage() {
               <TextareaField label="Catatan Tambahan"
                 value={form.keterangan} onChange={e => setF("keterangan", e.target.value)}
                 placeholder="Catatan tambahan tentang service ini..." />
+
+              <FormField label="Bukti Foto" error={errors.foto}>
+                <div className="space-y-3">
+                  <input
+                    key={fileInputKey}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                    onChange={handleFotoChange}
+                    className="block w-full rounded-lg border px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:px-3 file:py-1.5 file:text-xs file:font-semibold"
+                    style={{
+                      borderColor: errors.foto ? "var(--danger)" : "var(--border-strong)",
+                      background: "var(--surface)",
+                      color: "var(--text-900)",
+                    }}
+                  />
+                  <div className="rounded-xl p-3" style={{ background: "var(--surface-muted)", border: "1px solid var(--border)" }}>
+                    {fotoPreview ? (
+                      <div className="space-y-2">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={fotoPreview} alt="Preview bukti foto" className="h-40 rounded-lg object-cover" />
+                        <div className="flex items-center justify-between gap-3 text-xs">
+                          <span className="truncate" style={{ color: "var(--text-muted)" }}>{fotoFile?.name}</span>
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 font-semibold cursor-pointer"
+                            style={{ color: "var(--danger)" }}
+                            onClick={() => {
+                              if (fotoPreview) URL.revokeObjectURL(fotoPreview)
+                              setFotoFile(null)
+                              setFotoPreview(null)
+                              setFileInputKey(v => v + 1)
+                            }}
+                          >
+                            <X className="h-3.5 w-3.5" /> Hapus Pilihan
+                          </button>
+                        </div>
+                      </div>
+                    ) : selected?.struk_foto ? (
+                      <div className="space-y-2">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={servisFotoUrl(selected) ?? ""} alt="Bukti foto tersimpan" className="h-40 rounded-lg object-cover" />
+                        <a href={servisFotoUrl(selected) ?? "#"} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: "var(--primary)" }}>
+                          <ImagePlus className="h-3.5 w-3.5" /> Lihat bukti foto tersimpan
+                        </a>
+                      </div>
+                    ) : (
+                      <p className="text-xs" style={{ color: "var(--text-subtle)" }}>Upload bukti foto servis. Maksimal {MAX_FOTO_MB} MB.</p>
+                    )}
+                  </div>
+                </div>
+              </FormField>
             </div>
           </div>
         </div>

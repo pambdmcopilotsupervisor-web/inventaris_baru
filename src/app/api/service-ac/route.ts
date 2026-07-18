@@ -2,6 +2,55 @@ import { NextRequest, NextResponse } from "next/server"
 import { requireSession } from "@/lib/auth"
 import { prisma, serialize } from "@/lib/prisma"
 import { canCreateOrEditTransaksi, getTransaksiActionError } from "@/lib/transaksi-role"
+import { uploadServiceBuktiImage } from "@/lib/service-bukti-file"
+
+function toNullableString(value: FormDataEntryValue | string | null | undefined): string | null {
+  if (typeof value !== "string") return null
+  const trimmed = value.trim()
+  return trimmed ? trimmed : null
+}
+
+function toNullableNumber(value: FormDataEntryValue | number | string | null | undefined): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null
+  if (typeof value !== "string") return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const parsed = Number(trimmed)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+async function parseServiceAcRequest(req: NextRequest) {
+  const contentType = req.headers.get("content-type") ?? ""
+
+  if (contentType.includes("multipart/form-data")) {
+    const formData = await req.formData()
+    const rawFoto = formData.get("foto")
+    const foto = rawFoto instanceof File && rawFoto.size > 0 ? rawFoto : null
+
+    return {
+      asset_id: toNullableNumber(formData.get("asset_id")),
+      tanggal_service: toNullableString(formData.get("tanggal_service")) ?? "",
+      jenis_pekerjaan: toNullableString(formData.get("jenis_pekerjaan")) ?? "",
+      biaya: toNullableNumber(formData.get("biaya")) ?? 0,
+      teknisi: toNullableString(formData.get("teknisi")),
+      keterangan: toNullableString(formData.get("keterangan")),
+      foto,
+      bukti_foto: undefined as string | null | undefined,
+    }
+  }
+
+  const body = await req.json()
+  return {
+    asset_id: toNullableNumber(body.asset_id),
+    tanggal_service: toNullableString(body.tanggal_service) ?? "",
+    jenis_pekerjaan: toNullableString(body.jenis_pekerjaan) ?? "",
+    biaya: toNullableNumber(body.biaya) ?? 0,
+    teknisi: toNullableString(body.teknisi),
+    keterangan: toNullableString(body.keterangan),
+    foto: null,
+    bukti_foto: Object.prototype.hasOwnProperty.call(body, "bukti_foto") ? toNullableString(body.bukti_foto) : undefined,
+  }
+}
 
 export async function GET() {
   try {
@@ -46,12 +95,13 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = await req.json()
-    const { asset_id, tanggal_service, jenis_pekerjaan, biaya, teknisi, keterangan } = body
+    const { asset_id, tanggal_service, jenis_pekerjaan, biaya, teknisi, keterangan, foto, bukti_foto } = await parseServiceAcRequest(req)
 
     if (!asset_id || !tanggal_service || !jenis_pekerjaan) {
       return NextResponse.json({ error: "Field wajib tidak lengkap" }, { status: 400 })
     }
+
+    const storedFoto = foto ? await uploadServiceBuktiImage(foto, "service-aset") : (bukti_foto ?? null)
 
     const data = await prisma.riwayat_service_acs.create({
       data: {
@@ -61,6 +111,7 @@ export async function POST(req: NextRequest) {
         biaya:            biaya ? Number(biaya) : 0,
         teknisi:          teknisi ?? null,
         keterangan:       keterangan ?? null,
+        bukti_foto:       storedFoto,
       },
     })
 

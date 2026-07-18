@@ -1,14 +1,14 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useState } from "react"
 import { DataTable, Column } from "@/components/ui/data-table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Modal } from "@/components/ui/modal"
 import { ConfirmDelete } from "@/components/ui/confirm-delete"
-import { TextField } from "@/components/ui/form-field"
-import { Plus, Eye, Pencil, Trash2, RefreshCw, Search, X, AlertCircle, Info } from "lucide-react"
+import { FormField, TextField } from "@/components/ui/form-field"
+import { Plus, Eye, Pencil, Trash2, RefreshCw, Search, X, AlertCircle, Download, FileUp, FileText } from "lucide-react"
 import { formatDate } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
 import { useAuth } from "@/contexts/AuthContext"
@@ -23,6 +23,21 @@ interface Kontrak {
   status: string; masa_sewa: number; kendaraan_list?: KendaraanDetail[]
 }
 interface Kendaraan { id: number; plat: string; nm_brg: string; jns_brg: string }
+
+const MAX_PDF_SIZE_MB = 10
+
+function kontrakFileUrl(kontrak: Pick<Kontrak, "id" | "file">): string | null {
+  if (!kontrak.file) return null
+  if (kontrak.file.startsWith("http://") || kontrak.file.startsWith("https://") || kontrak.file.startsWith("/")) return kontrak.file
+  return `/api/kontrak/${kontrak.id}/file`
+}
+
+function kontrakFileName(value: string | null): string {
+  if (!value) return "Belum ada file"
+  const cleanValue = value.split("?")[0]
+  const parts = cleanValue.split("/")
+  return decodeURIComponent(parts[parts.length - 1] || "kontrak.pdf")
+}
 
 /* ── Status badge ───────────────────────────────────────────────── */
 function StatusBadge({ status }: { status: string }) {
@@ -64,6 +79,8 @@ export default function KontrakPage() {
 
   // Form
   const [form, setForm] = useState({ no_kontrak: "", judul: "", tgl_awal: "", tgl_akhir: "" })
+  const [pdfFile, setPdfFile] = useState<File | null>(null)
+  const [fileInputKey, setFileInputKey] = useState(0)
   // Repeater: daftar kendaraan dalam kontrak
   const [selectedKendaraans, setSelectedKendaraans] = useState<number[]>([])
   // Search kendaraan untuk repeater
@@ -86,6 +103,8 @@ export default function KontrakPage() {
     if (!canManageData) return
     setEditMode(false); setSelected(null); setErrors({})
     setForm({ no_kontrak: "", judul: "", tgl_awal: "", tgl_akhir: "" })
+    setPdfFile(null)
+    setFileInputKey(v => v + 1)
     setSelectedKendaraans([])
     setKendaraanSearch("")
     setModalOpen(true)
@@ -95,9 +114,46 @@ export default function KontrakPage() {
     if (!canManageData) return
     setEditMode(true); setSelected(row); setErrors({})
     setForm({ no_kontrak: row.no_kontrak ?? "", judul: row.judul, tgl_awal: row.tgl_awal?.split("T")[0] ?? "", tgl_akhir: row.tgl_akhir?.split("T")[0] ?? "" })
+    setPdfFile(null)
+    setFileInputKey(v => v + 1)
     setSelectedKendaraans((row.kendaraan_list ?? []).map(d => d.data_r2r4_id!).filter(Boolean))
     setKendaraanSearch("")
     setModalOpen(true)
+  }
+
+  const handlePdfChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null
+    if (!file) {
+      setPdfFile(null)
+      setErrors(prev => {
+        const next = { ...prev }
+        delete next.file
+        return next
+      })
+      return
+    }
+
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")
+    if (!isPdf) {
+      setPdfFile(null)
+      setErrors(prev => ({ ...prev, file: "File kontrak harus berformat PDF" }))
+      event.target.value = ""
+      return
+    }
+
+    if (file.size > MAX_PDF_SIZE_MB * 1024 * 1024) {
+      setPdfFile(null)
+      setErrors(prev => ({ ...prev, file: `Ukuran file maksimal ${MAX_PDF_SIZE_MB} MB` }))
+      event.target.value = ""
+      return
+    }
+
+    setPdfFile(file)
+    setErrors(prev => {
+      const next = { ...prev }
+      delete next.file
+      return next
+    })
   }
 
   const handleAddKendaraan = (k: Kendaraan) => {
@@ -124,12 +180,20 @@ export default function KontrakPage() {
     try {
       const url    = editMode && selected ? `/api/kontrak/${selected.id}` : "/api/kontrak"
       const method = editMode ? "PUT" : "POST"
+      const formData = new FormData()
+      formData.append("no_kontrak", form.no_kontrak)
+      formData.append("judul", form.judul)
+      formData.append("tgl_awal", form.tgl_awal)
+      formData.append("tgl_akhir", form.tgl_akhir)
+      formData.append("kendaraan_ids", JSON.stringify(selectedKendaraans))
+      if (pdfFile) formData.append("file", pdfFile)
+
       const res = await fetch(url, {
-        method, headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, kendaraan_ids: selectedKendaraans }),
+        method,
+        body: formData,
       })
       if (!res.ok) { const j = await res.json(); setErrors({ _: j.error ?? "Gagal" }); return }
-      setModalOpen(false); refetch()
+      setModalOpen(false); setPdfFile(null); setFileInputKey(v => v + 1); refetch()
     } finally { setSaving(false) }
   }
 
@@ -184,6 +248,22 @@ export default function KontrakPage() {
         {(r.kendaraan_list ?? []).length} unit
       </span>
     )},
+    { key: "file", header: "File Kontrak", cell: (r) => {
+      const fileUrl = kontrakFileUrl(r)
+      if (!fileUrl) return <span className="text-xs" style={{ color: "var(--text-subtle)" }}>Belum ada PDF</span>
+      return (
+        <a
+          href={fileUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold"
+          style={{ color: "var(--primary)" }}
+        >
+          <Download className="h-3.5 w-3.5" />
+          Download PDF
+        </a>
+      )
+    }},
     { key: "status", header: "Status", cell: (r) => <StatusBadge status={r.status} /> },
   ]
 
@@ -235,11 +315,11 @@ export default function KontrakPage() {
       </div>
 
       {/* Table */}
-      <DataTable
-        data={filteredList as any} columns={columns as any}
+      <DataTable<Kontrak>
+        data={filteredList} columns={columns}
         searchKeys={["no_kontrak", "judul"]} loading={loading}
         emptyMessage="Tidak ada kontrak"
-        actions={(row: any) => (
+        actions={(row) => (
           <div className="flex items-center justify-center gap-1">
             <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--info)" }}
               onClick={() => { setSelected(row); setViewOpen(true) }}><Eye className="h-3.5 w-3.5" /></Button>
@@ -284,6 +364,62 @@ export default function KontrakPage() {
               </div>
             </div>
           </div>
+
+          <FormField label="File Kontrak (PDF)" error={errors.file}>
+            <div className="space-y-2">
+              <input
+                key={fileInputKey}
+                type="file"
+                accept="application/pdf,.pdf"
+                onChange={handlePdfChange}
+                className="block w-full rounded-lg border px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:px-3 file:py-1.5 file:text-xs file:font-semibold"
+                style={{
+                  borderColor: errors.file ? "var(--danger)" : "var(--border-strong)",
+                  background: "var(--surface)",
+                  color: "var(--text-900)",
+                }}
+              />
+
+              <div className="rounded-lg px-3 py-2 text-xs" style={{ background: "var(--surface-muted)", color: "var(--text-muted)" }}>
+                {pdfFile ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="flex items-center gap-2 min-w-0">
+                      <FileUp className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">{pdfFile.name}</span>
+                    </span>
+                    <button
+                      type="button"
+                      className="font-semibold cursor-pointer"
+                      style={{ color: "var(--danger)" }}
+                      onClick={() => { setPdfFile(null); setFileInputKey(v => v + 1) }}
+                    >
+                      Hapus pilihan
+                    </button>
+                  </div>
+                ) : selected?.file ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="flex items-center gap-2 min-w-0">
+                      <FileText className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">File tersimpan: {kontrakFileName(selected.file)}</span>
+                    </span>
+                    {kontrakFileUrl(selected) && (
+                      <a href={kontrakFileUrl(selected)!} target="_blank" rel="noreferrer" className="font-semibold" style={{ color: "var(--primary)" }}>
+                        Download
+                      </a>
+                    )}
+                  </div>
+                ) : (
+                  <span>Upload file PDF kontrak. Maksimal {MAX_PDF_SIZE_MB} MB.</span>
+                )}
+              </div>
+
+              {editMode && selected?.file && !pdfFile && (
+                <p className="text-[11px]" style={{ color: "var(--text-subtle)" }}>
+                  Kosongkan pilihan file jika tidak ingin mengganti PDF yang sudah tersimpan.
+                </p>
+              )}
+            </div>
+          </FormField>
 
           {/* Repeater: Kendaraan terkait kontrak (sesuai Filament Repeater) */}
           <div className="rounded-xl" style={{ border: "1px solid var(--border)" }}>
@@ -373,6 +509,23 @@ export default function KontrakPage() {
               <div className="col-span-2">
                 <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>Judul Kontrak</p>
                 <p className="mt-0.5 font-semibold" style={{ color: "var(--text-900)" }}>{selected.judul}</p>
+              </div>
+              <div className="col-span-2">
+                <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>File Kontrak</p>
+                {kontrakFileUrl(selected) ? (
+                  <a
+                    href={kontrakFileUrl(selected)!}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-1 inline-flex items-center gap-2 text-sm font-semibold"
+                    style={{ color: "var(--primary)" }}
+                  >
+                    <Download className="h-4 w-4" />
+                    Download PDF Kontrak
+                  </a>
+                ) : (
+                  <p className="mt-0.5 text-sm" style={{ color: "var(--text-subtle)" }}>Belum ada file PDF</p>
+                )}
               </div>
               <div><p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>Tgl Awal</p><p className="mt-0.5 font-medium">{formatDate(selected.tgl_awal)}</p></div>
               <div><p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>Tgl Akhir</p><p className="mt-0.5 font-medium">{formatDate(selected.tgl_akhir)}</p></div>

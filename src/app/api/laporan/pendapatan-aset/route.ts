@@ -6,6 +6,61 @@ const BULAN_ID: Record<number, string> = {
   7:"Juli",8:"Agustus",9:"September",10:"Oktober",11:"November",12:"Desember",
 }
 
+function sortKontraksByEndDateDesc<T extends { tgl_akhir: Date; id: bigint | number }>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const endDiff = new Date(b.tgl_akhir).getTime() - new Date(a.tgl_akhir).getTime()
+    if (endDiff !== 0) return endDiff
+    return Number(b.id) - Number(a.id)
+  })
+}
+
+interface ContractLike {
+  id: bigint | number
+  tgl_awal: Date
+  tgl_akhir: Date
+}
+
+interface SaleLike {
+  tgl_jual?: Date | null
+}
+
+interface ActiveVehicleEntry {
+  id: number
+  kode: string
+  plat: string
+  nama: string
+  pemegang: string
+  departemen: string
+  hrg: number
+}
+
+interface VehicleMonthMap {
+  r2: Map<number, ActiveVehicleEntry>
+  r4: Map<number, ActiveVehicleEntry>
+}
+
+interface VehicleTrendChange {
+  added: ActiveVehicleEntry[]
+  removed: ActiveVehicleEntry[]
+}
+
+const BILLING_CUTOFF_DAY = 20
+
+function isSameUtcMonth(date: Date, year: number, month: number): boolean {
+  return date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month
+}
+
+function isStillBillableThisPeriod(date: Date | null, year: number, month: number): boolean {
+  if (!date) return true
+
+  if (date.getUTCFullYear() > year) return true
+  if (date.getUTCFullYear() === year && date.getUTCMonth() + 1 > month) return true
+
+  if (!isSameUtcMonth(date, year, month)) return false
+
+  return date.getUTCDate() > BILLING_CUTOFF_DAY
+}
+
 // ── Shared DB data cache (loaded once per request) ───────────────
 async function loadSharedData() {
   const [penjualanRaw, kontrakDetails, kontraks, penjualans, allVehicles] = await Promise.all([
@@ -43,43 +98,49 @@ async function loadSharedData() {
   return { vehicles, kontrakByVehicle, penjualanMap }
 }
 
+type SharedVehicle = Awaited<ReturnType<typeof loadSharedData>>["vehicles"][number]
+
 // ── Get active vehicles for a month (with full filtering) ────────
 function getActiveVehicles(
   year: number, month: number,
-  vehicles: Awaited<ReturnType<typeof loadSharedData>>["vehicles"],
-  kontrakByVehicle: Map<number, any[]>,
-  penjualanMap: Map<number | null, any>
+  vehicles: SharedVehicle[],
+  kontrakByVehicle: Map<number, ContractLike[]>,
+  penjualanMap: Map<number | null, SaleLike>
 ) {
   const startDate = new Date(Date.UTC(year, month - 1, 1))
   const endDate   = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999))
 
   const result: {
-    r2: { id: number; kode: string; plat: string; nama: string; pemegang: string; departemen: string; hrg: number }[]
-    r4: { id: number; kode: string; plat: string; nama: string; pemegang: string; departemen: string; hrg: number }[]
+    r2: ActiveVehicleEntry[]
+    r4: ActiveVehicleEntry[]
     r2Nominal: number; r4Nominal: number; r2Unit: number; r4Unit: number
   } = { r2: [], r4: [], r2Nominal: 0, r4Nominal: 0, r2Unit: 0, r4Unit: 0 }
 
   for (const vehicle of vehicles) {
     const vehicleId = Number(vehicle.id)
-    const vKontraks = kontrakByVehicle.get(vehicleId) ?? []
+    const vKontraks = sortKontraksByEndDateDesc(kontrakByVehicle.get(vehicleId) ?? [])
 
-    const active = vKontraks.find(k => {
+    const periodKontraks = vKontraks.filter(k => {
       const kStart = new Date(k.tgl_awal)
       const kEnd   = new Date(k.tgl_akhir)
       return kStart <= endDate && kEnd >= startDate
     })
-    if (!active) continue
+    if (periodKontraks.length === 0) continue
+
+    const kontrak = periodKontraks[0]
+    const contractEnd = new Date(kontrak.tgl_akhir)
+    if (!isStillBillableThisPeriod(contractEnd, year, month)) continue
 
     const penjualan = penjualanMap.get(vehicleId)
     const saleDate  = penjualan?.tgl_jual ? new Date(penjualan.tgl_jual) : null
-    if (saleDate && saleDate <= startDate) continue
+    if (!isStillBillableThisPeriod(saleDate, year, month)) continue
 
     const stopDate = vehicle.tgl_stop_tagihan ? new Date(vehicle.tgl_stop_tagihan) : null
-    if (stopDate && stopDate <= startDate) continue
+    if (!isStillBillableThisPeriod(stopDate, year, month)) continue
 
     const isR4 = (vehicle.jns_brg ?? "").toUpperCase().includes("R4")
     const hrg  = Number(vehicle.hrg_sewa ?? 0)
-    const entry = {
+    const entry: ActiveVehicleEntry = {
       id:         vehicleId,
       kode:       vehicle.kode_brg ?? "-",
       plat:       vehicle.plat,
@@ -135,7 +196,7 @@ export async function GET(req: NextRequest) {
     const r4Units:     Record<number, number> = {}
 
     // Vehicle maps per month (for trend detection)
-    const vehicleMapByMonth: Record<number, { r2: Map<number, any>; r4: Map<number, any> }> = {}
+    const vehicleMapByMonth: Record<number, VehicleMonthMap> = {}
 
     for (const month of months) {
       const data = getActiveVehicles(year, month, vehicles, kontrakByVehicle, penjualanMap)
@@ -152,7 +213,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Build vehicle trend details (same as pedami buildVehicleTrendDetails)
-    const vehicleTrendDetails: Record<string, Record<number, { added: any[]; removed: any[] }>> = {
+    const vehicleTrendDetails: Record<"r2" | "r4", Record<number, VehicleTrendChange>> = {
       r2: {}, r4: {}
     }
 
