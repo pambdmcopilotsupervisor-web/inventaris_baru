@@ -125,6 +125,38 @@ function drawSimpleTable(
   return y + 12
 }
 
+function measureNoteGroup(doc: PDFKit.PDFDocument, title: string, notes: string[], width: number): number {
+  doc.font("Helvetica-Bold").fontSize(8)
+  const titleH = Math.max(10, doc.heightOfString(title, { width }))
+
+  doc.font("Helvetica").fontSize(7.5)
+  const notesH = notes.reduce((height, note) => {
+    return height + doc.heightOfString(`• ${note}`, { width }) + 2
+  }, 0)
+
+  return titleH + notesH
+}
+
+function drawNoteGroup(
+  doc: PDFKit.PDFDocument,
+  title: string,
+  notes: string[],
+  x: number,
+  y: number,
+  width: number,
+): number {
+  doc.fillColor("#92400e").font("Helvetica-Bold").fontSize(8).text(title, x, y, { width })
+  y += Math.max(10, doc.heightOfString(title, { width }))
+
+  doc.font("Helvetica").fontSize(7.5)
+  notes.forEach((note) => {
+    doc.fillColor("#92400e").text(`• ${note}`, x + 4, y, { width: width - 4 })
+    y = doc.y + 2
+  })
+
+  return y
+}
+
 export function generatePendapatanAsetPdf(data: PendapatanAsetReportData, options: PendapatanAsetPdfOptions = {}): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: "A4", layout: "landscape", margin: MARGIN })
@@ -170,30 +202,28 @@ export function generatePendapatanAsetPdf(data: PendapatanAsetReportData, option
     ]))
     y = drawSimpleTable(doc, y, "Jumlah Unit Aktif Tagihan", unitHeaders, unitRows, [28, 190, ...data.months.map(() => 72), 90])
 
-    y = ensurePage(doc, y, 90)
-    doc.roundedRect(MARGIN, y, CONTENT_W, 120, 8).fillAndStroke("#fffbeb", "#f59e0b")
-    doc.fillColor("#92400e").font("Helvetica-Bold").fontSize(10).text("Catatan", MARGIN + 10, y + 10)
-
     const roda2Notes = buildNotes("Pendapatan kendaraan roda dua", data.incomeRows[0]?.months ?? {}, data.monthLabels, data.vehicleTrendDetails.r2, data.periodLabel)
     const roda4Notes = buildNotes("Pendapatan kendaraan roda empat", data.incomeRows[1]?.months ?? {}, data.monthLabels, data.vehicleTrendDetails.r4, data.periodLabel)
 
-    let noteY = y + 28
-    doc.font("Helvetica-Bold").fontSize(8).text("Roda Dua (R2)", MARGIN + 10, noteY)
-    noteY += 10
-    doc.font("Helvetica").fontSize(7.5)
-    roda2Notes.forEach((note) => {
-      doc.text(`• ${note}`, MARGIN + 14, noteY, { width: CONTENT_W - 28 })
-      noteY = doc.y + 2
-    })
+    const noteContentX = MARGIN + 10
+    const noteContentW = CONTENT_W - 20
+    const noteTitleH = 12
+    const noteBoxH = 10
+      + noteTitleH
+      + 6
+      + measureNoteGroup(doc, "Roda Dua (R2)", roda2Notes, noteContentW)
+      + 6
+      + measureNoteGroup(doc, "Roda Empat (R4)", roda4Notes, noteContentW)
+      + 10
 
+    y = ensurePage(doc, y, noteBoxH)
+    doc.roundedRect(MARGIN, y, CONTENT_W, noteBoxH, 8).fillAndStroke("#fffbeb", "#f59e0b")
+    doc.fillColor("#92400e").font("Helvetica-Bold").fontSize(10).text("Catatan", noteContentX, y + 10, { width: noteContentW })
+
+    let noteY = y + 10 + noteTitleH + 6
+    noteY = drawNoteGroup(doc, "Roda Dua (R2)", roda2Notes, noteContentX, noteY, noteContentW)
     noteY += 6
-    doc.font("Helvetica-Bold").fontSize(8).text("Roda Empat (R4)", MARGIN + 10, noteY)
-    noteY += 10
-    doc.font("Helvetica").fontSize(7.5)
-    roda4Notes.forEach((note) => {
-      doc.text(`• ${note}`, MARGIN + 14, noteY, { width: CONTENT_W - 28 })
-      noteY = doc.y + 2
-    })
+    drawNoteGroup(doc, "Roda Empat (R4)", roda4Notes, noteContentX, noteY, noteContentW)
 
     doc.end()
   })

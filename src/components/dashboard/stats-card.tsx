@@ -18,8 +18,8 @@ const ICON_COLORS: Record<string, { bg: string; color: string }> = {
   green:  { bg: "var(--success-bg)",    color: "var(--success)" },
   red:    { bg: "var(--danger-bg)",     color: "var(--danger)" },
   amber:  { bg: "var(--warning-bg)",    color: "var(--warning)" },
-  purple: { bg: "#F5F3FF",              color: "#7C3AED" },
-  cyan:   { bg: "var(--info-bg)",       color: "var(--info)" },
+  purple: { bg: "var(--primary-mid)",   color: "var(--primary)" },
+  cyan:   { bg: "#FCE7F3",              color: "#DB2777" },
 }
 
 export function StatsCard({ title, value, description, icon, trend, color = "blue", className, mono = false }: StatsCardProps) {

@@ -582,7 +582,7 @@ export function Navbar() {
                   href={group.href!}
                   className="shrink-0 flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all duration-150 cursor-pointer"
                   style={isActive
-                    ? { background: "rgba(255,255,255,0.12)", color: "#fff" }
+                    ? { background: "var(--sb-active-bg)", color: "var(--sb-active-fg)" }
                     : { color: "var(--sb-fg)" }
                   }
                   onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "var(--sb-hover-bg)" }}
@@ -610,11 +610,11 @@ export function Navbar() {
                   }}
                   className="shrink-0 flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all duration-150 cursor-pointer"
                   style={isActive || isOpen
-                    ? { background: "rgba(255,255,255,0.12)", color: "#fff" }
+                    ? { background: "var(--sb-active-bg)", color: "var(--sb-active-fg)" }
                     : { color: "var(--sb-fg)" }
                   }
                   onMouseEnter={(e) => { if (!isActive && !isOpen) (e.currentTarget as HTMLElement).style.background = "var(--sb-hover-bg)" }}
-                  onMouseLeave={(e) => { if (!isActive && !isOpen) (e.currentTarget as HTMLElement).style.background = isActive || isOpen ? "rgba(255,255,255,0.12)" : "transparent" }}
+                  onMouseLeave={(e) => { if (!isActive && !isOpen) (e.currentTarget as HTMLElement).style.background = isActive || isOpen ? "var(--sb-active-bg)" : "transparent" }}
                 >
                   {group.icon}
                   {group.label}
@@ -751,7 +751,10 @@ export function Navbar() {
                   href={group.href!}
                   onClick={() => setMobileOpen(false)}
                   className="flex items-center gap-3 px-5 py-3.5 text-sm font-semibold cursor-pointer"
-                  style={{ color: pathname === group.href ? "#fff" : "var(--sb-fg)" }}
+                  style={pathname === group.href
+                    ? { background: "var(--sb-active-bg)", color: "#fff" }
+                    : { color: "var(--sb-fg)" }
+                  }
                 >
                   {group.icon} {group.label}
                 </Link>

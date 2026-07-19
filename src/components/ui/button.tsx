@@ -40,7 +40,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     const baseStyle = React.useMemo((): React.CSSProperties => {
       if (variant === "default" || !variant) return { background: "var(--primary)", color: "#fff" }
       if (variant === "cta") return { background: "var(--cta)", color: "#fff" }
-      if (variant === "outline") return { borderColor: "var(--border-strong)", color: "var(--text-700)" }
+      if (variant === "outline") return { borderColor: "var(--primary-mid)", color: "var(--primary)", background: "#fff" }
       if (variant === "secondary") return { background: "var(--primary-light)", color: "var(--primary)" }
       if (variant === "ghost") return { color: "var(--text-muted)" }
       if (variant === "link") return { color: "var(--primary)" }
@@ -51,6 +51,10 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       const el = e.currentTarget as HTMLElement
       if (variant === "default" || !variant) el.style.background = "var(--primary-hover)"
       else if (variant === "cta") el.style.background = "var(--cta-hover)"
+      else if (variant === "outline") {
+        el.style.background = "var(--primary-light)"
+        el.style.borderColor = "var(--primary)"
+      }
       else if (variant === "ghost") el.style.background = "var(--surface-hover)"
       onMouseEnter?.(e)
     }
@@ -58,6 +62,10 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       const el = e.currentTarget as HTMLElement
       if (variant === "default" || !variant) el.style.background = "var(--primary)"
       else if (variant === "cta") el.style.background = "var(--cta)"
+      else if (variant === "outline") {
+        el.style.background = "#fff"
+        el.style.borderColor = "var(--primary-mid)"
+      }
       else if (variant === "ghost") el.style.background = "transparent"
       onMouseLeave?.(e)
     }

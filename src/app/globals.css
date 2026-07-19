@@ -10,11 +10,11 @@
 
 :root {
   /* Brand */
-  --primary:        #1E40AF;
-  --primary-hover:  #1D3FA5;
-  --primary-light:  #EFF6FF;
-  --primary-mid:    #DBEAFE;
-  --secondary:      #3B82F6;
+  --primary:        #D87093;
+  --primary-hover:  #C95E84;
+  --primary-light:  #FDECF2;
+  --primary-mid:    #F8D3E0;
+  --secondary:      #F2AFC6;
   --cta:            #F59E0B;
   --cta-hover:      #D97706;
 
@@ -39,9 +39,9 @@
   /* Sidebar — Navy Enterprise */
   --sb-bg:          #0F172A;
   --sb-fg:          #CBD5E1;
-  --sb-active-bg:   #1E40AF;
+  --sb-active-bg:   #D87093;
   --sb-active-fg:   #FFFFFF;
-  --sb-hover-bg:    #1E293B;
+  --sb-hover-bg:    #3A2230;
   --sb-hover-fg:    #F1F5F9;
   --sb-border:      #1E293B;
   --sb-muted:       #64748B;
