@@ -27,16 +27,13 @@ CALL _add_password_baru();
 DROP PROCEDURE IF EXISTS _add_password_baru;
 
 -- ============================================================
--- Set password awal untuk akun Riny87@pedami.com
+-- Set password awal untuk akun Riny87@pedami.com hanya jika belum pernah diset.
+-- Jangan menimpa password_baru yang sudah diganti user/admin, karena file
+-- migrations dijalankan ulang setiap deploy oleh docker-entrypoint.sh.
 -- Password awal: admin123
 -- Hash bcrypt 12 rounds ($2b$12$...)
 -- ============================================================
 UPDATE users
   SET password_baru = '$2b$12$m4A3/xN.dVY/HeGGSVWUq.K0cdRpw6IT3Ky1K9N6N8pJyxwZ71S4.'
-WHERE LOWER(email) = 'riny87@pedami.com';
-
--- Verifikasi
-SELECT id, name, email,
-  LEFT(password, 10) AS old_pass_prefix,
-  CASE WHEN password_baru IS NULL THEN 'BELUM DISET' ELSE LEFT(password_baru, 10) END AS new_pass_prefix
-FROM users;
+WHERE LOWER(email) = 'riny87@pedami.com'
+  AND (password_baru IS NULL OR password_baru = '');
