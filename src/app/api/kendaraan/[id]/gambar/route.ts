@@ -23,7 +23,7 @@ const s3 = new S3Client({
 const ALLOWED_FIELDS = ["gambar_fisik", "gambar_pajak", "gambar_stnk", "gbr_barang"] as const
 type ImageField = typeof ALLOWED_FIELDS[number]
 
-const ALLOWED_TYPES  = ["image/jpeg", "image/jpg", "image/png", "image/webp"]
+const ALLOWED_TYPES  = ["image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"]
 const MAX_SIZE_BYTES = 5 * 1024 * 1024
 
 function getField(req: NextRequest): ImageField | null {
@@ -97,7 +97,7 @@ export async function POST(
     const file = formData.get("file") as File | null
 
     if (!file) return NextResponse.json({ error: "File wajib disertakan" }, { status: 400 })
-    if (!ALLOWED_TYPES.includes(file.type)) return NextResponse.json({ error: "Hanya JPG, PNG, atau WEBP" }, { status: 400 })
+    if (!ALLOWED_TYPES.includes(file.type)) return NextResponse.json({ error: "Hanya JPG, PNG, PDF, atau WEBP" }, { status: 400 })
     if (file.size > MAX_SIZE_BYTES) return NextResponse.json({ error: "Ukuran maksimal 5 MB" }, { status: 400 })
 
     const ext    = extname(file.name).toLowerCase() || ".jpg"

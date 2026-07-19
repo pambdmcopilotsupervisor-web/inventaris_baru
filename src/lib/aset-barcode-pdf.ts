@@ -26,6 +26,7 @@ const PAGE_MARGIN = 28
 const STICKER_GAP = 10
 const STICKER_WIDTH = 172
 const STICKER_HEIGHT = 68
+const STICKER_RADIUS = 6
 const STICKERS_PER_ROW = 3
 const STICKER_BODY_X = 8
 const STICKER_BODY_Y = 17
@@ -87,10 +88,6 @@ async function drawQrCode(doc: PDFKit.PDFDocument, value: string, x: number, y: 
   doc.restore()
 }
 
-function fitBadgeWidth(doc: PDFKit.PDFDocument, text: string): number {
-  return Math.min(Math.max(doc.widthOfString(text) + 8, 50), 90)
-}
-
 function drawAppLogo(doc: PDFKit.PDFDocument, x: number, y: number, size: number) {
   if (!HAS_APP_LOGO) return
 
@@ -106,10 +103,22 @@ function drawAppLogo(doc: PDFKit.PDFDocument, x: number, y: number, size: number
   doc.roundedRect(x, y, size, size, 4).strokeColor("#e2e8f0").lineWidth(0.6).stroke()
 }
 
-async function drawSticker(doc: PDFKit.PDFDocument, asset: BarcodePdfAsset, x: number, y: number, origin: string) {
-  doc.roundedRect(x, y, STICKER_WIDTH, STICKER_HEIGHT, 6).fillColor("#ffffff").fill().strokeColor("#1e293b").lineWidth(2).stroke()
+function fitDivisiFontSize(doc: PDFKit.PDFDocument, text: string, width: number, maxHeight: number): number {
+  for (let size = 6.7; size >= 4.5; size -= 0.2) {
+    doc.font("Helvetica-Bold").fontSize(size)
+    if (doc.heightOfString(text, { width }) <= maxHeight) return size
+  }
 
+  return 4.5
+}
+
+async function drawSticker(doc: PDFKit.PDFDocument, asset: BarcodePdfAsset, x: number, y: number, origin: string) {
+  doc.roundedRect(x, y, STICKER_WIDTH, STICKER_HEIGHT, STICKER_RADIUS).fillColor("#ffffff").fill()
+
+  doc.save()
+  doc.roundedRect(x, y, STICKER_WIDTH, STICKER_HEIGHT, STICKER_RADIUS).clip()
   doc.rect(x, y, STICKER_WIDTH, HEADER_HEIGHT).fill("#1e293b")
+  doc.restore()
   doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(6.3).text("INVENTARIS KOPERASI KONSUMEN PEDAMI", x, y + 4, {
     width: STICKER_WIDTH,
     align: "center",
@@ -135,9 +144,19 @@ async function drawSticker(doc: PDFKit.PDFDocument, asset: BarcodePdfAsset, x: n
   })
 
   const badgeText = asset.divisi_pj ?? "Tanpa Divisi"
-  const badgeWidth = Math.min(fitBadgeWidth(doc, badgeText), textWidth)
-  doc.roundedRect(textX, infoY + 27, badgeWidth, 12, 4).fillColor("#f1f5f9").fill()
-  doc.fillColor("#64748b").font("Helvetica-Bold").fontSize(6.7).text(truncateText(badgeText, 16), textX + 4, infoY + 30.5, { width: badgeWidth - 8 })
+  const badgeX = textX
+  const badgeY = infoY + 26
+  const badgeWidth = textWidth
+  const badgeHeight = 17
+  const badgePaddingX = 4
+  const badgeTextWidth = badgeWidth - badgePaddingX * 2
+  const badgeFontSize = fitDivisiFontSize(doc, badgeText, badgeTextWidth, badgeHeight - 4)
+  doc.roundedRect(badgeX, badgeY, badgeWidth, badgeHeight, 4).fillColor("#f1f5f9").fill()
+  doc.fillColor("#64748b").font("Helvetica-Bold").fontSize(badgeFontSize).text(badgeText, badgeX + badgePaddingX, badgeY + 2.5, {
+    width: badgeTextWidth,
+    height: badgeHeight - 4,
+    lineGap: -0.5,
+  })
 
   doc.roundedRect(qrOuterX, qrOuterY, QR_BOX_SIZE, QR_BOX_SIZE, 4).fillColor("#ffffff").fill().strokeColor("#e2e8f0").lineWidth(1).stroke()
   await drawQrCode(doc, `${origin}/info-asset/${asset.id}`, qrOuterX + qrPadding, qrOuterY + qrPadding, QR_INNER_SIZE)
@@ -147,6 +166,7 @@ async function drawSticker(doc: PDFKit.PDFDocument, asset: BarcodePdfAsset, x: n
     width: STICKER_WIDTH,
     align: "center",
   })
+  doc.roundedRect(x, y, STICKER_WIDTH, STICKER_HEIGHT, STICKER_RADIUS).strokeColor("#1e293b").lineWidth(1.2).stroke()
 }
 
 export function generateAsetBarcodePdf(assets: BarcodePdfAsset[], meta: BarcodePdfMeta, origin: string): Promise<Buffer> {

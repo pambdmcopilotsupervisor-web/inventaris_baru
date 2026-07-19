@@ -3,6 +3,27 @@ import { requireSession } from "@/lib/auth"
 import { prisma, serialize } from "@/lib/prisma"
 import { canCreateOrEditTransaksi, getTransaksiActionError } from "@/lib/transaksi-role"
 
+function getNextSequentialCode(codes: Array<string | null | undefined>): string {
+  let nextPrefix = ""
+  let nextNumber = 1
+  let nextWidth = 0
+
+  for (const code of codes) {
+    const match = code?.trim().match(/^(.*?)(\d+)$/)
+    if (!match) continue
+
+    const numberText = match[2]
+    const number = Number(numberText)
+    if (!Number.isSafeInteger(number) || number < nextNumber) continue
+
+    nextPrefix = match[1]
+    nextNumber = number + 1
+    nextWidth = numberText.length
+  }
+
+  return `${nextPrefix}${String(nextNumber).padStart(nextWidth, "0")}`
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
@@ -86,7 +107,13 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json()
-    const data = await prisma.data_r2r4s.create({ data: body })
+    const existingCodes = await prisma.data_r2r4s.findMany({ select: { kode_brg: true } })
+    const data = await prisma.data_r2r4s.create({
+      data: {
+        ...body,
+        kode_brg: getNextSequentialCode(existingCodes.map(kendaraan => kendaraan.kode_brg)),
+      },
+    })
     return NextResponse.json(serialize(data), { status: 201 })
   } catch (err) {
     console.error(err)

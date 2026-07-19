@@ -10,10 +10,11 @@ import { ConfirmDelete } from "@/components/ui/confirm-delete"
 import { TextField, SelectField, TextareaField } from "@/components/ui/form-field"
 import { SearchableSelect } from "@/components/ui/searchable-select"
 import { Input } from "@/components/ui/input"
+import { CameraCaptureModal } from "@/components/ui/camera-capture-modal"
 import {
   Plus, Pencil, Trash2, Eye, QrCode, Printer, RefreshCw,
   Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-  FileText, ImagePlus, X,
+  Camera, FileText, ImagePlus, X,
 } from "lucide-react"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
@@ -65,6 +66,30 @@ interface BarcodePrintMeta {
 
 const EMPTY: Partial<Asset> = { kelompok_asset: "komputer", status_barang: "Baik" }
 const PER_PAGE = 10
+const ASSET_FILE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"]
+const ASSET_FILE_MAX_BYTES = 5 * 1024 * 1024
+const ASSET_FILE_ACCEPT = "image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf"
+
+function getNextSequentialCode(codes: Array<string | null | undefined>): string {
+  let nextPrefix = ""
+  let nextNumber = 1
+  let nextWidth = 0
+
+  for (const code of codes) {
+    const match = code?.trim().match(/^(.*?)(\d+)$/)
+    if (!match) continue
+
+    const numberText = match[2]
+    const number = Number(numberText)
+    if (!Number.isSafeInteger(number) || number < nextNumber) continue
+
+    nextPrefix = match[1]
+    nextNumber = number + 1
+    nextWidth = numberText.length
+  }
+
+  return `${nextPrefix}${String(nextNumber).padStart(nextWidth, "0")}`
+}
 
 /* ── Badge kondisi ──────────────────────────────────────────────── */
 function KondisiBadge({ status }: { status: string }) {
@@ -83,6 +108,16 @@ function gambarSrc(assetId: number, gambar: string | null): string | null {
   return `/api/aset/${assetId}/gambar`
 }
 
+function isPdfFileName(value: string | null | undefined): boolean {
+  return Boolean(value?.toLowerCase().endsWith(".pdf"))
+}
+
+function validateAssetFile(file: File): string | null {
+  if (!ASSET_FILE_TYPES.includes(file.type)) return "Format file harus JPG, PNG, PDF, atau WEBP"
+  if (file.size > ASSET_FILE_MAX_BYTES) return "Ukuran file maksimal 5 MB"
+  return null
+}
+
 /* ── Main Page ──────────────────────────────────────────────────── */
 export default function AsetPage() {
   const { user } = useAuth()
@@ -93,7 +128,7 @@ export default function AsetPage() {
   const canManageData = canCreateOrEditTransaksi(user?.role)
   const canDeleteData = canDeleteTransaksi(user?.role)
 
-  const { create, update, remove, saving, deleting } = useCrud<Asset>({ apiPath: "/api/aset", onSuccess: refetch })
+  const { update, remove, saving, deleting } = useCrud<Asset>({ apiPath: "/api/aset", onSuccess: refetch })
 
   /* ── State ──────────────────────────────────────────────────── */
   const [modalOpen, setModalOpen]   = useState(false)
@@ -104,11 +139,15 @@ export default function AsetPage() {
   const [selected, setSelected]     = useState<Asset | null>(null)
   const [form, setForm]             = useState<Partial<Asset>>(EMPTY)
   const [errors, setErrors]         = useState<Record<string, string>>({})
+  const [submitting, setSubmitting] = useState(false)
 
   /* ── Upload gambar ──────────────────────────────────────────── */
   const [uploading, setUploading]     = useState(false)
   const [uploadErr, setUploadErr]     = useState<string | null>(null)
   const [localPreview, setLocalPreview] = useState<string | null>(null)
+  const [pendingFile, setPendingFile] = useState<File | null>(null)
+  const [pendingFileName, setPendingFileName] = useState<string | null>(null)
+  const [cameraOpen, setCameraOpen] = useState(false)
   /* ── Filters & pagination ───────────────────────────────────── */
   const [search, setSearch]       = useState("")
   const [kelompokFilter, setKelompokFilter] = useState<string>("")
@@ -207,13 +246,28 @@ export default function AsetPage() {
   /* ── Form helpers ───────────────────────────────────────────── */
   const set = (k: keyof Asset, v: string) => setForm(f => ({ ...f, [k]: v || null }))
 
+  const resetUploadState = () => {
+    if (localPreview) URL.revokeObjectURL(localPreview)
+    setLocalPreview(null)
+    setPendingFile(null)
+    setPendingFileName(null)
+    setUploadErr(null)
+  }
+
+  const closeAssetModal = () => {
+    setModalOpen(false)
+    resetUploadState()
+  }
+
   const openAdd = () => {
     if (!canManageData) return
-    setEditMode(false); setSelected(null); setForm(EMPTY); setErrors({}); setLocalPreview(null); setModalOpen(true)
+    resetUploadState()
+    setEditMode(false); setSelected(null); setForm({ ...EMPTY, kode_asset: getNextSequentialCode(list.map(a => a.kode_asset)) }); setErrors({}); setModalOpen(true)
   }
   const openEdit = (row: Asset) => {
     if (!canManageData) return
-    setEditMode(true); setSelected(row); setForm(row); setErrors({}); setLocalPreview(null); setModalOpen(true)
+    resetUploadState()
+    setEditMode(true); setSelected(row); setForm(row); setErrors({}); setModalOpen(true)
   }
 
   const handleSubmit = async () => {
@@ -240,8 +294,43 @@ export default function AsetPage() {
       gambar: form.gambar,
       kode_nama: form.kode_nama,
     }
-    const ok = editMode && selected ? await update(selected.id, payload) : await create(payload)
-    if (ok) setModalOpen(false)
+    if (editMode && selected) {
+      const ok = await update(selected.id, payload)
+      if (ok) closeAssetModal()
+      return
+    }
+
+    setSubmitting(true)
+    setUploadErr(null)
+    try {
+      const res = await fetch("/api/aset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+      const created = await res.json() as Asset | { error?: string }
+      if (!res.ok || !("id" in created)) {
+        setErrors({ _: "error" in created ? created.error ?? "Gagal menyimpan" : "Gagal menyimpan" })
+        return
+      }
+
+      if (pendingFile) {
+        const uploaded = await handleUploadGambar(pendingFile, created.id)
+        if (!uploaded) {
+          setSelected(created)
+          setForm(created)
+          setEditMode(true)
+          setErrors({ _: "Aset tersimpan, tetapi file gagal diupload. Silakan upload ulang file." })
+          refetch()
+          return
+        }
+      }
+
+      refetch()
+      closeAssetModal()
+    } finally {
+      setSubmitting(false)
+    }
   }
   const handleDelete = async () => {
     if (!selected || !canDeleteData) return
@@ -250,10 +339,11 @@ export default function AsetPage() {
   }
 
   /* ── Upload gambar ke MinIO (aset yang sudah ada) ───────────── */
-  const handleUploadGambar = async (file: File, assetId: number) => {
+  const handleUploadGambar = async (file: File, assetId: number): Promise<boolean> => {
     // Tampilkan preview instan sebelum upload selesai
-    const objectUrl = URL.createObjectURL(file)
-    setLocalPreview(objectUrl)
+    const objectUrl = file.type.startsWith("image/") && !localPreview ? URL.createObjectURL(file) : null
+    if (objectUrl) setLocalPreview(objectUrl)
+    setPendingFileName(file.name)
     setUploading(true)
     setUploadErr(null)
     try {
@@ -263,24 +353,53 @@ export default function AsetPage() {
       const json = await res.json()
       if (!res.ok) {
         setUploadErr(json.error ?? "Gagal upload")
-        URL.revokeObjectURL(objectUrl)
+        if (objectUrl) URL.revokeObjectURL(objectUrl)
+        else if (localPreview) URL.revokeObjectURL(localPreview)
         setLocalPreview(null)
-        return
+        return false
       }
       const newKey = json.asset?.gambar ?? null
       setForm(f => ({ ...f, gambar: newKey }))
       setSelected(s => s ? { ...s, gambar: newKey } : s)
+      setPendingFile(null)
       refetch()
+      return true
     } catch {
       setUploadErr("Gagal upload gambar")
-      URL.revokeObjectURL(objectUrl)
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+      else if (localPreview) URL.revokeObjectURL(localPreview)
       setLocalPreview(null)
+      return false
     } finally { setUploading(false) }
+  }
+
+  const handleSelectFile = (file: File, assetId?: number) => {
+    const error = validateAssetFile(file)
+    if (error) {
+      setUploadErr(error)
+      return
+    }
+
+    if (assetId) {
+      if (localPreview) { URL.revokeObjectURL(localPreview); setLocalPreview(null) }
+      setPendingFileName(file.name)
+      setUploadErr(null)
+      void handleUploadGambar(file, assetId)
+      return
+    }
+
+    if (localPreview) URL.revokeObjectURL(localPreview)
+    setLocalPreview(file.type.startsWith("image/") ? URL.createObjectURL(file) : null)
+    setPendingFile(file)
+    setPendingFileName(file.name)
+    setUploadErr(null)
   }
 
   /* ── Hapus gambar ───────────────────────────────────────────── */
   const handleHapusGambar = async (assetId: number) => {
     if (localPreview) { URL.revokeObjectURL(localPreview); setLocalPreview(null) }
+    setPendingFile(null)
+    setPendingFileName(null)
     setUploading(true)
     try {
       await fetch(`/api/aset/${assetId}/gambar`, { method: "DELETE" })
@@ -783,7 +902,7 @@ export default function AsetPage() {
         {selected && (
           <div className="space-y-5">
             {/* Gambar aset */}
-            {selected.gambar && (
+            {selected.gambar && !isPdfFileName(selected.gambar) && (
               <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -792,6 +911,20 @@ export default function AsetPage() {
                   className="w-full max-h-72 object-contain"
                   style={{ background: "var(--surface-muted)" }}
                 />
+              </div>
+            )}
+            {selected.gambar && isPdfFileName(selected.gambar) && (
+              <div className="flex items-center justify-between gap-3 rounded-xl p-4" style={{ border: "1px solid var(--border)", background: "var(--surface-muted)" }}>
+                <div className="flex items-center gap-3 min-w-0">
+                  <FileText className="h-6 w-6 shrink-0" style={{ color: "var(--danger)" }} />
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold" style={{ color: "var(--text-900)" }}>Dokumen PDF Aset</p>
+                    <p className="text-xs truncate" style={{ color: "var(--text-subtle)" }}>{selected.gambar}</p>
+                  </div>
+                </div>
+                <a href={gambarSrc(selected.id, selected.gambar) ?? "#"} target="_blank" rel="noreferrer" className="text-sm font-semibold" style={{ color: "var(--primary)" }}>
+                  Buka PDF
+                </a>
               </div>
             )}
             <div className="grid grid-cols-2 gap-4">
@@ -832,16 +965,19 @@ export default function AsetPage() {
       </Modal>
 
       {/* ── Add / Edit Modal ──────────────────────────────────────── */}
-      <Modal open={modalOpen} onClose={() => { setModalOpen(false); if (localPreview) { URL.revokeObjectURL(localPreview); setLocalPreview(null) } }} size="lg"
+      <Modal open={modalOpen} onClose={closeAssetModal} size="lg"
         title={editMode ? "Edit Aset" : "Tambah Aset Baru"}
         footer={<>
-          <Button variant="outline" onClick={() => setModalOpen(false)}>Batal</Button>
-          {canManageData && <Button onClick={handleSubmit} disabled={saving}>{saving ? "Menyimpan..." : "Simpan"}</Button>}
+          <Button variant="outline" onClick={closeAssetModal}>Batal</Button>
+          {canManageData && <Button onClick={handleSubmit} disabled={saving || submitting || uploading}>{saving || submitting || uploading ? "Menyimpan..." : "Simpan"}</Button>}
         </>}
       >
+        {errors._ && (
+          <div className="mb-4 rounded-lg px-4 py-3 text-sm" style={{ background: "var(--danger-bg)", color: "var(--danger)" }}>{errors._}</div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <TextField label="Kode Aset" required error={errors.kode_asset}
-            value={form.kode_asset ?? ""} onChange={e => set("kode_asset", e.target.value)} />
+            value={form.kode_asset ?? ""} onChange={e => set("kode_asset", e.target.value)} readOnly={!editMode} />
           <TextField label="Nama Aset" required error={errors.nama_asset}
             value={form.nama_asset ?? ""} onChange={e => set("nama_asset", e.target.value)} />
           <SelectField label="Kelompok Aset" required error={errors.kelompok_asset}
@@ -885,8 +1021,8 @@ export default function AsetPage() {
               Gambar Aset
             </label>
 
-            {/* Preview gambar yang sudah ada */}
-            {(localPreview ?? (form.gambar && selected ? gambarSrc(selected.id, form.gambar ?? null) : null)) && (
+            {/* Preview file yang sudah ada / baru dipilih */}
+            {(localPreview ?? (form.gambar && selected ? gambarSrc(selected.id, form.gambar ?? null) : null)) && !(pendingFile?.type === "application/pdf" || (!pendingFile && isPdfFileName(form.gambar))) && (
               <div className="relative inline-block">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -910,50 +1046,85 @@ export default function AsetPage() {
                 )}
               </div>
             )}
+            {(pendingFile?.type === "application/pdf" || (!pendingFile && isPdfFileName(form.gambar))) && (
+              <div className="flex items-center justify-between gap-3 rounded-xl p-3" style={{ border: "1px solid var(--border)", background: "var(--surface-muted)" }}>
+                <div className="flex items-center gap-3 min-w-0">
+                  <FileText className="h-5 w-5 shrink-0" style={{ color: "var(--danger)" }} />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate" style={{ color: "var(--text-900)" }}>{pendingFileName ?? form.gambar ?? "Dokumen PDF"}</p>
+                    <p className="text-xs" style={{ color: "var(--text-subtle)" }}>PDF aset</p>
+                  </div>
+                </div>
+                {selected && form.gambar && (
+                  <a href={gambarSrc(selected.id, form.gambar) ?? "#"} target="_blank" rel="noreferrer" className="text-xs font-semibold" style={{ color: "var(--primary)" }}>
+                    Buka
+                  </a>
+                )}
+              </div>
+            )}
 
             {/* Upload area */}
-            {editMode && selected && canManageData ? (
-              /* Edit mode: langsung upload ke API */
-              <label
-                className="flex items-center gap-2 w-fit rounded-lg px-4 py-2 text-sm font-medium cursor-pointer transition-colors"
-                style={{
-                  border: "1px dashed var(--border-strong)",
-                  background: "var(--surface-muted)",
-                  color: "var(--text-700)",
-                  opacity: uploading ? 0.6 : 1,
-                  pointerEvents: uploading ? "none" : "auto",
-                }}
-              >
-                <ImagePlus className="h-4 w-4" />
-                {uploading ? "Mengupload..." : form.gambar ? "Ganti Gambar" : "Upload Gambar"}
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="hidden"
-                  disabled={uploading}
-                  onChange={e => {
-                    const file = e.target.files?.[0]
-                    if (file) handleUploadGambar(file, selected.id)
-                    e.target.value = ""
+            {canManageData && (
+              <div className="flex flex-wrap gap-2">
+                <label
+                  className="flex items-center gap-2 w-fit rounded-lg px-4 py-2 text-sm font-medium cursor-pointer transition-colors"
+                  style={{
+                    border: "1px dashed var(--border-strong)",
+                    background: "var(--surface-muted)",
+                    color: "var(--text-700)",
+                    opacity: uploading ? 0.6 : 1,
+                    pointerEvents: uploading ? "none" : "auto",
                   }}
-                />
-              </label>
-            ) : !editMode ? (
-              /* Tambah baru: gambar bisa diupload setelah disimpan */
-              <p className="text-xs" style={{ color: "var(--text-subtle)" }}>
-                Gambar dapat ditambahkan setelah aset disimpan (klik Edit).
-              </p>
-            ) : null}
+                >
+                  <ImagePlus className="h-4 w-4" />
+                  {uploading ? "Mengupload..." : form.gambar || pendingFile ? "Ganti File" : "Upload File"}
+                  <input
+                    type="file"
+                    accept={ASSET_FILE_ACCEPT}
+                    className="hidden"
+                    disabled={uploading}
+                    onChange={e => {
+                      const file = e.target.files?.[0]
+                      if (file) handleSelectFile(file, editMode && selected ? selected.id : undefined)
+                      e.target.value = ""
+                    }}
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={uploading}
+                  onClick={() => setCameraOpen(true)}
+                  className="flex items-center gap-2 w-fit rounded-lg px-4 py-2 text-sm font-medium cursor-pointer transition-colors"
+                  style={{
+                    border: "1px dashed var(--border-strong)",
+                    background: "var(--surface-muted)",
+                    color: "var(--text-700)",
+                    opacity: uploading ? 0.6 : 1,
+                    pointerEvents: uploading ? "none" : "auto",
+                  }}
+                >
+                  <Camera className="h-4 w-4" />
+                  Ambil Gambar
+                </button>
+              </div>
+            )}
 
             {uploadErr && (
               <p className="text-xs" style={{ color: "var(--danger)" }}>{uploadErr}</p>
             )}
             <p className="text-xs" style={{ color: "var(--text-subtle)" }}>
-              Format JPG, PNG, atau WEBP. Maks 5 MB.
+              Format JPG, PNG, PDF, atau WEBP. Maks 5 MB.
             </p>
           </div>
         </div>
       </Modal>
+
+      <CameraCaptureModal
+        open={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        title="Ambil Gambar Aset"
+        onCapture={(file) => handleSelectFile(file, editMode && selected ? selected.id : undefined)}
+      />
 
       <ConfirmDelete
         open={deleteOpen} onClose={() => setDeleteOpen(false)}

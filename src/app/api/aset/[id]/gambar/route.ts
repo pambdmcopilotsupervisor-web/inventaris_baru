@@ -20,7 +20,7 @@ const s3 = new S3Client({
   forcePathStyle: true,
 })
 
-const ALLOWED_TYPES  = ["image/jpeg", "image/jpg", "image/png", "image/webp"]
+const ALLOWED_TYPES  = ["image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"]
 const MAX_SIZE_BYTES = 5 * 1024 * 1024
 
 /**
@@ -92,7 +92,7 @@ export async function POST(
       return NextResponse.json({ error: "File wajib disertakan" }, { status: 400 })
     }
     if (!ALLOWED_TYPES.includes(file.type)) {
-      return NextResponse.json({ error: "Hanya JPG, PNG, atau WEBP yang diizinkan" }, { status: 400 })
+      return NextResponse.json({ error: "Hanya JPG, PNG, PDF, atau WEBP yang diizinkan" }, { status: 400 })
     }
     if (file.size > MAX_SIZE_BYTES) {
       return NextResponse.json({ error: "Ukuran maksimal 5 MB" }, { status: 400 })

@@ -1,14 +1,15 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Modal } from "@/components/ui/modal"
 import { ConfirmDelete } from "@/components/ui/confirm-delete"
 import { TextField, SelectField, TextareaField } from "@/components/ui/form-field"
 import { Input } from "@/components/ui/input"
-import { Plus, Pencil, Trash2, Eye, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, Wrench, CreditCard, Info, FileText, ImagePlus, X, ImageOff } from "lucide-react"
+import { CameraCaptureModal } from "@/components/ui/camera-capture-modal"
+import { Plus, Pencil, Trash2, Eye, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, Wrench, CreditCard, Info, FileText, ImagePlus, X, ImageOff, Camera } from "lucide-react"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
 import { useCrud } from "@/hooks/useCrud"
@@ -37,6 +38,7 @@ interface RiwayatPembayaran { id: number; jenis_pembayaran: string; tanggal_pemb
 
 /* ── Helper: src gambar via proxy ───────────────────────────────── */
 type ImgField = "gambar_fisik" | "gambar_pajak" | "gambar_stnk" | "gbr_barang"
+type UploadImgField = Exclude<ImgField, "gbr_barang">
 const IMG_LABELS: Record<ImgField, string> = {
   gambar_fisik: "Foto Fisik",
   gambar_pajak: "Foto Pajak",
@@ -47,6 +49,10 @@ function gambarSrc(id: number, key: string | null, field: ImgField): string | nu
   if (!key) return null
   if (key.startsWith("http://") || key.startsWith("https://") || key.startsWith("/")) return key
   return `/api/kendaraan/${id}/gambar?field=${field}`
+}
+
+function isPdfFileName(value: string | null | undefined): boolean {
+  return Boolean(value?.toLowerCase().endsWith(".pdf"))
 }
 
 function servisFotoSrc(id: number, key: string | null | undefined): string | null {
@@ -70,17 +76,47 @@ const isPajak30 = (tgl: string | null) => {
   const d = Math.floor((new Date(tgl).getTime() - Date.now()) / 86400000)
   return d >= 0 && d <= 30
 }
-const getSisaHari = (tgl: string | null) => tgl ? Math.max(0, Math.floor((new Date(tgl).getTime() - Date.now()) / 86400000)) : null
 
 const EMPTY: Partial<Kendaraan> = { jns_brg: "R2 Operasional", stat: "Operasional Pedami" }
 const PER_PAGE = 10
+const UPLOAD_FIELDS: UploadImgField[] = ["gambar_fisik", "gambar_pajak", "gambar_stnk"]
+const VEHICLE_FILE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"]
+const VEHICLE_FILE_MAX_BYTES = 5 * 1024 * 1024
+const VEHICLE_FILE_ACCEPT = "image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf"
+
+function getNextSequentialCode(codes: Array<string | null | undefined>): string {
+  let nextPrefix = ""
+  let nextNumber = 1
+  let nextWidth = 0
+
+  for (const code of codes) {
+    const match = code?.trim().match(/^(.*?)(\d+)$/)
+    if (!match) continue
+
+    const numberText = match[2]
+    const number = Number(numberText)
+    if (!Number.isSafeInteger(number) || number < nextNumber) continue
+
+    nextPrefix = match[1]
+    nextNumber = number + 1
+    nextWidth = numberText.length
+  }
+
+  return `${nextPrefix}${String(nextNumber).padStart(nextWidth, "0")}`
+}
+
+function validateVehicleFile(file: File): string | null {
+  if (!VEHICLE_FILE_TYPES.includes(file.type)) return "Format file harus JPG, PNG, PDF, atau WEBP"
+  if (file.size > VEHICLE_FILE_MAX_BYTES) return "Ukuran file maksimal 5 MB"
+  return null
+}
 
 /* ── Main Page ──────────────────────────────────────────────────── */
 export default function KendaraanPage() {
   const { user } = useAuth()
   const { data, loading, refetch } = useApi<Kendaraan[]>("/api/kendaraan")
   const list = data ?? []
-  const { create, update, remove, saving, deleting } = useCrud<Kendaraan>({ apiPath: "/api/kendaraan", onSuccess: refetch })
+  const { update, remove, saving, deleting } = useCrud<Kendaraan>({ apiPath: "/api/kendaraan", onSuccess: refetch })
   const canManageData = canCreateOrEditTransaksi(user?.role)
   const canDeleteData = canDeleteTransaksi(user?.role)
 
@@ -91,6 +127,7 @@ export default function KendaraanPage() {
   const [selected, setSelected]     = useState<Kendaraan | null>(null)
   const [form, setForm]             = useState<Partial<Kendaraan>>(EMPTY)
   const [errors, setErrors]         = useState<Record<string, string>>({})
+  const [submitting, setSubmitting] = useState(false)
 
   // Riwayat servis & pembayaran untuk detail view
   const [riwayatServis, setRiwayatServis]       = useState<RiwayatServis[]>([])
@@ -126,12 +163,14 @@ export default function KendaraanPage() {
 
   const openAdd = () => {
     if (!canManageData) return
-    setEditMode(false); setSelected(null); setForm(EMPTY); setErrors({}); setLocalPreviews({})
+    resetUploadState()
+    setEditMode(false); setSelected(null); setForm({ ...EMPTY, kode_brg: getNextSequentialCode(list.map(k => k.kode_brg)) }); setErrors({})
     setModalOpen(true)
   }
   const openEdit = (row: Kendaraan) => {
     if (!canManageData) return
-    setEditMode(true); setSelected(row); setForm(row); setErrors({}); setLocalPreviews({})
+    resetUploadState()
+    setEditMode(true); setSelected(row); setForm(row); setErrors({})
     setModalOpen(true)
   }
 
@@ -164,8 +203,45 @@ export default function KendaraanPage() {
     // Hapus computed fields
     const payload = { ...form }
     delete payload.kontrak_info
-    const ok = editMode && selected ? await update(selected.id, payload) : await create(payload)
-    if (ok) setModalOpen(false)
+    if (editMode && selected) {
+      const ok = await update(selected.id, payload)
+      if (ok) closeKendaraanModal()
+      return
+    }
+
+    setSubmitting(true)
+    setUploadErr(null)
+    try {
+      const res = await fetch("/api/kendaraan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+      const created = await res.json() as Kendaraan | { error?: string }
+      if (!res.ok || !("id" in created)) {
+        setErrors({ _: "error" in created ? created.error ?? "Gagal menyimpan" : "Gagal menyimpan" })
+        return
+      }
+
+      for (const field of UPLOAD_FIELDS) {
+        const file = pendingFiles[field]
+        if (!file) continue
+        const uploaded = await handleUploadGambar(file, created.id, field)
+        if (!uploaded) {
+          setSelected(created)
+          setForm(created)
+          setEditMode(true)
+          setErrors({ _: "Kendaraan tersimpan, tetapi ada file yang gagal diupload. Silakan upload ulang file." })
+          refetch()
+          return
+        }
+      }
+
+      refetch()
+      closeKendaraanModal()
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const handleDelete = async () => {
@@ -177,10 +253,27 @@ export default function KendaraanPage() {
   const [uploading, setUploading]   = useState<ImgField | null>(null)
   const [uploadErr, setUploadErr]   = useState<string | null>(null)
   const [localPreviews, setLocalPreviews] = useState<Partial<Record<ImgField, string>>>({})
+  const [pendingFiles, setPendingFiles] = useState<Partial<Record<UploadImgField, File>>>({})
+  const [pendingFileNames, setPendingFileNames] = useState<Partial<Record<UploadImgField, string>>>({})
+  const [cameraField, setCameraField] = useState<UploadImgField | null>(null)
 
-  const handleUploadGambar = async (file: File, kendaraanId: number, field: Exclude<ImgField, "gbr_barang">) => {
-    const objectUrl = URL.createObjectURL(file)
-    setLocalPreviews(p => ({ ...p, [field]: objectUrl }))
+  const resetUploadState = () => {
+    Object.values(localPreviews).forEach(src => { if (src) URL.revokeObjectURL(src) })
+    setLocalPreviews({})
+    setPendingFiles({})
+    setPendingFileNames({})
+    setUploadErr(null)
+  }
+
+  const closeKendaraanModal = () => {
+    setModalOpen(false)
+    resetUploadState()
+  }
+
+  const handleUploadGambar = async (file: File, kendaraanId: number, field: UploadImgField): Promise<boolean> => {
+    const objectUrl = file.type.startsWith("image/") && !localPreviews[field] ? URL.createObjectURL(file) : null
+    if (objectUrl) setLocalPreviews(p => ({ ...p, [field]: objectUrl }))
+    setPendingFileNames(p => ({ ...p, [field]: file.name }))
     setUploading(field)
     setUploadErr(null)
     try {
@@ -190,29 +283,67 @@ export default function KendaraanPage() {
       const json = await res.json()
       if (!res.ok) {
         setUploadErr(json.error ?? "Gagal upload")
-        URL.revokeObjectURL(objectUrl)
+        if (objectUrl) URL.revokeObjectURL(objectUrl)
+        else if (localPreviews[field]) URL.revokeObjectURL(localPreviews[field]!)
         setLocalPreviews(p => { const next = { ...p }; delete next[field]; return next })
-        return
+        return false
       }
 
       const newKey = json.kendaraan?.[field] ?? null
       setForm(f => ({ ...f, [field]: newKey }))
       setSelected(s => s ? { ...s, [field]: newKey } : s)
+      setPendingFiles(p => { const next = { ...p }; delete next[field]; return next })
       refetch()
+      return true
     } catch {
       setUploadErr("Gagal upload gambar")
-      URL.revokeObjectURL(objectUrl)
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+      else if (localPreviews[field]) URL.revokeObjectURL(localPreviews[field]!)
       setLocalPreviews(p => { const next = { ...p }; delete next[field]; return next })
+      return false
     } finally {
       setUploading(null)
     }
   }
 
-  const handleHapusGambar = async (kendaraanId: number, field: Exclude<ImgField, "gbr_barang">) => {
+  const handleSelectFile = (file: File, field: UploadImgField, kendaraanId?: number) => {
+    const error = validateVehicleFile(file)
+    if (error) {
+      setUploadErr(error)
+      return
+    }
+
+    if (kendaraanId) {
+      if (localPreviews[field]) {
+        URL.revokeObjectURL(localPreviews[field]!)
+        setLocalPreviews(p => { const next = { ...p }; delete next[field]; return next })
+      }
+      setPendingFiles(p => ({ ...p, [field]: file }))
+      setPendingFileNames(p => ({ ...p, [field]: file.name }))
+      setUploadErr(null)
+      void handleUploadGambar(file, kendaraanId, field)
+      return
+    }
+
+    if (localPreviews[field]) URL.revokeObjectURL(localPreviews[field]!)
+    setLocalPreviews(p => {
+      const next = { ...p }
+      if (file.type.startsWith("image/")) next[field] = URL.createObjectURL(file)
+      else delete next[field]
+      return next
+    })
+    setPendingFiles(p => ({ ...p, [field]: file }))
+    setPendingFileNames(p => ({ ...p, [field]: file.name }))
+    setUploadErr(null)
+  }
+
+  const handleHapusGambar = async (kendaraanId: number, field: UploadImgField) => {
     if (localPreviews[field]) {
       URL.revokeObjectURL(localPreviews[field]!)
       setLocalPreviews(p => { const next = { ...p }; delete next[field]; return next })
     }
+    setPendingFiles(p => { const next = { ...p }; delete next[field]; return next })
+    setPendingFileNames(p => { const next = { ...p }; delete next[field]; return next })
     setUploading(field)
     try {
       await fetch(`/api/kendaraan/${kendaraanId}/gambar?field=${field}`, { method: "DELETE" })
@@ -442,13 +573,13 @@ export default function KendaraanPage() {
       )}
 
       {/* ── Create / Edit Modal ──────────────────────────────────── */}
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} size="xl"
+      <Modal open={modalOpen} onClose={closeKendaraanModal} size="xl"
         title={editMode ? "Edit Data Kendaraan" : "Tambah Data Kendaraan"}
-        footer={<><Button variant="outline" onClick={() => setModalOpen(false)}>Batal</Button>{canManageData && <Button onClick={handleSubmit} disabled={saving}>{saving ? "Menyimpan..." : "Simpan"}</Button>}</>}
+        footer={<><Button variant="outline" onClick={closeKendaraanModal}>Batal</Button>{canManageData && <Button onClick={handleSubmit} disabled={saving || submitting || Boolean(uploading)}>{saving || submitting || uploading ? "Menyimpan..." : "Simpan"}</Button>}</>}
       >
         {errors._ && <div className="mb-4 rounded-lg px-4 py-3 text-sm" style={{ background: "var(--danger-bg)", color: "var(--danger)" }}>{errors._}</div>}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <TextField label="Kode Barang" required error={errors.kode_brg} value={form.kode_brg ?? ""} onChange={e => setF("kode_brg", e.target.value)} />
+          <TextField label="Kode Barang" required error={errors.kode_brg} value={form.kode_brg ?? ""} onChange={e => setF("kode_brg", e.target.value)} readOnly={!editMode} />
           <SelectField label="Jenis Kendaraan" required error={errors.jns_brg}
             value={form.jns_brg ?? ""} onChange={e => setF("jns_brg", e.target.value)}
             options={["R2 Operasional","R2 Dinas","R4 Operasional","R4 Dinas"].map(v => ({ value: v, label: v }))} />
@@ -505,69 +636,110 @@ export default function KendaraanPage() {
 
           <TextareaField label="Deskripsi" value={form.deskripsi ?? ""} onChange={e => setF("deskripsi", e.target.value)} className="md:col-span-3" />
 
-          {/* ── Upload Foto Dokumen Kendaraan (edit mode only) ───── */}
-          {editMode && selected && canManageData && (
+          {/* ── Upload Foto/Dokumen Kendaraan ───── */}
+          {canManageData && (
             <div className="md:col-span-3 space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Foto Dokumen Kendaraan</p>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {(["gambar_fisik", "gambar_pajak", "gambar_stnk"] as const).map(field => {
+                {UPLOAD_FIELDS.map(field => {
                   const key = form[field] as string | null
-                  const src = localPreviews[field] ?? gambarSrc(selected.id, key, field)
+                  const src = localPreviews[field] ?? (selected ? gambarSrc(selected.id, key, field) : null)
+                  const isPdf = pendingFiles[field]?.type === "application/pdf" || (!pendingFiles[field] && isPdfFileName(key))
                   const busy = uploading === field
                   return (
                     <div key={field} className="space-y-1.5">
                       <p className="text-xs font-medium" style={{ color: "var(--text-700)" }}>{IMG_LABELS[field]}</p>
                       <div className="relative">
-                        {src ? (
+                        {isPdf ? (
+                          <div className="w-full h-24 rounded-lg flex flex-col items-center justify-center gap-1 px-3" style={{ border: "1px solid var(--border)", background: "var(--surface-muted)" }}>
+                            <FileText className="h-5 w-5" style={{ color: "var(--danger)" }} />
+                            <p className="w-full truncate text-center text-xs font-medium" style={{ color: "var(--text-900)" }}>
+                              {pendingFileNames[field] ?? key ?? "Dokumen PDF"}
+                            </p>
+                            {selected && key && (
+                              <a href={gambarSrc(selected.id, key, field) ?? "#"} target="_blank" rel="noreferrer" className="text-[11px] font-semibold" style={{ color: "var(--primary)" }}>
+                                Buka PDF
+                              </a>
+                            )}
+                          </div>
+                        ) : src ? (
                           <>
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src={src} alt={IMG_LABELS[field]} className="w-full h-24 rounded-lg object-cover" style={{ border: "1px solid var(--border)" }} />
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => handleHapusGambar(selected.id, field)}
-                              className="absolute -top-2 -right-2 h-5 w-5 rounded-full flex items-center justify-center text-white"
-                              style={{ background: "var(--danger)", opacity: busy ? 0.5 : 1 }}
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
                           </>
                         ) : (
                           <div className="w-full h-24 rounded-lg flex items-center justify-center" style={{ border: "1px dashed var(--border-strong)", background: "var(--surface-muted)" }}>
                             <ImageOff className="h-5 w-5" style={{ color: "var(--text-subtle)" }} />
                           </div>
                         )}
+                        {(src || isPdf || pendingFiles[field]) && (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => {
+                              if (selected && key && !pendingFiles[field]) handleHapusGambar(selected.id, field)
+                              else {
+                                if (localPreviews[field]) URL.revokeObjectURL(localPreviews[field]!)
+                                setLocalPreviews(p => { const next = { ...p }; delete next[field]; return next })
+                                setPendingFiles(p => { const next = { ...p }; delete next[field]; return next })
+                                setPendingFileNames(p => { const next = { ...p }; delete next[field]; return next })
+                              }
+                            }}
+                            className="absolute -top-2 -right-2 h-5 w-5 rounded-full flex items-center justify-center text-white"
+                            style={{ background: "var(--danger)", opacity: busy ? 0.5 : 1 }}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        )}
                       </div>
-                      <label
-                        className="flex items-center justify-center gap-1.5 w-full rounded-lg px-2 py-1.5 text-xs font-medium cursor-pointer transition-colors"
-                        style={{
-                          border: "1px solid var(--border-strong)",
-                          background: "var(--surface-muted)",
-                          color: "var(--text-700)",
-                          opacity: busy ? 0.6 : 1,
-                          pointerEvents: busy ? "none" : "auto",
-                        }}
-                      >
-                        <ImagePlus className="h-3.5 w-3.5" />
-                        {busy ? "Uploading..." : src ? "Ganti" : "Upload"}
-                        <input
-                          type="file"
-                          accept="image/jpeg,image/png,image/webp"
-                          className="hidden"
-                          disabled={busy}
-                          onChange={e => {
-                            const file = e.target.files?.[0]
-                            if (file) handleUploadGambar(file, selected.id, field)
-                            e.target.value = ""
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <label
+                          className="flex items-center justify-center gap-1.5 w-full rounded-lg px-2 py-1.5 text-xs font-medium cursor-pointer transition-colors"
+                          style={{
+                            border: "1px solid var(--border-strong)",
+                            background: "var(--surface-muted)",
+                            color: "var(--text-700)",
+                            opacity: busy ? 0.6 : 1,
+                            pointerEvents: busy ? "none" : "auto",
                           }}
-                        />
-                      </label>
+                        >
+                          <ImagePlus className="h-3.5 w-3.5" />
+                          {busy ? "Uploading..." : src || isPdf ? "Ganti" : "Upload"}
+                          <input
+                            type="file"
+                            accept={VEHICLE_FILE_ACCEPT}
+                            className="hidden"
+                            disabled={busy}
+                            onChange={e => {
+                              const file = e.target.files?.[0]
+                              if (file) handleSelectFile(file, field, editMode && selected ? selected.id : undefined)
+                              e.target.value = ""
+                            }}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => setCameraField(field)}
+                          className="flex items-center justify-center gap-1.5 w-full rounded-lg px-2 py-1.5 text-xs font-medium cursor-pointer transition-colors"
+                          style={{
+                            border: "1px solid var(--border-strong)",
+                            background: "var(--surface-muted)",
+                            color: "var(--text-700)",
+                            opacity: busy ? 0.6 : 1,
+                            pointerEvents: busy ? "none" : "auto",
+                          }}
+                        >
+                          <Camera className="h-3.5 w-3.5" />
+                          Kamera
+                        </button>
+                      </div>
                     </div>
                   )
                 })}
               </div>
               {uploadErr && <p className="text-xs" style={{ color: "var(--danger)" }}>{uploadErr}</p>}
-              <p className="text-xs" style={{ color: "var(--text-subtle)" }}>JPG, PNG, atau WEBP · Maks 5 MB per gambar</p>
+              <p className="text-xs" style={{ color: "var(--text-subtle)" }}>Format JPG, PNG, PDF, atau WEBP. Maks 5 MB per file.</p>
             </div>
           )}
 
@@ -583,6 +755,16 @@ export default function KendaraanPage() {
           </div>
         )}
       </Modal>
+
+      <CameraCaptureModal
+        open={Boolean(cameraField)}
+        onClose={() => setCameraField(null)}
+        title={cameraField ? `Ambil ${IMG_LABELS[cameraField]}` : "Ambil Gambar"}
+        onCapture={(file) => {
+          if (!cameraField) return
+          handleSelectFile(file, cameraField, editMode && selected ? selected.id : undefined)
+        }}
+      />
 
       {/* ── Detail View Modal dengan TABS ────────────────────────── */}
       <Modal open={viewOpen} onClose={() => setViewOpen(false)} title={`Detail Kendaraan: ${selected?.nm_brg ?? ""}`} size="xl">
@@ -659,13 +841,23 @@ export default function KendaraanPage() {
             {detailTab === "foto" && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {(["gambar_fisik","gambar_pajak","gambar_stnk","gbr_barang"] as ImgField[]).map(field => {
-                  const src = gambarSrc(selected.id, selected[field] as string | null, field)
+                  const key = selected[field] as string | null
+                  const src = gambarSrc(selected.id, key, field)
                   return (
                     <div key={field} className="space-y-2">
                       <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>
                         {IMG_LABELS[field]}
                       </p>
-                      {src ? (
+                      {src && isPdfFileName(key) ? (
+                        <div className="w-full h-28 rounded-xl flex flex-col items-center justify-center gap-1 px-3"
+                          style={{ border: "1px solid var(--border)", background: "var(--surface-muted)" }}>
+                          <FileText className="h-5 w-5" style={{ color: "var(--danger)" }} />
+                          <p className="w-full truncate text-center text-xs font-medium" style={{ color: "var(--text-900)" }}>{key}</p>
+                          <a href={src} target="_blank" rel="noreferrer" className="text-xs font-semibold" style={{ color: "var(--primary)" }}>
+                            Buka PDF
+                          </a>
+                        </div>
+                      ) : src ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={src} alt={IMG_LABELS[field]}
                           className="w-full rounded-xl object-cover"

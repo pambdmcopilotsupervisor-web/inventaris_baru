@@ -77,6 +77,7 @@ export default function CetakBarcodePage() {
           background: #1e293b; color: #fff;
           text-align: center; font-size: 8px; font-weight: 700;
           padding: 4px 6px; text-transform: uppercase; letter-spacing: 0.5px;
+          border-radius: 4px 4px 0 0;
         }
         .sticker-body { padding: 7px 8px; display: flex; gap: 8px; align-items: center; }
         .sticker-info { flex: 1; min-width: 0; }
@@ -85,7 +86,8 @@ export default function CetakBarcodePage() {
         .asset-divisi {
           font-size: 8px; color: #64748b; margin-top: 4px;
           background: #f1f5f9; padding: 1px 5px; border-radius: 3px;
-          display: inline-block;
+          display: inline-block; max-width: 100%; line-height: 1.25;
+          white-space: normal; overflow-wrap: anywhere;
         }
         .sticker-qr { flex-shrink: 0; }
         .sticker-footer {

@@ -3,18 +3,18 @@
 import React, { useState, useEffect } from "react"
 import { DataTable, Column } from "@/components/ui/data-table"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { Badge, type BadgeProps } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Modal } from "@/components/ui/modal"
 import { ConfirmDelete } from "@/components/ui/confirm-delete"
 import { TextField, SelectField, TextareaField } from "@/components/ui/form-field"
 import { SearchableSelect } from "@/components/ui/searchable-select"
-import { Plus, Pencil, Trash2, Eye, RefreshCw } from "lucide-react"
+import { ArrowRight, Plus, Pencil, Trash2, Eye, RefreshCw } from "lucide-react"
 import { formatDate } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
 
 /* ─── Types ─────────────────────────────────────────────────────── */
-interface Karyawan {
+interface Karyawan extends Record<string, unknown> {
   id: number; nik: string; nama_karyawan: string; jabatan: string
   subdivisi_id: number | null; jkel: string; status_karyawan: string | null
   tanggal_masuk_kerja: string | null; tanggal_keluar: string | null; tanggal_lahir: string | null
@@ -30,6 +30,12 @@ interface Karyawan {
 }
 interface Divisi    { id: number; kode_divisi: string; nama_divisi: string }
 interface Subdivisi { id: number; kode_sub: string; nama_sub: string; divisi_id: number }
+interface MutasiKaryawan extends Record<string, unknown> {
+  id: number; karyawan_id: number; tgl_mutasi: string; no_sk: string | null
+  jabatan_asal: string | null; divisi_asal: string | null; subdivisi_asal: string | null
+  jabatan_tujuan: string | null; divisi_tujuan: string | null; subdivisi_tujuan: string | null
+  alasan: string | null
+}
 
 const JABATAN = ["Ketua","Bendahara","Sekretaris","Manager","Kepala Divisi","Koordinator","Staff","All Karyawan"]
 const BANK    = ["BCA","BRI","BNI","Mandiri","BTN","BSI","CIMB Niaga","Bank Danamon","Permata Bank","Bank Mega","Bank Panin","OCBC NISP","Bank Muamalat","Bank Syariah Bukopin","Bank Kaltimtara"]
@@ -63,6 +69,7 @@ const EMPTY: Partial<Karyawan> = { jkel: "Laki-Laki", status_karyawan: "Aktif", 
 export default function KaryawanPage() {
   const { data, loading, refetch } = useApi<Karyawan[]>("/api/karyawan")
   const { data: divisis }    = useApi<Divisi[]>("/api/divisi")
+  const { data: mutasis }    = useApi<MutasiKaryawan[]>("/api/mutasi-karyawan")
   const list = data ?? []
 
   const [modalOpen, setModalOpen]   = useState(false)
@@ -86,8 +93,7 @@ export default function KaryawanPage() {
 
   // Fetch subdivisi saat divisi berubah
   useEffect(() => {
-    if (!selectedDivisiId) { setSubdivisiOptions([]); return }
-    setLoadingSubdivisi(true)
+    if (!selectedDivisiId) return
     fetch(`/api/subdivisi/by-divisi/${selectedDivisiId}`)
       .then(r => r.json())
       .then(d => setSubdivisiOptions(d))
@@ -110,6 +116,7 @@ export default function KaryawanPage() {
       const detail = await res.json()
       setForm(detail)
       if (detail.divisi_id) {
+        setLoadingSubdivisi(true)
         setSelectedDivisiId(String(detail.divisi_id))
       } else {
         setSelectedDivisiId(""); setSubdivisiOptions([])
@@ -133,12 +140,10 @@ export default function KaryawanPage() {
     try {
       const url    = editMode && selected ? `/api/karyawan/${selected.id}` : "/api/karyawan"
       const method = editMode ? "PUT" : "POST"
-      // Hapus field computed sebelum kirim
-      const { divisi_id: _d, nama_divisi: _nd, nama_subdivisi: _ns, ...payload } = form as any
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(form),
       })
       if (!res.ok) { const j = await res.json(); setErrors({ _: j.error ?? "Gagal menyimpan" }); return }
       setModalOpen(false); refetch()
@@ -154,7 +159,7 @@ export default function KaryawanPage() {
     } finally { setDeleting(false) }
   }
 
-  const statusVariant = (s: string | null) => {
+  const statusVariant = (s: string | null): BadgeProps["variant"] => {
     switch (s) {
       case "Aktif":    return "success"
       case "Pengurus": return "warning"
@@ -162,6 +167,12 @@ export default function KaryawanPage() {
       default:         return "secondary"
     }
   }
+
+  const selectedMutasiHistory = selected
+    ? (mutasis ?? [])
+        .filter(m => Number(m.karyawan_id) === Number(selected.id))
+        .sort((a, b) => new Date(b.tgl_mutasi).getTime() - new Date(a.tgl_mutasi).getTime())
+    : []
 
   /* ─── Columns ────────────────────────────────────────────────── */
   const columns: Column<Karyawan>[] = [
@@ -178,7 +189,7 @@ export default function KaryawanPage() {
       </Badge>
     )},
     { key: "status_karyawan", header: "Status", cell: (r) => (
-      <Badge variant={statusVariant(r.status_karyawan) as any}>{r.status_karyawan ?? "—"}</Badge>
+      <Badge variant={statusVariant(r.status_karyawan)}>{r.status_karyawan ?? "—"}</Badge>
     )},
     { key: "tanggal_masuk_kerja", header: "Tgl Masuk",  cell: (r) => r.tanggal_masuk_kerja ? formatDate(r.tanggal_masuk_kerja) : "—" },
     { key: "no_hp",               header: "No HP",      cell: (r) => r.no_hp ?? "—" },
@@ -220,9 +231,9 @@ export default function KaryawanPage() {
 
       {/* Table */}
       <DataTable
-        data={list as any} columns={columns as any}
+        data={list} columns={columns}
         searchKeys={["nik", "nama_karyawan", "jabatan"]} loading={loading}
-        actions={(row: any) => (
+        actions={(row: Karyawan) => (
           <div className="flex items-center justify-center gap-1">
             <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--info)" }}    onClick={() => { setSelected(row); setViewOpen(true) }}><Eye className="h-3.5 w-3.5" /></Button>
             <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--warning)" }} onClick={() => openEdit(row)}><Pencil className="h-3.5 w-3.5" /></Button>
@@ -264,6 +275,8 @@ export default function KaryawanPage() {
             value={selectedDivisiId}
             onChange={v => {
               setSelectedDivisiId(v)
+              setSubdivisiOptions([])
+              setLoadingSubdivisi(!!v)
               setForm(f => ({ ...f, subdivisi_id: null }))
             }}
             placeholder="— Pilih Divisi —"
@@ -341,29 +354,79 @@ export default function KaryawanPage() {
       {/* ── View Detail Modal ──────────────────────────────────────── */}
       <Modal open={viewOpen} onClose={() => setViewOpen(false)} title="Detail Karyawan" size="lg">
         {selected && (
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            {[
-              ["NIK", selected.nik], ["Nama", selected.nama_karyawan],
-              ["Jabatan", selected.jabatan], ["Status", selected.status_karyawan],
-              ["Jenis Kelamin", selected.jkel], ["Agama", selected.agama],
-              ["Pendidikan", selected.pendidikan_terakhir], ["Tempat Lahir", selected.tempat_lahir],
-              ["Tanggal Lahir", selected.tanggal_lahir ? formatDate(selected.tanggal_lahir) : null],
-              ["Umur", selected.tanggal_lahir ? hitungUmur(selected.tanggal_lahir) : null],
-              ["Tgl Masuk Kerja", selected.tanggal_masuk_kerja ? formatDate(selected.tanggal_masuk_kerja) : null],
-              ["Masa Kerja", selected.tanggal_masuk_kerja ? hitungMasaKerja(selected.tanggal_masuk_kerja) : null],
-              ["No HP", selected.no_hp], ["No KTP", selected.no_ktp],
-              ["No Rekening", selected.no_rekening], ["Nama Bank", selected.nama_bank],
-              ["BPJS TK", selected.no_bpjs_ketenagakerjaan], ["BPJS Kes", selected.no_bpjs_kesehatan],
-              ["Kontak Darurat", selected.kontak_darurat],
-            ].map(([k, v]) => (
-              <div key={String(k)}>
-                <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>{k}</p>
-                <p className="mt-0.5 font-medium" style={{ color: "var(--text-900)" }}>{v ?? "—"}</p>
+          <div className="space-y-6 text-sm">
+            <div className="grid grid-cols-2 gap-4">
+              {[
+                ["NIK", selected.nik], ["Nama", selected.nama_karyawan],
+                ["Jabatan", selected.jabatan], ["Status", selected.status_karyawan],
+                ["Jenis Kelamin", selected.jkel], ["Agama", selected.agama],
+                ["Pendidikan", selected.pendidikan_terakhir], ["Tempat Lahir", selected.tempat_lahir],
+                ["Tanggal Lahir", selected.tanggal_lahir ? formatDate(selected.tanggal_lahir) : null],
+                ["Umur", selected.tanggal_lahir ? hitungUmur(selected.tanggal_lahir) : null],
+                ["Tgl Masuk Kerja", selected.tanggal_masuk_kerja ? formatDate(selected.tanggal_masuk_kerja) : null],
+                ["Masa Kerja", selected.tanggal_masuk_kerja ? hitungMasaKerja(selected.tanggal_masuk_kerja) : null],
+                ["No HP", selected.no_hp], ["No KTP", selected.no_ktp],
+                ["No Rekening", selected.no_rekening], ["Nama Bank", selected.nama_bank],
+                ["BPJS TK", selected.no_bpjs_ketenagakerjaan], ["BPJS Kes", selected.no_bpjs_kesehatan],
+                ["Kontak Darurat", selected.kontak_darurat],
+              ].map(([k, v]) => (
+                <div key={String(k)}>
+                  <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>{k}</p>
+                  <p className="mt-0.5 font-medium" style={{ color: "var(--text-900)" }}>{v ?? "—"}</p>
+                </div>
+              ))}
+              <div className="col-span-2">
+                <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>Alamat</p>
+                <p className="mt-0.5 font-medium" style={{ color: "var(--text-900)" }}>{selected.alamat ?? "—"}</p>
               </div>
-            ))}
-            <div className="col-span-2">
-              <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>Alamat</p>
-              <p className="mt-0.5 font-medium" style={{ color: "var(--text-900)" }}>{selected.alamat ?? "—"}</p>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-subtle)" }}>Riwayat Mutasi</p>
+                <Badge variant="secondary" className="text-[10px]">{selectedMutasiHistory.length} mutasi</Badge>
+              </div>
+
+              {selectedMutasiHistory.length === 0 ? (
+                <div className="rounded-lg px-4 py-3 text-xs" style={{ background: "var(--surface-muted)", border: "1px solid var(--border)", color: "var(--text-subtle)" }}>
+                  Belum ada riwayat mutasi untuk karyawan ini.
+                </div>
+              ) : (
+                <div className="overflow-hidden rounded-lg" style={{ border: "1px solid var(--border)" }}>
+                  {selectedMutasiHistory.map((mutasi, index) => (
+                    <div key={mutasi.id} className="p-4" style={{ borderTop: index === 0 ? "none" : "1px solid var(--border)" }}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="default" className="font-mono text-[10px]">{formatDate(mutasi.tgl_mutasi)}</Badge>
+                        {mutasi.no_sk && <Badge variant="secondary" className="font-mono text-[10px]">{mutasi.no_sk}</Badge>}
+                      </div>
+                      <div className="mt-3 grid grid-cols-[1fr_auto_1fr] gap-3">
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>Posisi Asal</p>
+                          <p className="mt-1 font-semibold" style={{ color: "var(--text-900)" }}>{mutasi.jabatan_asal ?? "—"}</p>
+                          <p className="text-xs mt-0.5" style={{ color: "var(--text-subtle)" }}>
+                            {mutasi.divisi_asal ?? "—"}{mutasi.subdivisi_asal ? ` • ${mutasi.subdivisi_asal}` : ""}
+                          </p>
+                        </div>
+                        <div className="flex items-center justify-center">
+                          <ArrowRight className="h-4 w-4" style={{ color: "var(--primary)" }} />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>Posisi Tujuan</p>
+                          <p className="mt-1 font-semibold" style={{ color: "var(--text-900)" }}>{mutasi.jabatan_tujuan ?? "—"}</p>
+                          <p className="text-xs mt-0.5" style={{ color: "var(--text-subtle)" }}>
+                            {mutasi.divisi_tujuan ?? "—"}{mutasi.subdivisi_tujuan ? ` • ${mutasi.subdivisi_tujuan}` : ""}
+                          </p>
+                        </div>
+                      </div>
+                      {mutasi.alasan && (
+                        <p className="mt-3 text-xs" style={{ color: "var(--text-muted)" }}>
+                          <span className="font-semibold">Alasan:</span> {mutasi.alasan}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
