@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useMemo, useState, Suspense } from "react"
 import { Archive, Users, LogOut, ClipboardCheck, Banknote, Lock } from "lucide-react"
-import { getModulePath } from "@/lib/module-navigation"
+import { ACTIVE_MODULE_STORAGE_KEY, getModulePath, writeStoredDashboardHomePath } from "@/lib/module-navigation"
 import { AppLogo } from "@/components/layout/app-logo"
 
 type ModuleStatus = { aset: boolean; sdm: boolean; kinerja: boolean; keuangan: boolean }
@@ -40,8 +40,10 @@ function SelectModuleContent() {
 
   const select = (modul: "aset" | "sdm" | "kinerja" | "keuangan") => {
     if (!modules[modul]) return  // jangan bisa pilih modul nonaktif
-    localStorage.setItem("pedami_modul", modul)
-    router.push(getModulePath(modul))
+    const modulePath = getModulePath(modul)
+    localStorage.setItem(ACTIVE_MODULE_STORAGE_KEY, modul)
+    writeStoredDashboardHomePath(modulePath)
+    router.push(modulePath)
   }
 
   const handleLogout = async () => {

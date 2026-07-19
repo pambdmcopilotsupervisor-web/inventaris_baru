@@ -6,7 +6,16 @@ import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/contexts/AuthContext"
 import { AppLogo } from "@/components/layout/app-logo"
-import { inferModulFromPathname, normalizeModulKey, type ModulKey } from "@/lib/module-navigation"
+import {
+  ACTIVE_MODULE_STORAGE_KEY,
+  clearStoredModuleNavigation,
+  getModulePath,
+  inferModulFromPathname,
+  normalizeModulKey,
+  readStoredDashboardHomePath,
+  type ModulKey,
+  writeStoredDashboardHomePath,
+} from "@/lib/module-navigation"
 import {
   LayoutDashboard, Users, Archive, Truck, BarChart3, Database, BookOpen,
   Bell, ChevronDown, LogOut, User, Settings,
@@ -46,7 +55,7 @@ type AppModul = ModulKey
 
 function readStoredModul(): AppModul | null {
   if (typeof window === "undefined") return null
-  return normalizeModulKey(localStorage.getItem("pedami_modul"))
+  return normalizeModulKey(localStorage.getItem(ACTIVE_MODULE_STORAGE_KEY))
 }
 
 const modulLabels: Record<AppModul, string> = {
@@ -450,7 +459,14 @@ export function Navbar() {
   const triggerRefs = useRef<Record<string, HTMLButtonElement | null>>({})
   const inferredModul = inferModulFromPathname(pathname)
   const storedModul = isHydrated ? readStoredModul() : null
+  const storedDashboardHomePath = isHydrated ? readStoredDashboardHomePath() : null
   const modul = storedModul ?? inferredModul
+  const storedDashboardHomeModul = storedDashboardHomePath ? inferModulFromPathname(storedDashboardHomePath) : null
+  const moduleHomePath = modul
+    ? storedDashboardHomePath && storedDashboardHomeModul === modul
+      ? storedDashboardHomePath
+      : getModulePath(modul)
+    : storedDashboardHomePath ?? "/dashboard"
 
   // Baca localStorage setelah hydration selesai agar SSR dan client match
   useEffect(() => {
@@ -462,10 +478,21 @@ export function Navbar() {
   useEffect(() => {
     if (!inferredModul || storedModul) return
 
-    if (typeof window !== "undefined" && window.localStorage.getItem("pedami_modul") !== inferredModul) {
-      window.localStorage.setItem("pedami_modul", inferredModul)
+    if (typeof window !== "undefined" && window.localStorage.getItem(ACTIVE_MODULE_STORAGE_KEY) !== inferredModul) {
+      window.localStorage.setItem(ACTIVE_MODULE_STORAGE_KEY, inferredModul)
     }
+
+    writeStoredDashboardHomePath(getModulePath(inferredModul))
   }, [inferredModul, storedModul])
+
+  useEffect(() => {
+    if (!modul) return
+
+    const fallbackHomePath = getModulePath(modul)
+    if (!storedDashboardHomePath || storedDashboardHomeModul !== modul) {
+      writeStoredDashboardHomePath(fallbackHomePath)
+    }
+  }, [modul, storedDashboardHomeModul, storedDashboardHomePath])
 
   // Sinkronkan jika localStorage berubah dari tab/window lain.
   useEffect(() => {
@@ -483,13 +510,16 @@ export function Navbar() {
     if (modul === "keuangan") return ["keuangan", "keuangan-anggota", "keuangan-laporan", "keuangan-proses"].includes(g.key)
     return true
   }).map((g) => {
+    const resolvedHref = g.key === "dashboard" ? moduleHomePath : g.href
+
     // Filter menu items berdasarkan allowed_menus user
     // Admin (role=admin) atau user tanpa batasan (allowed_menus=null) lihat semua
-    if (!user || user.role === "admin" || !user.allowed_menus) return g
-    if (g.href) return user.allowed_menus.includes(g.href) ? g : { ...g, href: undefined, items: [] }
+    if (!user || user.role === "admin" || !user.allowed_menus) return { ...g, href: resolvedHref }
+    if (resolvedHref) return user.allowed_menus.includes(resolvedHref) ? { ...g, href: resolvedHref } : { ...g, href: undefined, items: [] }
 
     return {
       ...g,
+      href: resolvedHref,
       items: g.items
         .map((section) => ({
           ...section,
@@ -524,7 +554,7 @@ export function Navbar() {
         style={{ background: "var(--sb-bg)", borderBottom: "1px solid var(--sb-border)" }}
       >
         {/* Logo */}
-        <Link href="/dashboard" className="flex items-center gap-2.5 shrink-0 mr-2">
+        <Link href={moduleHomePath} className="flex items-center gap-2.5 shrink-0 mr-2">
           <AppLogo className="h-7 w-7" priority />
           <span className="hidden sm:block text-sm font-bold text-white tracking-wide">PEDAMI</span>
         </Link>
@@ -627,7 +657,7 @@ export function Navbar() {
           {/* Tombol ganti modul */}
           {modul && (
             <button
-              onClick={() => { localStorage.removeItem("pedami_modul"); window.location.href = "/select-module" }}
+              onClick={() => { clearStoredModuleNavigation(); window.location.href = "/select-module" }}
               className="hidden md:flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors duration-150 cursor-pointer mr-1"
               title="Ganti Modul"
               style={{ background: modulColors[modul], color: "#fff", border: "1px solid rgba(255,255,255,0.15)" }}

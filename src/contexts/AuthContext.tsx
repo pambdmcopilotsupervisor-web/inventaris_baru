@@ -1,6 +1,7 @@
 "use client"
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react"
+import { clearStoredModuleNavigation } from "@/lib/module-navigation"
 
 export interface AuthUser {
   id: number
@@ -94,7 +95,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     await fetch("/api/auth/logout", { method: "POST" })
     setUser(null)
-    window.localStorage.removeItem("pedami_modul")
+    clearStoredModuleNavigation()
     window.location.href = "/login"
   }
 

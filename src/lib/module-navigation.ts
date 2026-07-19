@@ -1,5 +1,8 @@
 export type ModulKey = "aset" | "sdm" | "kinerja" | "keuangan"
 
+export const ACTIVE_MODULE_STORAGE_KEY = "pedami_modul"
+export const DASHBOARD_HOME_STORAGE_KEY = "pedami_dashboard_home"
+
 export function normalizeModulKey(value: string | null | undefined): ModulKey | null {
   const normalized = value?.trim().toLowerCase()
   if (
@@ -75,4 +78,30 @@ export function inferModulFromPathname(pathname: string): ModulKey | null {
   }
 
   return null
+}
+
+export function readStoredDashboardHomePath(): string | null {
+  if (typeof window === "undefined") return null
+
+  const value = window.localStorage.getItem(DASHBOARD_HOME_STORAGE_KEY)?.trim()
+  return value ? value : null
+}
+
+export function writeStoredDashboardHomePath(path: string | null | undefined): void {
+  if (typeof window === "undefined") return
+
+  const normalizedPath = path?.trim()
+  if (!normalizedPath) {
+    window.localStorage.removeItem(DASHBOARD_HOME_STORAGE_KEY)
+    return
+  }
+
+  window.localStorage.setItem(DASHBOARD_HOME_STORAGE_KEY, normalizedPath)
+}
+
+export function clearStoredModuleNavigation(): void {
+  if (typeof window === "undefined") return
+
+  window.localStorage.removeItem(ACTIVE_MODULE_STORAGE_KEY)
+  window.localStorage.removeItem(DASHBOARD_HOME_STORAGE_KEY)
 }

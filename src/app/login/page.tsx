@@ -4,7 +4,12 @@ import React, { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Eye, EyeOff } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
-import { normalizeModulKey } from "@/lib/module-navigation"
+import {
+  ACTIVE_MODULE_STORAGE_KEY,
+  clearStoredModuleNavigation,
+  normalizeModulKey,
+  writeStoredDashboardHomePath,
+} from "@/lib/module-navigation"
 import { AppLogo } from "@/components/layout/app-logo"
 
 export default function LoginPage() {
@@ -28,9 +33,10 @@ export default function LoginPage() {
         const defaultModule = normalizeModulKey(result.defaultModule)
 
         if (defaultModule) {
-          window.localStorage.setItem("pedami_modul", defaultModule)
+          window.localStorage.setItem(ACTIVE_MODULE_STORAGE_KEY, defaultModule)
+          writeStoredDashboardHomePath(result.redirectTo)
         } else {
-          window.localStorage.removeItem("pedami_modul")
+          clearStoredModuleNavigation()
         }
 
         router.push(result.redirectTo ?? "/select-module")

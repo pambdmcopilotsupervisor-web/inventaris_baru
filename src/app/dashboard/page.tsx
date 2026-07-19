@@ -12,7 +12,28 @@ import {
 import { Archive, Truck, Users, AlertTriangle, FileText, Calendar, MoreHorizontal, Shield, Wrench } from "lucide-react"
 import { formatDate } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
-import { inferModulFromPathname } from "@/lib/module-navigation"
+import { ACTIVE_MODULE_STORAGE_KEY, getModulePath, inferModulFromPathname, writeStoredDashboardHomePath } from "@/lib/module-navigation"
+
+const DASHBOARD_TIME_ZONE = "Asia/Makassar"
+const dashboardHeaderDateFormatter = new Intl.DateTimeFormat("id-ID", {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+  timeZone: DASHBOARD_TIME_ZONE,
+})
+const dashboardMonthFormatter = new Intl.DateTimeFormat("id-ID", {
+  month: "long",
+  year: "numeric",
+  timeZone: DASHBOARD_TIME_ZONE,
+})
+const dashboardTimeFormatter = new Intl.DateTimeFormat("id-ID", {
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+  timeZone: DASHBOARD_TIME_ZONE,
+})
 
 interface DashboardStats {
   aset: { total: number; komputer: number; kantor: number; kondisi: { status_barang: string; _count: { id: number } }[] }
@@ -73,15 +94,17 @@ const getSisaHari = (tgl: string) => {
 
 export default function DashboardPage() {
   const { data: stats, loading } = useApi<DashboardStats>("/api/dashboard-stats")
+  const [currentDateTime, setCurrentDateTime] = React.useState<Date | null>(null)
 
   // Redirect ke select-module jika belum pilih modul
   React.useEffect(() => {
-    const modul = localStorage.getItem("pedami_modul")
+    const modul = localStorage.getItem(ACTIVE_MODULE_STORAGE_KEY)
     if (modul) return
 
     const inferredModul = inferModulFromPathname(window.location.pathname)
     if (inferredModul) {
-      localStorage.setItem("pedami_modul", inferredModul)
+      localStorage.setItem(ACTIVE_MODULE_STORAGE_KEY, inferredModul)
+      writeStoredDashboardHomePath(getModulePath(inferredModul))
       return
     }
 
@@ -89,6 +112,36 @@ export default function DashboardPage() {
       window.location.href = "/select-module"
     }
   }, [])
+
+  React.useEffect(() => {
+    const initialTimer = window.setTimeout(() => {
+      setCurrentDateTime(new Date())
+    }, 0)
+
+    const timer = window.setInterval(() => {
+      setCurrentDateTime(new Date())
+    }, 1000)
+
+    return () => {
+      window.clearTimeout(initialTimer)
+      window.clearInterval(timer)
+    }
+  }, [])
+
+  const currentDateLabel = React.useMemo(() => {
+    if (!currentDateTime) return "Memuat tanggal..."
+    return dashboardHeaderDateFormatter.format(currentDateTime)
+  }, [currentDateTime])
+
+  const currentMonthLabel = React.useMemo(() => {
+    if (!currentDateTime) return "Memuat bulan..."
+    return dashboardMonthFormatter.format(currentDateTime)
+  }, [currentDateTime])
+
+  const currentTimeLabel = React.useMemo(() => {
+    if (!currentDateTime) return "--:--:--"
+    return dashboardTimeFormatter.format(currentDateTime)
+  }, [currentDateTime])
 
   const kondisiData = stats
     ? stats.aset.kondisi.map((k) => ({
@@ -103,10 +156,23 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-xl font-bold" style={{ color: "var(--text-900)" }}>Dashboard</h1>
           <p className="text-xs mt-0.5" style={{ color: "var(--text-subtle)" }}>
-            Selamat datang · Selasa, 10 Juni 2026
+            Selamat datang · {currentDateLabel}
           </p>
         </div>
-        <Button size="sm" variant="outline"><Calendar className="h-3.5 w-3.5 mr-1.5" />Juni 2026</Button>
+        <div className="flex items-center gap-2">
+          <div
+            className="rounded-md border px-3 py-1.5 text-right"
+            style={{ borderColor: "var(--border)", background: "var(--surface)", minWidth: 120 }}
+          >
+            <p className="text-[10px] uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>
+              Waktu sekarang
+            </p>
+            <p className="font-mono text-sm font-semibold" style={{ color: "var(--text-900)" }}>
+              {currentTimeLabel}
+            </p>
+          </div>
+          <Button size="sm" variant="outline"><Calendar className="h-3.5 w-3.5 mr-1.5" />{currentMonthLabel}</Button>
+        </div>
       </div>
 
       {/* Aset Stats */}
