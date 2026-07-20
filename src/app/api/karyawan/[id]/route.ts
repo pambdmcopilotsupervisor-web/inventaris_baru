@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma, serialize } from "@/lib/prisma"
+import { requireSession } from "@/lib/auth"
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -38,10 +39,19 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const auth = await requireSession(req)
+    if ("error" in auth) return auth.error
+    if ((auth.user.role ?? "user").toLowerCase() === "user") {
+      return NextResponse.json({ error: "Role user tidak boleh mengedit data karyawan" }, { status: 403 })
+    }
+
     const { id } = await params
     const body = await req.json()
     // Hapus field computed yang tidak ada di db
-    const { divisi_id: _d, nama_divisi: _nd, nama_subdivisi: _ns, ...data } = body
+    const data = { ...body }
+    delete data.divisi_id
+    delete data.nama_divisi
+    delete data.nama_subdivisi
     // Normalisasi field tanggal: string kosong → null (hindari error Prisma @db.Date)
     for (const k of ["tanggal_masuk_kerja", "tanggal_keluar", "tanggal_lahir"]) {
       if (k in data && (data[k] === "" || data[k] === undefined)) data[k] = null
@@ -54,8 +64,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const auth = await requireSession(req)
+    if ("error" in auth) return auth.error
+    if ((auth.user.role ?? "user").toLowerCase() === "user") {
+      return NextResponse.json({ error: "Role user tidak boleh menghapus data karyawan" }, { status: 403 })
+    }
+
     const { id } = await params
     await prisma.karyawans.delete({ where: { id: BigInt(id) } })
     return NextResponse.json({ success: true })

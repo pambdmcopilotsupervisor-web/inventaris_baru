@@ -11,6 +11,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select"
 import { Plus, Pencil, Trash2, RefreshCw, Shield } from "lucide-react"
 import { formatDate } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
+import { useAuth } from "@/contexts/AuthContext"
 
 interface User {
   id: number; name: string; email: string | null; role: string | null
@@ -18,6 +19,7 @@ interface User {
   nama_karyawan?: string | null; jabatan?: string | null
 }
 interface Karyawan { id: number; nik: string; nama_karyawan: string; jabatan: string }
+type UserRow = User & Record<string, unknown>
 
 const ROLE_OPTIONS = [
   { value: "admin",    label: "Admin" },
@@ -34,9 +36,11 @@ const ROLE_VARIANT: Record<string, "default" | "warning" | "secondary"> = {
 const EMPTY = { name: "", email: "", password: "", role: "user", karyawan_id: "" }
 
 export default function UsersPage() {
+  const { user } = useAuth()
   const { data, loading, refetch } = useApi<User[]>("/api/users")
   const { data: karyawans }        = useApi<Karyawan[]>("/api/karyawan")
   const list = data ?? []
+  const canManageUsers = (user?.role ?? "user").toLowerCase() !== "user"
 
   const [modalOpen, setModalOpen]   = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -100,7 +104,7 @@ export default function UsersPage() {
     } finally { setDeleting(false) }
   }
 
-  const columns: Column<User>[] = [
+  const columns: Column<UserRow>[] = [
     { key: "name",  header: "Nama", cell: (r) => <span className="font-semibold">{r.name}</span> },
     { key: "email", header: "Email", cell: (r) => <span className="font-mono text-xs">{r.email ?? "—"}</span> },
     { key: "role",  header: "Role", cell: (r) => (
@@ -127,7 +131,9 @@ export default function UsersPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={refetch}><RefreshCw className="h-3.5 w-3.5" /></Button>
-          <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Tambah User</Button>
+          {canManageUsers && (
+            <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Tambah User</Button>
+          )}
         </div>
       </div>
 
@@ -147,14 +153,14 @@ export default function UsersPage() {
       </div>
 
       <DataTable
-        data={list as any} columns={columns as any}
+        data={list as UserRow[]} columns={columns}
         searchKeys={["name", "email", "nama_karyawan"]} loading={loading}
-        actions={(row: any) => (
+        actions={canManageUsers ? (row) => (
           <div className="flex items-center justify-center gap-1">
             <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--warning)" }} onClick={() => openEdit(row)}><Pencil className="h-3.5 w-3.5" /></Button>
             <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--danger)" }} onClick={() => { setSelected(row); setDeleteOpen(true) }}><Trash2 className="h-3.5 w-3.5" /></Button>
           </div>
-        )}
+        ) : undefined}
       />
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} size="md"

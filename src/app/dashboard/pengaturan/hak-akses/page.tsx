@@ -2,11 +2,19 @@
 
 import React, { useState, useEffect, useCallback } from "react"
 import { Users, Shield, Check, Save, Trash2, AlertCircle, ChevronDown, ChevronRight } from "lucide-react"
+import { getRequiredRoleMenuHrefs, withRequiredRoleMenuHrefs } from "@/lib/menu-access"
 
 /* ─────────────────────────────────────────────────────────────────
    Daftar semua menu yang tersedia — harus sinkron dengan navbar.tsx
    ───────────────────────────────────────────────────────────────── */
 const MENU_GROUPS = [
+  {
+    group: "Beranda",
+    items: [
+      { label: "Beranda Aset", href: "/dashboard" },
+      { label: "Beranda SDM",  href: "/dashboard/sdm" },
+    ],
+  },
   {
     group: "Karyawan",
     items: [
@@ -184,7 +192,7 @@ export default function HakAksesPage() {
       if (!res.ok) throw new Error()
       const hrefs: string[] = await res.json()
       if (hrefs.length > 0) {
-        setCheckedHrefs(new Set(hrefs))
+        setCheckedHrefs(new Set(withRequiredRoleMenuHrefs(role, hrefs) ?? hrefs))
         setHasRestriction(true)
       } else {
         // Cek apakah ada record di DB (batasan semua menu) vs belum ada pengaturan
@@ -220,6 +228,8 @@ export default function HakAksesPage() {
   }
 
   const toggleHref = (href: string) => {
+    if (getRequiredRoleMenuHrefs(selectedUserRole).includes(href)) return
+
     setCheckedHrefs((prev) => {
       const next = new Set(prev)
       if (next.has(href)) next.delete(href)
@@ -231,10 +241,13 @@ export default function HakAksesPage() {
   const toggleGroup = (group: string) => {
     const groupHrefs = MENU_GROUPS.find((g) => g.group === group)?.items.map((i) => i.href) ?? []
     const allChecked = groupHrefs.every((h) => checkedHrefs.has(h))
+    const requiredHrefs = getRequiredRoleMenuHrefs(selectedUserRole)
     setCheckedHrefs((prev) => {
       const next = new Set(prev)
       if (allChecked) {
-        groupHrefs.forEach((h) => next.delete(h))
+        groupHrefs.forEach((h) => {
+          if (!requiredHrefs.includes(h)) next.delete(h)
+        })
       } else {
         groupHrefs.forEach((h) => next.add(h))
       }
@@ -247,7 +260,7 @@ export default function HakAksesPage() {
     setCheckedHrefs(new Set(allHrefs))
   }
 
-  const clearAll = () => setCheckedHrefs(new Set())
+  const clearAll = () => setCheckedHrefs(new Set(getRequiredRoleMenuHrefs(selectedUserRole)))
 
   const handleRemoveRestriction = async () => {
     if (!selectedUserId) return
@@ -270,7 +283,7 @@ export default function HakAksesPage() {
     if (!selectedUserId) return
     setSaving(true)
     try {
-      const menuHrefs = Array.from(checkedHrefs)
+      const menuHrefs = withRequiredRoleMenuHrefs(selectedUserRole, Array.from(checkedHrefs)) ?? []
       const res = await fetch("/api/admin/menu-access", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -468,34 +481,47 @@ export default function HakAksesPage() {
                         {/* Menu items */}
                         {isOpen && (
                           <div className="divide-y" style={{ borderColor: "var(--border)" }}>
-                            {group.items.map((item) => (
-                              <label
-                                key={item.href}
-                                className="flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors"
-                                style={{ background: checkedHrefs.has(item.href) ? "var(--primary-light)" : "transparent" }}
-                                onMouseEnter={(e) => {
-                                  if (!checkedHrefs.has(item.href)) (e.currentTarget as HTMLElement).style.background = "var(--surface-muted)"
-                                }}
-                                onMouseLeave={(e) => {
-                                  (e.currentTarget as HTMLElement).style.background = checkedHrefs.has(item.href) ? "var(--primary-light)" : "transparent"
-                                }}
-                              >
-                                <input
-                                  type="checkbox"
-                                  className="h-4 w-4 rounded cursor-pointer"
-                                  style={{ accentColor: "var(--primary)" }}
-                                  checked={checkedHrefs.has(item.href)}
-                                  onChange={() => toggleHref(item.href)}
-                                />
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm" style={{ color: checkedHrefs.has(item.href) ? "var(--primary)" : "var(--text-700)" }}>
-                                    {item.label}
-                                  </p>
-                                  <p className="text-xs" style={{ color: "var(--text-subtle)" }}>{item.href}</p>
-                                </div>
-                                {checkedHrefs.has(item.href) && <Check className="h-4 w-4 shrink-0" style={{ color: "var(--primary)" }} />}
-                              </label>
-                            ))}
+                            {group.items.map((item) => {
+                              const isChecked = checkedHrefs.has(item.href)
+                              const isRequired = getRequiredRoleMenuHrefs(selectedUserRole).includes(item.href)
+
+                              return (
+                                <label
+                                  key={item.href}
+                                  className="flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors"
+                                  style={{ background: isChecked ? "var(--primary-light)" : "transparent" }}
+                                  onMouseEnter={(e) => {
+                                    if (!isChecked) (e.currentTarget as HTMLElement).style.background = "var(--surface-muted)"
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    (e.currentTarget as HTMLElement).style.background = isChecked ? "var(--primary-light)" : "transparent"
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    className="h-4 w-4 rounded cursor-pointer disabled:cursor-not-allowed"
+                                    style={{ accentColor: "var(--primary)" }}
+                                    checked={isChecked}
+                                    disabled={isRequired}
+                                    onChange={() => toggleHref(item.href)}
+                                  />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <p className="text-sm" style={{ color: isChecked ? "var(--primary)" : "var(--text-700)" }}>
+                                        {item.label}
+                                      </p>
+                                      {isRequired && (
+                                        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: "var(--primary-light)", color: "var(--primary)" }}>
+                                          Wajib
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-xs" style={{ color: "var(--text-subtle)" }}>{item.href}</p>
+                                  </div>
+                                  {isChecked && <Check className="h-4 w-4 shrink-0" style={{ color: "var(--primary)" }} />}
+                                </label>
+                              )
+                            })}
                           </div>
                         )}
                       </div>

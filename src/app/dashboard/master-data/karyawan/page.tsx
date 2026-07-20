@@ -12,6 +12,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select"
 import { ArrowRight, Plus, Pencil, Trash2, Eye, RefreshCw } from "lucide-react"
 import { formatDate } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
+import { useAuth } from "@/contexts/AuthContext"
 
 /* ─── Types ─────────────────────────────────────────────────────── */
 interface Karyawan extends Record<string, unknown> {
@@ -67,10 +68,12 @@ const EMPTY: Partial<Karyawan> = { jkel: "Laki-Laki", status_karyawan: "Aktif", 
 
 /* ─── Main Page ──────────────────────────────────────────────────── */
 export default function KaryawanPage() {
+  const { user } = useAuth()
   const { data, loading, refetch } = useApi<Karyawan[]>("/api/karyawan")
   const { data: divisis }    = useApi<Divisi[]>("/api/divisi")
   const { data: mutasis }    = useApi<MutasiKaryawan[]>("/api/mutasi-karyawan")
   const list = data ?? []
+  const canManageKaryawan = (user?.role ?? "user").toLowerCase() !== "user"
 
   const [modalOpen, setModalOpen]   = useState(false)
   const [viewOpen, setViewOpen]     = useState(false)
@@ -215,7 +218,9 @@ export default function KaryawanPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={refetch}><RefreshCw className="h-3.5 w-3.5" /></Button>
-          <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Tambah Karyawan</Button>
+          {canManageKaryawan && (
+            <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Tambah Karyawan</Button>
+          )}
         </div>
       </div>
 
@@ -236,8 +241,12 @@ export default function KaryawanPage() {
         actions={(row: Karyawan) => (
           <div className="flex items-center justify-center gap-1">
             <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--info)" }}    onClick={() => { setSelected(row); setViewOpen(true) }}><Eye className="h-3.5 w-3.5" /></Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--warning)" }} onClick={() => openEdit(row)}><Pencil className="h-3.5 w-3.5" /></Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--danger)" }}  onClick={() => { setSelected(row); setDeleteOpen(true) }}><Trash2 className="h-3.5 w-3.5" /></Button>
+            {canManageKaryawan && (
+              <>
+                <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--warning)" }} onClick={() => openEdit(row)}><Pencil className="h-3.5 w-3.5" /></Button>
+                <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--danger)" }}  onClick={() => { setSelected(row); setDeleteOpen(true) }}><Trash2 className="h-3.5 w-3.5" /></Button>
+              </>
+            )}
           </div>
         )}
       />

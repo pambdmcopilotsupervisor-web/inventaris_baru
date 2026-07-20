@@ -1,13 +1,14 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getSession } from "@/lib/session"
+import { withRequiredRoleMenuHrefs } from "@/lib/menu-access"
 
 /**
  * POST /api/auth/refresh-menus
  * Refresh allowed_menus di session tanpa perlu logout-login.
  * Dipanggil otomatis oleh AuthContext setiap kali user membuka halaman.
  */
-export async function POST(req: NextRequest) {
+export async function POST() {
   try {
     const session = await getSession()
     if (!session.user) {
@@ -28,6 +29,7 @@ export async function POST(req: NextRequest) {
         // Tabel belum ada — tampilkan semua menu
       }
     }
+    allowed_menus = withRequiredRoleMenuHrefs(session.user.role, allowed_menus)
 
     // Update session dengan allowed_menus terbaru
     session.user.allowed_menus = allowed_menus

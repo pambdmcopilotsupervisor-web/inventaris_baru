@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs"
 import { prisma, serialize } from "@/lib/prisma"
 import { getSession } from "@/lib/session"
 import { getDefaultModule, getDefaultModuleRedirectPath } from "@/lib/modules"
+import { withRequiredRoleMenuHrefs } from "@/lib/menu-access"
 
 // Simple in-memory rate limiter (per-IP, max 10 attempt/menit)
 const loginAttempts = new Map<string, { count: number; resetAt: number }>()
@@ -117,6 +118,7 @@ export async function POST(req: NextRequest) {
         // Tabel belum ada (migration belum dijalankan) — abaikan, tampilkan semua menu
       }
     }
+    allowed_menus = withRequiredRoleMenuHrefs(user.role, allowed_menus)
 
     session.user = {
       id:           Number(user.id),
