@@ -9,7 +9,7 @@ import { ConfirmDelete } from "@/components/ui/confirm-delete"
 import { TextField, SelectField, TextareaField } from "@/components/ui/form-field"
 import { Input } from "@/components/ui/input"
 import { CameraCaptureModal } from "@/components/ui/camera-capture-modal"
-import { Plus, Pencil, Trash2, Eye, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, Wrench, CreditCard, Info, FileText, ImagePlus, X, ImageOff, Camera } from "lucide-react"
+import { Plus, Pencil, Trash2, Eye, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, Wrench, CreditCard, Info, FileText, ImagePlus, X, ImageOff, Camera, Download } from "lucide-react"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
 import { useCrud } from "@/hooks/useCrud"
@@ -109,6 +109,22 @@ function validateVehicleFile(file: File): string | null {
   if (!VEHICLE_FILE_TYPES.includes(file.type)) return "Format file harus JPG, PNG, PDF, atau WEBP"
   if (file.size > VEHICLE_FILE_MAX_BYTES) return "Ukuran file maksimal 5 MB"
   return null
+}
+
+function getFileExtension(fileName: string | null | undefined, contentType: string | null): string {
+  const cleanName = fileName?.split("?")[0]?.split("#")[0] ?? ""
+  const extension = cleanName.match(/\.[a-z0-9]+$/i)?.[0]
+  if (extension) return extension
+  if (contentType?.includes("pdf")) return ".pdf"
+  if (contentType?.includes("png")) return ".png"
+  if (contentType?.includes("webp")) return ".webp"
+  return ".jpg"
+}
+
+function getDownloadFileName(kendaraan: Kendaraan, field: ImgField, storedName: string | null, contentType: string | null): string {
+  const code = kendaraan.kode_brg.replace(/[^a-z0-9_-]+/gi, "_") || String(kendaraan.id)
+  const label = IMG_LABELS[field].toLowerCase().replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "")
+  return `${label}_${code}${getFileExtension(storedName, contentType)}`
 }
 
 /* ── Main Page ──────────────────────────────────────────────────── */
@@ -352,6 +368,29 @@ export default function KendaraanPage() {
       refetch()
     } finally {
       setUploading(null)
+    }
+  }
+
+  const handleDownloadGambar = async (kendaraan: Kendaraan, field: ImgField) => {
+    const key = kendaraan[field] as string | null
+    const src = gambarSrc(kendaraan.id, key, field)
+    if (!src || !key) return
+
+    try {
+      const response = await fetch(src)
+      if (!response.ok) throw new Error("File tidak dapat diunduh")
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = getDownloadFileName(kendaraan, field, key, response.headers.get("Content-Type"))
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Gagal mengunduh file")
     }
   }
 
@@ -656,17 +695,35 @@ export default function KendaraanPage() {
                             <p className="w-full truncate text-center text-xs font-medium" style={{ color: "var(--text-900)" }}>
                               {pendingFileNames[field] ?? key ?? "Dokumen PDF"}
                             </p>
-                            {selected && key && (
-                              <a href={gambarSrc(selected.id, key, field) ?? "#"} target="_blank" rel="noreferrer" className="text-[11px] font-semibold" style={{ color: "var(--primary)" }}>
-                                Buka PDF
-                              </a>
+                            {selected && key && !pendingFiles[field] && (
+                              <div className="flex items-center gap-2">
+                                <a href={gambarSrc(selected.id, key, field) ?? "#"} target="_blank" rel="noreferrer" className="text-[11px] font-semibold" style={{ color: "var(--primary)" }}>
+                                  Buka PDF
+                                </a>
+                                <button type="button" onClick={() => handleDownloadGambar(selected, field)} className="inline-flex items-center gap-1 text-[11px] font-semibold" style={{ color: "var(--primary)" }}>
+                                  <Download className="h-3 w-3" />
+                                  Unduh
+                                </button>
+                              </div>
                             )}
                           </div>
                         ) : src ? (
-                          <>
+                          <div className="relative">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src={src} alt={IMG_LABELS[field]} className="w-full h-24 rounded-lg object-cover" style={{ border: "1px solid var(--border)" }} />
-                          </>
+                            {selected && key && !pendingFiles[field] && (
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadGambar(selected, field)}
+                                className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold shadow-sm"
+                                style={{ background: "var(--surface)", color: "var(--primary)", border: "1px solid var(--border)" }}
+                                title={`Unduh ${IMG_LABELS[field]}`}
+                              >
+                                <Download className="h-3 w-3" />
+                                Unduh
+                              </button>
+                            )}
+                          </div>
                         ) : (
                           <div className="w-full h-24 rounded-lg flex items-center justify-center" style={{ border: "1px dashed var(--border-strong)", background: "var(--surface-muted)" }}>
                             <ImageOff className="h-5 w-5" style={{ color: "var(--text-subtle)" }} />
@@ -840,7 +897,7 @@ export default function KendaraanPage() {
             {/* Tab: Foto */}
             {detailTab === "foto" && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {(["gambar_fisik","gambar_pajak","gambar_stnk","gbr_barang"] as ImgField[]).map(field => {
+                {UPLOAD_FIELDS.map(field => {
                   const key = selected[field] as string | null
                   const src = gambarSrc(selected.id, key, field)
                   return (
@@ -853,15 +910,33 @@ export default function KendaraanPage() {
                           style={{ border: "1px solid var(--border)", background: "var(--surface-muted)" }}>
                           <FileText className="h-5 w-5" style={{ color: "var(--danger)" }} />
                           <p className="w-full truncate text-center text-xs font-medium" style={{ color: "var(--text-900)" }}>{key}</p>
-                          <a href={src} target="_blank" rel="noreferrer" className="text-xs font-semibold" style={{ color: "var(--primary)" }}>
-                            Buka PDF
-                          </a>
+                          <div className="flex items-center gap-2">
+                            <a href={src} target="_blank" rel="noreferrer" className="text-xs font-semibold" style={{ color: "var(--primary)" }}>
+                              Buka PDF
+                            </a>
+                            <button type="button" onClick={() => handleDownloadGambar(selected, field)} className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: "var(--primary)" }}>
+                              <Download className="h-3.5 w-3.5" />
+                              Unduh
+                            </button>
+                          </div>
                         </div>
                       ) : src ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={src} alt={IMG_LABELS[field]}
-                          className="w-full rounded-xl object-cover"
-                          style={{ maxHeight: 180, border: "1px solid var(--border)", background: "var(--surface-muted)" }} />
+                        <div className="relative">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={src} alt={IMG_LABELS[field]}
+                            className="w-full rounded-xl object-cover"
+                            style={{ maxHeight: 180, border: "1px solid var(--border)", background: "var(--surface-muted)" }} />
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadGambar(selected, field)}
+                            className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold shadow-sm"
+                            style={{ background: "var(--surface)", color: "var(--primary)", border: "1px solid var(--border)" }}
+                            title={`Unduh ${IMG_LABELS[field]}`}
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                            Unduh
+                          </button>
+                        </div>
                       ) : (
                         <div className="w-full h-28 rounded-xl flex flex-col items-center justify-center gap-1"
                           style={{ border: "1px dashed var(--border)", background: "var(--surface-muted)" }}>

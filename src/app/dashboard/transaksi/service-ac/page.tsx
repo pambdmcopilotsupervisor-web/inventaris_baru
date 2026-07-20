@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Modal } from "@/components/ui/modal"
 import { ConfirmDelete } from "@/components/ui/confirm-delete"
 import { TextField, TextareaField, FormField } from "@/components/ui/form-field"
-import { Plus, Pencil, Trash2, RefreshCw, Search, ImagePlus, X, ExternalLink } from "lucide-react"
+import { Plus, Pencil, Trash2, RefreshCw, Search, ImagePlus, X, ExternalLink, Download } from "lucide-react"
 import { formatDate, formatCurrency } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
 import { useAuth } from "@/contexts/AuthContext"
@@ -45,6 +45,20 @@ function serviceAcFotoUrl(row: Pick<ServiceAC, "id" | "bukti_foto">): string | n
   if (!row.bukti_foto) return null
   if (row.bukti_foto.startsWith("http://") || row.bukti_foto.startsWith("https://") || row.bukti_foto.startsWith("/")) return row.bukti_foto
   return `/api/service-ac/${row.id}/foto`
+}
+
+function getFileExtension(fileName: string | null | undefined, contentType: string | null): string {
+  const cleanName = fileName?.split("?")[0]?.split("#")[0] ?? ""
+  const extension = cleanName.match(/\.[a-z0-9]+$/i)?.[0]
+  if (extension) return extension
+  if (contentType?.includes("png")) return ".png"
+  if (contentType?.includes("webp")) return ".webp"
+  return ".jpg"
+}
+
+function getBuktiFotoFileName(row: ServiceAC, contentType: string | null): string {
+  const code = (row.kode_asset ?? row.nama_asset ?? String(row.id)).replace(/[^a-z0-9_-]+/gi, "_")
+  return `bukti-foto-service-aset_${code}${getFileExtension(row.bukti_foto, contentType)}`
 }
 
 export default function ServiceACPage() {
@@ -212,6 +226,28 @@ export default function ServiceACPage() {
     } finally { setDeleting(false) }
   }
 
+  const handleDownloadBuktiFoto = async (row: ServiceAC) => {
+    const fotoUrl = serviceAcFotoUrl(row)
+    if (!fotoUrl || !row.bukti_foto) return
+
+    try {
+      const response = await fetch(fotoUrl)
+      if (!response.ok) throw new Error("Bukti foto tidak dapat diunduh")
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = getBuktiFotoFileName(row, response.headers.get("Content-Type"))
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Gagal mengunduh bukti foto")
+    }
+  }
+
   /* ── Columns (sesuai table di Filament) ─────────────────────── */
   const columns: Column<ServiceAC>[] = [
     {
@@ -243,9 +279,14 @@ export default function ServiceACPage() {
         const fotoUrl = serviceAcFotoUrl(r)
         if (!fotoUrl) return <span className="text-xs" style={{ color: "var(--text-subtle)" }}>Belum ada</span>
         return (
-          <a href={fotoUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: "var(--primary)" }}>
-            <ExternalLink className="h-3.5 w-3.5" /> Lihat Foto
-          </a>
+          <div className="flex items-center gap-2">
+            <a href={fotoUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: "var(--primary)" }}>
+              <ExternalLink className="h-3.5 w-3.5" /> Lihat
+            </a>
+            <button type="button" onClick={() => handleDownloadBuktiFoto(r)} className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: "var(--primary)" }}>
+              <Download className="h-3.5 w-3.5" /> Unduh
+            </button>
+          </div>
         )
       },
     },
@@ -442,11 +483,28 @@ export default function ServiceACPage() {
                         </div>
                       ) : selected?.bukti_foto ? (
                         <div className="space-y-2">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={serviceAcFotoUrl(selected) ?? ""} alt="Bukti foto tersimpan" className="h-40 rounded-lg object-cover" />
-                          <a href={serviceAcFotoUrl(selected) ?? "#"} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: "var(--primary)" }}>
-                            <ImagePlus className="h-3.5 w-3.5" /> Lihat bukti foto tersimpan
-                          </a>
+                          <div className="relative inline-block">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={serviceAcFotoUrl(selected) ?? ""} alt="Bukti foto tersimpan" className="h-40 rounded-lg object-cover" />
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadBuktiFoto(selected)}
+                              className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold shadow-sm"
+                              style={{ background: "var(--surface)", color: "var(--primary)", border: "1px solid var(--border)" }}
+                              title="Unduh bukti foto"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              Unduh
+                            </button>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <a href={serviceAcFotoUrl(selected) ?? "#"} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: "var(--primary)" }}>
+                              <ImagePlus className="h-3.5 w-3.5" /> Lihat bukti foto tersimpan
+                            </a>
+                            <button type="button" onClick={() => handleDownloadBuktiFoto(selected)} className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: "var(--primary)" }}>
+                              <Download className="h-3.5 w-3.5" /> Unduh
+                            </button>
+                          </div>
                         </div>
                       ) : (
                         <p className="text-xs" style={{ color: "var(--text-subtle)" }}>Upload bukti foto service. Maksimal {MAX_FOTO_MB} MB.</p>

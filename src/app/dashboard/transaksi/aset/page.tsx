@@ -14,7 +14,7 @@ import { CameraCaptureModal } from "@/components/ui/camera-capture-modal"
 import {
   Plus, Pencil, Trash2, Eye, QrCode, Printer, RefreshCw,
   Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-  Camera, FileText, ImagePlus, X,
+  Camera, Download, FileText, ImagePlus, X,
 } from "lucide-react"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
@@ -124,6 +124,21 @@ function validateAssetFile(file: File): string | null {
   if (!ASSET_FILE_TYPES.includes(file.type)) return "Format file harus JPG, PNG, PDF, atau WEBP"
   if (file.size > ASSET_FILE_MAX_BYTES) return "Ukuran file maksimal 5 MB"
   return null
+}
+
+function getFileExtension(fileName: string | null | undefined, contentType: string | null): string {
+  const cleanName = fileName?.split("?")[0]?.split("#")[0] ?? ""
+  const extension = cleanName.match(/\.[a-z0-9]+$/i)?.[0]
+  if (extension) return extension
+  if (contentType?.includes("pdf")) return ".pdf"
+  if (contentType?.includes("png")) return ".png"
+  if (contentType?.includes("webp")) return ".webp"
+  return ".jpg"
+}
+
+function getDownloadFileName(asset: Asset, label: "gambar-aset" | "bukti-nota", storedName: string | null, contentType: string | null): string {
+  const code = asset.kode_asset.replace(/[^a-z0-9_-]+/gi, "_") || String(asset.id)
+  return `${label}_${code}${getFileExtension(storedName, contentType)}`
 }
 
 /* ── Main Page ──────────────────────────────────────────────────── */
@@ -506,6 +521,29 @@ export default function AsetPage() {
       setSelected(s => s ? { ...s, bukti_nota: null } : s)
       refetch()
     } finally { setUploadingNota(false) }
+  }
+
+  const handleDownloadAssetFile = async (asset: Asset, type: "gambar" | "nota") => {
+    const storedName = type === "gambar" ? asset.gambar : asset.bukti_nota
+    const src = type === "gambar" ? gambarSrc(asset.id, storedName) : notaSrc(asset.id, storedName)
+    if (!src || !storedName) return
+
+    try {
+      const response = await fetch(src)
+      if (!response.ok) throw new Error("File tidak dapat diunduh")
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = getDownloadFileName(asset, type === "gambar" ? "gambar-aset" : "bukti-nota", storedName, response.headers.get("Content-Type"))
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Gagal mengunduh file")
+    }
   }
 
   /* ── Cetak barcode massal ───────────────────────────────────── */
@@ -1002,7 +1040,7 @@ export default function AsetPage() {
           <div className="space-y-5">
             {/* Gambar aset */}
             {selected.gambar && !isPdfFileName(selected.gambar) && (
-              <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+              <div className="relative rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={gambarSrc(selected.id, selected.gambar) ?? ""}
@@ -1010,6 +1048,16 @@ export default function AsetPage() {
                   className="w-full max-h-72 object-contain"
                   style={{ background: "var(--surface-muted)" }}
                 />
+                <button
+                  type="button"
+                  onClick={() => handleDownloadAssetFile(selected, "gambar")}
+                  className="absolute top-3 right-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm"
+                  style={{ background: "var(--surface)", color: "var(--primary)", border: "1px solid var(--border)" }}
+                  title="Unduh gambar aset"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Unduh
+                </button>
               </div>
             )}
             {selected.gambar && isPdfFileName(selected.gambar) && (
@@ -1021,15 +1069,21 @@ export default function AsetPage() {
                     <p className="text-xs truncate" style={{ color: "var(--text-subtle)" }}>{selected.gambar}</p>
                   </div>
                 </div>
-                <a href={gambarSrc(selected.id, selected.gambar) ?? "#"} target="_blank" rel="noreferrer" className="text-sm font-semibold" style={{ color: "var(--primary)" }}>
-                  Buka PDF
-                </a>
+                <div className="flex items-center gap-3 shrink-0">
+                  <a href={gambarSrc(selected.id, selected.gambar) ?? "#"} target="_blank" rel="noreferrer" className="text-sm font-semibold" style={{ color: "var(--primary)" }}>
+                    Buka PDF
+                  </a>
+                  <button type="button" onClick={() => handleDownloadAssetFile(selected, "gambar")} className="inline-flex items-center gap-1.5 text-sm font-semibold" style={{ color: "var(--primary)" }}>
+                    <Download className="h-4 w-4" />
+                    Unduh
+                  </button>
+                </div>
               </div>
             )}
             {selected.bukti_nota && !isPdfFileName(selected.bukti_nota) && (
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-subtle)" }}>Bukti Nota</p>
-                <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+                <div className="relative rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={notaSrc(selected.id, selected.bukti_nota) ?? ""}
@@ -1037,6 +1091,16 @@ export default function AsetPage() {
                     className="w-full max-h-72 object-contain"
                     style={{ background: "var(--surface-muted)" }}
                   />
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadAssetFile(selected, "nota")}
+                    className="absolute top-3 right-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm"
+                    style={{ background: "var(--surface)", color: "var(--primary)", border: "1px solid var(--border)" }}
+                    title="Unduh bukti nota"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Unduh
+                  </button>
                 </div>
               </div>
             )}
@@ -1049,9 +1113,15 @@ export default function AsetPage() {
                     <p className="text-xs truncate" style={{ color: "var(--text-subtle)" }}>{selected.bukti_nota}</p>
                   </div>
                 </div>
-                <a href={notaSrc(selected.id, selected.bukti_nota) ?? "#"} target="_blank" rel="noreferrer" className="text-sm font-semibold" style={{ color: "var(--primary)" }}>
-                  Buka PDF
-                </a>
+                <div className="flex items-center gap-3 shrink-0">
+                  <a href={notaSrc(selected.id, selected.bukti_nota) ?? "#"} target="_blank" rel="noreferrer" className="text-sm font-semibold" style={{ color: "var(--primary)" }}>
+                    Buka PDF
+                  </a>
+                  <button type="button" onClick={() => handleDownloadAssetFile(selected, "nota")} className="inline-flex items-center gap-1.5 text-sm font-semibold" style={{ color: "var(--primary)" }}>
+                    <Download className="h-4 w-4" />
+                    Unduh
+                  </button>
+                </div>
               </div>
             )}
             <div className="grid grid-cols-2 gap-4">
@@ -1158,6 +1228,18 @@ export default function AsetPage() {
                   className="h-32 w-48 rounded-xl object-cover"
                   style={{ border: "1px solid var(--border)" }}
                 />
+                {selected && form.gambar && !pendingFile && (
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadAssetFile({ ...selected, gambar: form.gambar ?? null }, "gambar")}
+                    className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold shadow-sm"
+                    style={{ background: "var(--surface)", color: "var(--primary)", border: "1px solid var(--border)" }}
+                    title="Unduh gambar aset"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Unduh
+                  </button>
+                )}
                 {/* Tombol hapus */}
                 {editMode && selected && canManageData && (
                   <button
@@ -1183,9 +1265,15 @@ export default function AsetPage() {
                   </div>
                 </div>
                 {selected && form.gambar && (
-                  <a href={gambarSrc(selected.id, form.gambar) ?? "#"} target="_blank" rel="noreferrer" className="text-xs font-semibold" style={{ color: "var(--primary)" }}>
-                    Buka
-                  </a>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <a href={gambarSrc(selected.id, form.gambar) ?? "#"} target="_blank" rel="noreferrer" className="text-xs font-semibold" style={{ color: "var(--primary)" }}>
+                      Buka
+                    </a>
+                    <button type="button" onClick={() => handleDownloadAssetFile({ ...selected, gambar: form.gambar ?? null }, "gambar")} className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: "var(--primary)" }}>
+                      <Download className="h-3.5 w-3.5" />
+                      Unduh
+                    </button>
+                  </div>
                 )}
               </div>
             )}
@@ -1259,6 +1347,18 @@ export default function AsetPage() {
                   className="h-32 w-48 rounded-xl object-cover"
                   style={{ border: "1px solid var(--border)" }}
                 />
+                {selected && form.bukti_nota && !notaPendingFile && (
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadAssetFile({ ...selected, bukti_nota: form.bukti_nota ?? null }, "nota")}
+                    className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold shadow-sm"
+                    style={{ background: "var(--surface)", color: "var(--primary)", border: "1px solid var(--border)" }}
+                    title="Unduh bukti nota"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Unduh
+                  </button>
+                )}
                 {editMode && selected && canManageData && (
                   <button
                     type="button"
@@ -1283,9 +1383,15 @@ export default function AsetPage() {
                   </div>
                 </div>
                 {selected && form.bukti_nota && (
-                  <a href={notaSrc(selected.id, form.bukti_nota) ?? "#"} target="_blank" rel="noreferrer" className="text-xs font-semibold" style={{ color: "var(--primary)" }}>
-                    Buka
-                  </a>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <a href={notaSrc(selected.id, form.bukti_nota) ?? "#"} target="_blank" rel="noreferrer" className="text-xs font-semibold" style={{ color: "var(--primary)" }}>
+                      Buka
+                    </a>
+                    <button type="button" onClick={() => handleDownloadAssetFile({ ...selected, bukti_nota: form.bukti_nota ?? null }, "nota")} className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: "var(--primary)" }}>
+                      <Download className="h-3.5 w-3.5" />
+                      Unduh
+                    </button>
+                  </div>
                 )}
               </div>
             )}
