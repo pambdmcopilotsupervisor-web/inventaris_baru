@@ -15,6 +15,8 @@ export async function GET() {
     today.setHours(0, 0, 0, 0)
     const threeMonthsAhead = new Date(today)
     threeMonthsAhead.setMonth(threeMonthsAhead.getMonth() + 3)
+    const sixMonthsAhead = new Date(today)
+    sixMonthsAhead.setMonth(sixMonthsAhead.getMonth() + 6)
 
     const [
       totalAset,
@@ -96,7 +98,7 @@ export async function GET() {
         where: {
           service: {
             gte: today,
-            lte: threeMonthsAhead,
+            lte: sixMonthsAhead,
           },
           stat: { not: "Jual" },
         },

@@ -16,6 +16,7 @@ import { canCreateOrEditTransaksi, canDeleteTransaksi } from "@/lib/transaksi-ro
 /* ── Types ─────────────────────────────────────────────────────── */
 interface ServiceAC {
   id: number; asset_id: number; tanggal_service: string
+  jatuh_tempo_berikutnya: string | null
   jenis_pekerjaan: string; biaya: number; teknisi: string | null; keterangan: string | null
   bukti_foto?: string | null
   // enriched
@@ -59,6 +60,18 @@ function getFileExtension(fileName: string | null | undefined, contentType: stri
 function getBuktiFotoFileName(row: ServiceAC, contentType: string | null): string {
   const code = (row.kode_asset ?? row.nama_asset ?? String(row.id)).replace(/[^a-z0-9_-]+/gi, "_")
   return `bukti-foto-service-aset_${code}${getFileExtension(row.bukti_foto, contentType)}`
+}
+
+function calculateServiceDueDate(value: string): string {
+  if (!value) return ""
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ""
+  date.setMonth(date.getMonth() + 6)
+  return date.toISOString().split("T")[0]
+}
+
+function getDueDateValue(row: Pick<ServiceAC, "tanggal_service" | "jatuh_tempo_berikutnya">): string | null {
+  return row.jatuh_tempo_berikutnya ?? (calculateServiceDueDate(row.tanggal_service) || null)
 }
 
 export default function ServiceACPage() {
@@ -262,6 +275,14 @@ export default function ServiceACPage() {
     },
     { key: "tanggal_service", header: "Tanggal", cell: (r) => formatDate(r.tanggal_service) },
     {
+      key: "jatuh_tempo_berikutnya",
+      header: "Jatuh Tempo",
+      cell: (r) => {
+        const dueDate = getDueDateValue(r)
+        return dueDate ? formatDate(dueDate) : "—"
+      },
+    },
+    {
       key: "jenis_pekerjaan",
       header: "Jenis Pekerjaan",
       cell: (r) => <Badge variant="info">{r.jenis_pekerjaan}</Badge>,
@@ -432,6 +453,9 @@ export default function ServiceACPage() {
             <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
               <TextField label="Tanggal Servis" type="date" required error={errors.tanggal_service}
                 value={form.tanggal_service} onChange={e => setF("tanggal_service", e.target.value)} />
+              <TextField label="Jatuh Tempo Berikutnya" type="date"
+                value={calculateServiceDueDate(form.tanggal_service)}
+                readOnly />
               <TextField label="Jenis Pekerjaan" required error={errors.jenis_pekerjaan}
                 placeholder="Cuci AC, Tambah Freon, Ganti Sparepart..."
                 value={form.jenis_pekerjaan} onChange={e => setF("jenis_pekerjaan", e.target.value)} />

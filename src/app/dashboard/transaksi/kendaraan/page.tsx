@@ -33,7 +33,7 @@ interface Kendaraan {
   gambar_stnk: string | null; gbr_barang: string | null
   kontrak_info?: KontrakInfo[]
 }
-interface RiwayatServis { id: number; tanggal_servis: string; jenis_servis: string; biaya: number; bengkel: string | null; keterangan: string | null; struk_foto?: string | null }
+interface RiwayatServis { id: number; tanggal_servis: string; jatuh_tempo_berikutnya: string | null; jenis_servis: string; biaya: number; bengkel: string | null; keterangan: string | null; struk_foto?: string | null }
 interface RiwayatPembayaran { id: number; jenis_pembayaran: string; tanggal_pembayaran: string; biaya: number; jatuh_tempo_berikutnya: string | null; keterangan: string | null }
 
 /* ── Helper: src gambar via proxy ───────────────────────────────── */
@@ -109,6 +109,14 @@ function validateVehicleFile(file: File): string | null {
   if (!VEHICLE_FILE_TYPES.includes(file.type)) return "Format file harus JPG, PNG, PDF, atau WEBP"
   if (file.size > VEHICLE_FILE_MAX_BYTES) return "Ukuran file maksimal 5 MB"
   return null
+}
+
+function calculateServiceDueDate(value: string): string {
+  if (!value) return ""
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ""
+  date.setMonth(date.getMonth() + 6)
+  return date.toISOString()
 }
 
 function getFileExtension(fileName: string | null | undefined, contentType: string | null): string {
@@ -963,6 +971,9 @@ export default function KendaraanPage() {
                         <div>
                           <p className="text-sm font-semibold" style={{ color: "var(--text-900)" }}>{s.jenis_servis}</p>
                           <p className="text-xs mt-0.5" style={{ color: "var(--text-subtle)" }}>{formatDate(s.tanggal_servis)} · {s.bengkel ?? "—"}</p>
+                          <p className="text-xs mt-0.5" style={{ color: "var(--warning)" }}>
+                            Jatuh tempo berikutnya: {formatDate(s.jatuh_tempo_berikutnya ?? calculateServiceDueDate(s.tanggal_servis))}
+                          </p>
                           {s.keterangan && <p className="text-xs mt-0.5 italic" style={{ color: "var(--text-subtle)" }}>{s.keterangan}</p>}
                           {servisFotoSrc(s.id, s.struk_foto) && (
                             <div className="mt-2 space-y-2">

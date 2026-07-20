@@ -3,6 +3,7 @@ import { requireSession } from "@/lib/auth"
 import { prisma, serialize } from "@/lib/prisma"
 import { canCreateOrEditTransaksi, getTransaksiActionError } from "@/lib/transaksi-role"
 import { uploadServiceBuktiImage } from "@/lib/service-bukti-file"
+import { calculateServiceDueDate, ensureServiceDueColumns } from "@/lib/service-due"
 
 function toNullableString(value: FormDataEntryValue | string | null | undefined): string | null {
   if (typeof value !== "string") return null
@@ -54,6 +55,8 @@ async function parseServiceAcRequest(req: NextRequest) {
 
 export async function GET() {
   try {
+    await ensureServiceDueColumns()
+
     const list = await prisma.riwayat_service_acs.findMany({
       orderBy: { tanggal_service: "desc" },
     })
@@ -95,6 +98,8 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    await ensureServiceDueColumns()
+
     const { asset_id, tanggal_service, jenis_pekerjaan, biaya, teknisi, keterangan, foto, bukti_foto } = await parseServiceAcRequest(req)
 
     if (!asset_id || !tanggal_service || !jenis_pekerjaan) {
@@ -107,6 +112,7 @@ export async function POST(req: NextRequest) {
       data: {
         asset_id:         BigInt(asset_id),
         tanggal_service:  new Date(tanggal_service),
+        jatuh_tempo_berikutnya: calculateServiceDueDate(tanggal_service),
         jenis_pekerjaan,
         biaya:            biaya ? Number(biaya) : 0,
         teknisi:          teknisi ?? null,

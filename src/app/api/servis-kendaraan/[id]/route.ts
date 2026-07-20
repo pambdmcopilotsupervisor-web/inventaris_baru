@@ -3,6 +3,7 @@ import { requireSession } from "@/lib/auth"
 import { prisma, serialize } from "@/lib/prisma"
 import { canCreateOrEditTransaksi, canDeleteTransaksi, getTransaksiActionError } from "@/lib/transaksi-role"
 import { uploadServiceBuktiImage } from "@/lib/service-bukti-file"
+import { calculateServiceDueDate, ensureServiceDueColumns, syncKendaraanServiceDueDate } from "@/lib/service-due"
 
 function toNullableString(value: FormDataEntryValue | string | null | undefined): string | null {
   if (typeof value !== "string") return null
@@ -58,11 +59,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 
   try {
+    await ensureServiceDueColumns()
+
     const { id } = await params
     const { tanggal_servis, jenis_servis, biaya, bengkel, keterangan, foto, struk_foto } = await parseServisKendaraanRequest(req)
 
     const data: {
       tanggal_servis: Date
+      jatuh_tempo_berikutnya: Date
       jenis_servis: string
       biaya: number
       bengkel: string | null
@@ -70,6 +74,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       struk_foto?: string | null
     } = {
       tanggal_servis: new Date(tanggal_servis),
+      jatuh_tempo_berikutnya: calculateServiceDueDate(tanggal_servis),
       jenis_servis,
       biaya: biaya ? Number(biaya) : 0,
       bengkel: bengkel ?? null,
@@ -86,6 +91,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       where: { id: BigInt(id) },
       data,
     })
+    await syncKendaraanServiceDueDate(updated.data_r2r4_id)
 
     return NextResponse.json(serialize(updated))
   } catch (err) {
@@ -102,8 +108,15 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   }
 
   try {
+    await ensureServiceDueColumns()
+
     const { id } = await params
+    const existing = await prisma.riwayat_servis_r2r4s.findUnique({
+      where: { id: BigInt(id) },
+      select: { data_r2r4_id: true },
+    })
     await prisma.riwayat_servis_r2r4s.delete({ where: { id: BigInt(id) } })
+    if (existing) await syncKendaraanServiceDueDate(existing.data_r2r4_id)
     return NextResponse.json({ success: true })
   } catch {
     return NextResponse.json({ error: "Gagal menghapus" }, { status: 500 })

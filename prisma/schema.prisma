@@ -391,6 +391,7 @@ model riwayat_service_acs {
   id              BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
   asset_id        BigInt    @db.UnsignedBigInt
   tanggal_service DateTime  @db.Date
+  jatuh_tempo_berikutnya DateTime? @db.Date
   jenis_pekerjaan String    @db.VarChar(255)
   biaya           BigInt    @default(0)
   teknisi         String?   @db.VarChar(255)
@@ -407,6 +408,7 @@ model riwayat_servis_r2r4s {
   id             BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
   data_r2r4_id   BigInt     @db.UnsignedBigInt
   tanggal_servis DateTime   @db.Date
+  jatuh_tempo_berikutnya DateTime? @db.Date
   jenis_servis   String     @db.VarChar(255)
   biaya          BigInt     @default(0)
   bengkel        String?    @db.VarChar(255)

@@ -17,6 +17,7 @@ import { canCreateOrEditTransaksi, canDeleteTransaksi } from "@/lib/transaksi-ro
 interface ServisKendaraan {
   id: number; data_r2r4_id: number
   tanggal_servis: string; jenis_servis: string
+  jatuh_tempo_berikutnya: string | null
   biaya: number; bengkel: string | null; keterangan: string | null
   struk_foto?: string | null
   // enriched
@@ -45,6 +46,18 @@ function servisFotoUrl(row: Pick<ServisKendaraan, "id" | "struk_foto">): string 
   if (!row.struk_foto) return null
   if (row.struk_foto.startsWith("http://") || row.struk_foto.startsWith("https://") || row.struk_foto.startsWith("/")) return row.struk_foto
   return `/api/servis-kendaraan/${row.id}/foto`
+}
+
+function calculateServiceDueDate(value: string): string {
+  if (!value) return ""
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ""
+  date.setMonth(date.getMonth() + 6)
+  return date.toISOString().split("T")[0]
+}
+
+function getDueDateValue(row: Pick<ServisKendaraan, "tanggal_servis" | "jatuh_tempo_berikutnya">): string | null {
+  return row.jatuh_tempo_berikutnya ?? (calculateServiceDueDate(row.tanggal_servis) || null)
 }
 
 export default function ServisKendaraanPage() {
@@ -228,6 +241,14 @@ export default function ServisKendaraanPage() {
       ),
     },
     { key: "tanggal_servis", header: "Tanggal",   cell: (r) => formatDate(r.tanggal_servis) },
+    {
+      key: "jatuh_tempo_berikutnya",
+      header: "Jatuh Tempo",
+      cell: (r) => {
+        const dueDate = getDueDateValue(r)
+        return dueDate ? formatDate(dueDate) : "—"
+      },
+    },
     { key: "jenis_servis",   header: "Pekerjaan", cell: (r) => <span className="text-sm">{r.jenis_servis}</span> },
     {
       key: "biaya",
@@ -386,6 +407,9 @@ export default function ServisKendaraanPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <TextField label="Tanggal Servis" type="date" required error={errors.tanggal_servis}
                   value={form.tanggal_servis} onChange={e => setF("tanggal_servis", e.target.value)} />
+                <TextField label="Jatuh Tempo Berikutnya" type="date"
+                  value={calculateServiceDueDate(form.tanggal_servis)}
+                  readOnly />
                 <TextField label="Total Biaya (Rp)" type="number" required error={errors.biaya}
                   value={form.biaya} onChange={e => setF("biaya", e.target.value)} />
                 <TextField label="Nama Bengkel / Toko"

@@ -389,7 +389,7 @@ export default function DashboardPage() {
           <CardHeader className="pb-0">
             <div className="flex items-center justify-between">
               <CardTitle className="flex items-center gap-2">
-                <Wrench className="h-4 w-4" style={{ color: "var(--warning)" }} />Jadwal Service (0–3 Bulan)
+                <Wrench className="h-4 w-4" style={{ color: "var(--warning)" }} />Jadwal Service (0–6 Bulan)
               </CardTitle>
             </div>
           </CardHeader>
@@ -397,7 +397,7 @@ export default function DashboardPage() {
             {loading ? (
               <div className="space-y-2">{[1,2,3].map(i => <div key={i} className="h-12 rounded-lg animate-pulse" style={{ background: "var(--surface-muted)" }} />)}</div>
             ) : (stats?.jadwalService ?? []).length === 0 ? (
-              <p className="text-sm text-center py-6" style={{ color: "var(--text-subtle)" }}>Tidak ada jadwal service dalam 3 bulan ke depan</p>
+              <p className="text-sm text-center py-6" style={{ color: "var(--text-subtle)" }}>Tidak ada jadwal service dalam 6 bulan ke depan</p>
             ) : (
               <div className="space-y-2">
                 {(stats?.jadwalService ?? []).map((item, i) => {

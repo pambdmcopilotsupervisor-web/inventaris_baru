@@ -3,6 +3,7 @@ import { requireSession } from "@/lib/auth"
 import { prisma, serialize } from "@/lib/prisma"
 import { canCreateOrEditTransaksi, getTransaksiActionError } from "@/lib/transaksi-role"
 import { uploadServiceBuktiImage } from "@/lib/service-bukti-file"
+import { calculateServiceDueDate, ensureServiceDueColumns, syncKendaraanServiceDueDate } from "@/lib/service-due"
 
 function toNullableString(value: FormDataEntryValue | string | null | undefined): string | null {
   if (typeof value !== "string") return null
@@ -54,6 +55,8 @@ async function parseServisKendaraanRequest(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
+    await ensureServiceDueColumns()
+
     const kendaraanId = new URL(req.url).searchParams.get("kendaraan_id")
 
     const list = await prisma.riwayat_servis_r2r4s.findMany({
@@ -73,6 +76,8 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    await ensureServiceDueColumns()
+
     const { data_r2r4_id, tanggal_servis, jenis_servis, biaya, bengkel, keterangan, foto, struk_foto } = await parseServisKendaraanRequest(req)
     if (!data_r2r4_id || !tanggal_servis || !jenis_servis) {
       return NextResponse.json({ error: "Field wajib tidak lengkap" }, { status: 400 })
@@ -84,6 +89,7 @@ export async function POST(req: NextRequest) {
       data: {
         data_r2r4_id: BigInt(data_r2r4_id),
         tanggal_servis: new Date(tanggal_servis),
+        jatuh_tempo_berikutnya: calculateServiceDueDate(tanggal_servis),
         jenis_servis,
         biaya: biaya ? Number(biaya) : 0,
         bengkel: bengkel ?? null,
@@ -91,6 +97,7 @@ export async function POST(req: NextRequest) {
         struk_foto: storedFoto,
       },
     })
+    await syncKendaraanServiceDueDate(data.data_r2r4_id)
     return NextResponse.json(serialize(data), { status: 201 })
   } catch (err) {
     console.error(err)

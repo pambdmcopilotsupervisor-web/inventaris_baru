@@ -3,6 +3,7 @@ import { requireSession } from "@/lib/auth"
 import { prisma, serialize } from "@/lib/prisma"
 import { canCreateOrEditTransaksi, canDeleteTransaksi, getTransaksiActionError } from "@/lib/transaksi-role"
 import { uploadServiceBuktiImage } from "@/lib/service-bukti-file"
+import { calculateServiceDueDate, ensureServiceDueColumns } from "@/lib/service-due"
 
 function toNullableString(value: FormDataEntryValue | string | null | undefined): string | null {
   if (typeof value !== "string") return null
@@ -58,11 +59,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 
   try {
+    await ensureServiceDueColumns()
+
     const { id } = await params
     const { tanggal_service, jenis_pekerjaan, biaya, teknisi, keterangan, foto, bukti_foto } = await parseServiceAcRequest(req)
 
     const data: {
       tanggal_service: Date
+      jatuh_tempo_berikutnya: Date
       jenis_pekerjaan: string
       biaya: number
       teknisi: string | null
@@ -70,6 +74,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       bukti_foto?: string | null
     } = {
       tanggal_service: new Date(tanggal_service),
+      jatuh_tempo_berikutnya: calculateServiceDueDate(tanggal_service),
       jenis_pekerjaan,
       biaya: biaya ? Number(biaya) : 0,
       teknisi: teknisi ?? null,
