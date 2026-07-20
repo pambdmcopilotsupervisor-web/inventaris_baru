@@ -385,6 +385,7 @@ CREATE TABLE IF NOT EXISTS `assets` (
   `kode_asset`         varchar(255)    NOT NULL,
   `nama_asset`         varchar(255)    NOT NULL,
   `gambar`             varchar(100)    DEFAULT NULL,
+  `bukti_nota`         varchar(100)    DEFAULT NULL,
   `tgl_beli`           date            DEFAULT NULL,
   `hrg_beli`           int             DEFAULT NULL,
   `kelompok_asset`     varchar(255)    NOT NULL,

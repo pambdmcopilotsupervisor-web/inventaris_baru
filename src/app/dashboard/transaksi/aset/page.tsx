@@ -28,7 +28,7 @@ interface Asset {
   ruangan_id: number | null; penanggung_jawab_id: number; karyawan_id: number
   pemakai: string | null; status_barang: string
   tgl_beli: string | null; hrg_beli: number | null; deskripsi: string | null
-  gambar: string | null; kode_nama: string | null
+  gambar: string | null; bukti_nota: string | null; kode_nama: string | null
   // enriched
   nama_ruangan?: string | null; lokasi?: string | null
   nama_pj?: string | null; divisi_pj?: string | null; nama_pemakai?: string | null
@@ -108,6 +108,14 @@ function gambarSrc(assetId: number, gambar: string | null): string | null {
   return `/api/aset/${assetId}/gambar`
 }
 
+function notaSrc(assetId: number, buktiNota: string | null): string | null {
+  if (!buktiNota) return null
+  if (buktiNota.startsWith("http://") || buktiNota.startsWith("https://") || buktiNota.startsWith("/")) {
+    return buktiNota
+  }
+  return `/api/aset/${assetId}/nota`
+}
+
 function isPdfFileName(value: string | null | undefined): boolean {
   return Boolean(value?.toLowerCase().endsWith(".pdf"))
 }
@@ -148,6 +156,12 @@ export default function AsetPage() {
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [pendingFileName, setPendingFileName] = useState<string | null>(null)
   const [cameraOpen, setCameraOpen] = useState(false)
+  const [uploadingNota, setUploadingNota] = useState(false)
+  const [notaUploadErr, setNotaUploadErr] = useState<string | null>(null)
+  const [notaLocalPreview, setNotaLocalPreview] = useState<string | null>(null)
+  const [notaPendingFile, setNotaPendingFile] = useState<File | null>(null)
+  const [notaPendingFileName, setNotaPendingFileName] = useState<string | null>(null)
+  const [notaCameraOpen, setNotaCameraOpen] = useState(false)
   /* ── Filters & pagination ───────────────────────────────────── */
   const [search, setSearch]       = useState("")
   const [kelompokFilter, setKelompokFilter] = useState<string>("")
@@ -248,10 +262,15 @@ export default function AsetPage() {
 
   const resetUploadState = () => {
     if (localPreview) URL.revokeObjectURL(localPreview)
+    if (notaLocalPreview) URL.revokeObjectURL(notaLocalPreview)
     setLocalPreview(null)
     setPendingFile(null)
     setPendingFileName(null)
     setUploadErr(null)
+    setNotaLocalPreview(null)
+    setNotaPendingFile(null)
+    setNotaPendingFileName(null)
+    setNotaUploadErr(null)
   }
 
   const closeAssetModal = () => {
@@ -292,6 +311,7 @@ export default function AsetPage() {
       hrg_beli: form.hrg_beli,
       deskripsi: form.deskripsi,
       gambar: form.gambar,
+      bukti_nota: form.bukti_nota,
       kode_nama: form.kode_nama,
     }
     if (editMode && selected) {
@@ -321,6 +341,17 @@ export default function AsetPage() {
           setForm(created)
           setEditMode(true)
           setErrors({ _: "Aset tersimpan, tetapi file gagal diupload. Silakan upload ulang file." })
+          refetch()
+          return
+        }
+      }
+      if (notaPendingFile) {
+        const uploaded = await handleUploadBuktiNota(notaPendingFile, created.id)
+        if (!uploaded) {
+          setSelected(created)
+          setForm(created)
+          setEditMode(true)
+          setErrors({ _: "Aset tersimpan, tetapi bukti nota gagal diupload. Silakan upload ulang file." })
           refetch()
           return
         }
@@ -373,6 +404,39 @@ export default function AsetPage() {
     } finally { setUploading(false) }
   }
 
+  const handleUploadBuktiNota = async (file: File, assetId: number): Promise<boolean> => {
+    const objectUrl = file.type.startsWith("image/") && !notaLocalPreview ? URL.createObjectURL(file) : null
+    if (objectUrl) setNotaLocalPreview(objectUrl)
+    setNotaPendingFileName(file.name)
+    setUploadingNota(true)
+    setNotaUploadErr(null)
+    try {
+      const fd = new FormData()
+      fd.append("file", file)
+      const res = await fetch(`/api/aset/${assetId}/nota`, { method: "POST", body: fd })
+      const json = await res.json()
+      if (!res.ok) {
+        setNotaUploadErr(json.error ?? "Gagal upload bukti nota")
+        if (objectUrl) URL.revokeObjectURL(objectUrl)
+        else if (notaLocalPreview) URL.revokeObjectURL(notaLocalPreview)
+        setNotaLocalPreview(null)
+        return false
+      }
+      const newKey = json.asset?.bukti_nota ?? null
+      setForm(f => ({ ...f, bukti_nota: newKey }))
+      setSelected(s => s ? { ...s, bukti_nota: newKey } : s)
+      setNotaPendingFile(null)
+      refetch()
+      return true
+    } catch {
+      setNotaUploadErr("Gagal upload bukti nota")
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+      else if (notaLocalPreview) URL.revokeObjectURL(notaLocalPreview)
+      setNotaLocalPreview(null)
+      return false
+    } finally { setUploadingNota(false) }
+  }
+
   const handleSelectFile = (file: File, assetId?: number) => {
     const error = validateAssetFile(file)
     if (error) {
@@ -395,6 +459,28 @@ export default function AsetPage() {
     setUploadErr(null)
   }
 
+  const handleSelectNotaFile = (file: File, assetId?: number) => {
+    const error = validateAssetFile(file)
+    if (error) {
+      setNotaUploadErr(error)
+      return
+    }
+
+    if (assetId) {
+      if (notaLocalPreview) { URL.revokeObjectURL(notaLocalPreview); setNotaLocalPreview(null) }
+      setNotaPendingFileName(file.name)
+      setNotaUploadErr(null)
+      void handleUploadBuktiNota(file, assetId)
+      return
+    }
+
+    if (notaLocalPreview) URL.revokeObjectURL(notaLocalPreview)
+    setNotaLocalPreview(file.type.startsWith("image/") ? URL.createObjectURL(file) : null)
+    setNotaPendingFile(file)
+    setNotaPendingFileName(file.name)
+    setNotaUploadErr(null)
+  }
+
   /* ── Hapus gambar ───────────────────────────────────────────── */
   const handleHapusGambar = async (assetId: number) => {
     if (localPreview) { URL.revokeObjectURL(localPreview); setLocalPreview(null) }
@@ -407,6 +493,19 @@ export default function AsetPage() {
       setSelected(s => s ? { ...s, gambar: null } : s)
       refetch()
     } finally { setUploading(false) }
+  }
+
+  const handleHapusBuktiNota = async (assetId: number) => {
+    if (notaLocalPreview) { URL.revokeObjectURL(notaLocalPreview); setNotaLocalPreview(null) }
+    setNotaPendingFile(null)
+    setNotaPendingFileName(null)
+    setUploadingNota(true)
+    try {
+      await fetch(`/api/aset/${assetId}/nota`, { method: "DELETE" })
+      setForm(f => ({ ...f, bukti_nota: null }))
+      setSelected(s => s ? { ...s, bukti_nota: null } : s)
+      refetch()
+    } finally { setUploadingNota(false) }
   }
 
   /* ── Cetak barcode massal ───────────────────────────────────── */
@@ -927,6 +1026,34 @@ export default function AsetPage() {
                 </a>
               </div>
             )}
+            {selected.bukti_nota && !isPdfFileName(selected.bukti_nota) && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-subtle)" }}>Bukti Nota</p>
+                <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={notaSrc(selected.id, selected.bukti_nota) ?? ""}
+                    alt="Bukti nota aset"
+                    className="w-full max-h-72 object-contain"
+                    style={{ background: "var(--surface-muted)" }}
+                  />
+                </div>
+              </div>
+            )}
+            {selected.bukti_nota && isPdfFileName(selected.bukti_nota) && (
+              <div className="flex items-center justify-between gap-3 rounded-xl p-4" style={{ border: "1px solid var(--border)", background: "var(--surface-muted)" }}>
+                <div className="flex items-center gap-3 min-w-0">
+                  <FileText className="h-6 w-6 shrink-0" style={{ color: "var(--danger)" }} />
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold" style={{ color: "var(--text-900)" }}>Bukti Nota PDF</p>
+                    <p className="text-xs truncate" style={{ color: "var(--text-subtle)" }}>{selected.bukti_nota}</p>
+                  </div>
+                </div>
+                <a href={notaSrc(selected.id, selected.bukti_nota) ?? "#"} target="_blank" rel="noreferrer" className="text-sm font-semibold" style={{ color: "var(--primary)" }}>
+                  Buka PDF
+                </a>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               {[
                 ["Kode Aset", selected.kode_asset],
@@ -969,7 +1096,7 @@ export default function AsetPage() {
         title={editMode ? "Edit Aset" : "Tambah Aset Baru"}
         footer={<>
           <Button variant="outline" onClick={closeAssetModal}>Batal</Button>
-          {canManageData && <Button onClick={handleSubmit} disabled={saving || submitting || uploading}>{saving || submitting || uploading ? "Menyimpan..." : "Simpan"}</Button>}
+          {canManageData && <Button onClick={handleSubmit} disabled={saving || submitting || uploading || uploadingNota}>{saving || submitting || uploading || uploadingNota ? "Menyimpan..." : "Simpan"}</Button>}
         </>}
       >
         {errors._ && (
@@ -1116,6 +1243,105 @@ export default function AsetPage() {
               Format JPG, PNG, PDF, atau WEBP. Maks 5 MB.
             </p>
           </div>
+
+          {/* Bukti Nota */}
+          <div className="md:col-span-2 space-y-2">
+            <label className="block text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+              Bukti Nota
+            </label>
+
+            {(notaLocalPreview ?? (form.bukti_nota && selected ? notaSrc(selected.id, form.bukti_nota ?? null) : null)) && !(notaPendingFile?.type === "application/pdf" || (!notaPendingFile && isPdfFileName(form.bukti_nota))) && (
+              <div className="relative inline-block">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={notaLocalPreview ?? (selected ? notaSrc(selected.id, form.bukti_nota ?? null) ?? "" : "")}
+                  alt="Bukti nota"
+                  className="h-32 w-48 rounded-xl object-cover"
+                  style={{ border: "1px solid var(--border)" }}
+                />
+                {editMode && selected && canManageData && (
+                  <button
+                    type="button"
+                    disabled={uploadingNota}
+                    onClick={() => handleHapusBuktiNota(selected.id)}
+                    className="absolute -top-2 -right-2 h-6 w-6 rounded-full flex items-center justify-center text-white transition-opacity hover:opacity-80"
+                    style={{ background: "var(--danger)" }}
+                    title="Hapus bukti nota"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
+            {(notaPendingFile?.type === "application/pdf" || (!notaPendingFile && isPdfFileName(form.bukti_nota))) && (
+              <div className="flex items-center justify-between gap-3 rounded-xl p-3" style={{ border: "1px solid var(--border)", background: "var(--surface-muted)" }}>
+                <div className="flex items-center gap-3 min-w-0">
+                  <FileText className="h-5 w-5 shrink-0" style={{ color: "var(--danger)" }} />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate" style={{ color: "var(--text-900)" }}>{notaPendingFileName ?? form.bukti_nota ?? "Dokumen PDF"}</p>
+                    <p className="text-xs" style={{ color: "var(--text-subtle)" }}>PDF bukti nota</p>
+                  </div>
+                </div>
+                {selected && form.bukti_nota && (
+                  <a href={notaSrc(selected.id, form.bukti_nota) ?? "#"} target="_blank" rel="noreferrer" className="text-xs font-semibold" style={{ color: "var(--primary)" }}>
+                    Buka
+                  </a>
+                )}
+              </div>
+            )}
+
+            {canManageData && (
+              <div className="flex flex-wrap gap-2">
+                <label
+                  className="flex items-center gap-2 w-fit rounded-lg px-4 py-2 text-sm font-medium cursor-pointer transition-colors"
+                  style={{
+                    border: "1px dashed var(--border-strong)",
+                    background: "var(--surface-muted)",
+                    color: "var(--text-700)",
+                    opacity: uploadingNota ? 0.6 : 1,
+                    pointerEvents: uploadingNota ? "none" : "auto",
+                  }}
+                >
+                  <ImagePlus className="h-4 w-4" />
+                  {uploadingNota ? "Mengupload..." : form.bukti_nota || notaPendingFile ? "Ganti File" : "Upload File"}
+                  <input
+                    type="file"
+                    accept={ASSET_FILE_ACCEPT}
+                    className="hidden"
+                    disabled={uploadingNota}
+                    onChange={e => {
+                      const file = e.target.files?.[0]
+                      if (file) handleSelectNotaFile(file, editMode && selected ? selected.id : undefined)
+                      e.target.value = ""
+                    }}
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={uploadingNota}
+                  onClick={() => setNotaCameraOpen(true)}
+                  className="flex items-center gap-2 w-fit rounded-lg px-4 py-2 text-sm font-medium cursor-pointer transition-colors"
+                  style={{
+                    border: "1px dashed var(--border-strong)",
+                    background: "var(--surface-muted)",
+                    color: "var(--text-700)",
+                    opacity: uploadingNota ? 0.6 : 1,
+                    pointerEvents: uploadingNota ? "none" : "auto",
+                  }}
+                >
+                  <Camera className="h-4 w-4" />
+                  Ambil Gambar
+                </button>
+              </div>
+            )}
+
+            {notaUploadErr && (
+              <p className="text-xs" style={{ color: "var(--danger)" }}>{notaUploadErr}</p>
+            )}
+            <p className="text-xs" style={{ color: "var(--text-subtle)" }}>
+              Format JPG, PNG, PDF, atau WEBP. Maks 5 MB.
+            </p>
+          </div>
         </div>
       </Modal>
 
@@ -1124,6 +1350,13 @@ export default function AsetPage() {
         onClose={() => setCameraOpen(false)}
         title="Ambil Gambar Aset"
         onCapture={(file) => handleSelectFile(file, editMode && selected ? selected.id : undefined)}
+      />
+
+      <CameraCaptureModal
+        open={notaCameraOpen}
+        onClose={() => setNotaCameraOpen(false)}
+        title="Ambil Gambar Bukti Nota"
+        onCapture={(file) => handleSelectNotaFile(file, editMode && selected ? selected.id : undefined)}
       />
 
       <ConfirmDelete
