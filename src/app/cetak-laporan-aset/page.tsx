@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useRef } from "react"
-import { formatCurrency, formatDate } from "@/lib/utils"
+import { formatDate } from "@/lib/utils"
 
 interface AssetRow {
   no: number; kode_asset: string; nama_asset: string; kelompok_asset: string
@@ -15,6 +15,7 @@ interface FilterParams {
   kelompok_asset?: string
   ruangan_id?: string
   status_barang?: string
+  printed_by?: string
 }
 
 function buildSubtitle(params: FilterParams) {
@@ -32,22 +33,25 @@ export default function CetakLaporanAsetPage() {
   const didPrint              = useRef(false)
 
   useEffect(() => {
-    // Read filter params from sessionStorage
-    try {
-      const stored = sessionStorage.getItem("cetak-laporan-aset-params")
-      const p: FilterParams = stored ? JSON.parse(stored) : {}
-      setParams(p)
+    const timer = window.setTimeout(() => {
+      try {
+        const stored = sessionStorage.getItem("cetak-laporan-aset-params")
+        const p: FilterParams = stored ? JSON.parse(stored) : {}
+        setParams(p)
 
-      const qs = new URLSearchParams()
-      if (p.kelompok_asset) qs.set("kelompok_asset", p.kelompok_asset)
-      if (p.ruangan_id)     qs.set("ruangan_id",     p.ruangan_id)
-      if (p.status_barang)  qs.set("status_barang",  p.status_barang)
+        const qs = new URLSearchParams()
+        if (p.kelompok_asset) qs.set("kelompok_asset", p.kelompok_asset)
+        if (p.ruangan_id) qs.set("ruangan_id", p.ruangan_id)
+        if (p.status_barang) qs.set("status_barang", p.status_barang)
 
-      fetch(`/api/laporan/aset?${qs.toString()}`)
-        .then(r => r.json())
-        .then(d => { setRows(Array.isArray(d) ? d : []); setLoading(false) })
-        .catch(() => setLoading(false))
-    } catch { setLoading(false) }
+        fetch(`/api/laporan/aset?${qs.toString()}`)
+          .then(r => r.json())
+          .then(d => { setRows(Array.isArray(d) ? d : []); setLoading(false) })
+          .catch(() => setLoading(false))
+      } catch { setLoading(false) }
+    }, 0)
+
+    return () => window.clearTimeout(timer)
   }, [])
 
   useEffect(() => {
@@ -72,7 +76,8 @@ export default function CetakLaporanAsetPage() {
       <style>{`
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: sans-serif; font-size: 7.5pt; color: #333; background: #fff; }
-        .header { text-align: center; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid #000; }
+        .header { display: flex; align-items: center; justify-content: center; gap: 12px; text-align: left; margin-bottom: 16px; padding-bottom: 8px; }
+        .header-logo { width: 44px; height: 44px; object-fit: contain; flex: 0 0 auto; }
         .header h1 { font-size: 13pt; font-weight: bold; color: #000; }
         .header h2 { font-size: 11pt; font-weight: bold; color: #000; margin-top: 4px; }
         .header p  { font-size: 8.5pt; margin-top: 4px; color: #555; }
@@ -108,10 +113,14 @@ export default function CetakLaporanAsetPage() {
       <div style={{ padding: "8mm 12mm" }}>
         {/* Header */}
         <div className="header">
-          <h1>LAPORAN INVENTARIS ASET</h1>
-          <h2>KOPERASI KONSUMEN PEDAMI</h2>
-          <p>{buildSubtitle(params)}</p>
-          <p>Dicetak pada: {printedAt}</p>
+          <img className="header-logo" src="/pedami-logo.png" alt="Logo Pedami" />
+          <div>
+            <h1>LAPORAN INVENTARIS ASET</h1>
+            <h2>KOPERASI KONSUMEN PEDAMI</h2>
+            <p>{buildSubtitle(params)}</p>
+            <p>Dicetak pada: {printedAt}</p>
+            <p>Dicetak oleh: {params.printed_by ?? "Sistem"}</p>
+          </div>
         </div>
 
         {/* Table */}

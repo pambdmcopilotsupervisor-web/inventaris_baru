@@ -36,6 +36,7 @@ interface Asset {
 interface Ruangan { id: number; ruangan: string; lokasi: string }
 interface Karyawan { id: number; nik: string; nama_karyawan: string }
 interface AssetReportRow {
+  no?: number
   kode_asset: string
   nama_asset: string
   kelompok_asset: string
@@ -625,14 +626,26 @@ export default function AsetPage() {
       if (laporanStatus)   params.status_barang  = laporanStatus
 
       if (laporanFormat === "pdf") {
-        sessionStorage.setItem("cetak-laporan-aset-params", JSON.stringify(params))
-        window.open("/cetak-laporan-aset", "_blank")
+        const qs = new URLSearchParams(params)
+        const res = await fetch(`/api/laporan/aset/pdf?${qs.toString()}`)
+        if (!res.ok) throw new Error("Gagal mengunduh PDF laporan aset")
+        const blob = await res.blob()
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement("a")
+        link.href = url
+        link.download = `Laporan_Inventaris_Aset_${new Date().toISOString().slice(0, 10)}.pdf`
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+        URL.revokeObjectURL(url)
         setLaporanOpen(false)
       } else {
         // Excel export menggunakan xlsx
         const qs = new URLSearchParams(params)
         const res = await fetch(`/api/laporan/aset?${qs}`)
+        if (!res.ok) throw new Error("Gagal mengunduh data laporan aset")
         const rows: AssetReportRow[] = await res.json()
+        const printedBy = user?.nama_karyawan?.trim() || user?.name?.trim() || user?.email?.trim() || "Sistem"
 
         const { utils, writeFile } = await import("xlsx")
         const wb = utils.book_new()
@@ -642,6 +655,7 @@ export default function AsetPage() {
           ["LAPORAN INVENTARIS ASET"],
           ["KOPERASI KONSUMEN PEDAMI"],
           [`Dicetak pada: ${new Date().toLocaleString("id-ID")}`],
+          [`Dicetak oleh: ${printedBy}`],
           [],
           ["No", "Kode Aset", "Nama Aset", "Kelompok", "Tgl Beli", "Harga Beli", "Lokasi/Ruangan", "Penanggung Jawab", "Pemakai", "Kondisi"],
           ...rows.map((r, i: number) => [
@@ -665,6 +679,8 @@ export default function AsetPage() {
         writeFile(wb, `Laporan_Inventaris_Aset_${new Date().toISOString().slice(0, 10)}.xlsx`)
         setLaporanOpen(false)
       }
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Gagal menyiapkan laporan aset")
     } finally { setLaporanLoading(false) }
   }
 
@@ -1552,7 +1568,7 @@ export default function AsetPage() {
             </div>
             {laporanFormat === "pdf" && (
               <p className="text-xs" style={{ color: "var(--text-subtle)" }}>
-                Akan membuka tab baru — gunakan Ctrl+P / Cmd+P untuk mencetak atau simpan sebagai PDF.
+                File PDF akan langsung terunduh melalui browser.
               </p>
             )}
           </div>
