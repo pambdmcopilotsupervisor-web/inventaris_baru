@@ -16,9 +16,11 @@ function formatNomor(nomor: string): string {
   return `${nomor.toUpperCase()}.20/KK-PEDAMI/${bulan}/${tahun}`
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const assetId = req.nextUrl.searchParams.get("asset_id")
     const list = await prisma.permohonan_disposal.findMany({
+      where: assetId ? { asset_id: Number(assetId) } : undefined,
       orderBy: { tgl_pengajuan: "desc" },
     })
 

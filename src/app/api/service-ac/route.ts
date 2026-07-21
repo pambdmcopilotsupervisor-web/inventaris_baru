@@ -53,11 +53,13 @@ async function parseServiceAcRequest(req: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     await ensureServiceDueColumns()
 
+    const assetId = req.nextUrl.searchParams.get("asset_id")
     const list = await prisma.riwayat_service_acs.findMany({
+      where: assetId ? { asset_id: BigInt(assetId) } : undefined,
       orderBy: { tanggal_service: "desc" },
     })
 

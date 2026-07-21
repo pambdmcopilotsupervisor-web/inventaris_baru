@@ -44,6 +44,19 @@ interface DashboardStats {
   alertStnk: { id: number; plat: string; nm_brg: string; stnk: string; jns_brg: string }[]
   jadwalKir: { id: number; plat: string; nm_brg: string; jns_brg: string; tgl_akhir_kir: string }[]
   jadwalService: { id: number; plat: string; nm_brg: string; jns_brg: string; service: string }[]
+  jadwalServiceAset: {
+    id: number
+    asset_id: number
+    kode_asset: string
+    nama_asset: string
+    status_barang: string
+    ruangan: string | null
+    lokasi: string | null
+    tanggal_service: string
+    jatuh_tempo_berikutnya: string | null
+    jenis_pekerjaan: string
+    teknisi: string | null
+  }[]
   genderPerDivisi: { divisi: string; laki_laki: number; perempuan: number; campuran: number }[]
 }
 
@@ -349,7 +362,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Row: Jadwal KIR & Service Mendatang */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <Card>
           <CardHeader className="pb-0">
             <div className="flex items-center justify-between">
@@ -410,6 +423,47 @@ export default function DashboardPage() {
                       </div>
                       <div className="text-right shrink-0">
                         <Badge variant={sisa <= 30 ? "warning" : "secondary"}>{formatDate(item.service)}</Badge>
+                        <p className="text-[10px] mt-0.5" style={{ color: "var(--text-subtle)" }}>{sisa}h lagi</p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-0">
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Archive className="h-4 w-4" style={{ color: "var(--primary)" }} />Jadwal Service Aset
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-4">
+            {loading ? (
+              <div className="space-y-2">{[1,2,3].map(i => <div key={i} className="h-12 rounded-lg animate-pulse" style={{ background: "var(--surface-muted)" }} />)}</div>
+            ) : (stats?.jadwalServiceAset ?? []).length === 0 ? (
+              <p className="text-sm text-center py-6" style={{ color: "var(--text-subtle)" }}>Tidak ada jadwal service aset dalam 6 bulan ke depan</p>
+            ) : (
+              <div className="space-y-2">
+                {(stats?.jadwalServiceAset ?? []).map((item, i) => {
+                  const jatuhTempo = item.jatuh_tempo_berikutnya
+                  const sisa = jatuhTempo ? getSisaHari(jatuhTempo) : 0
+                  return (
+                    <div key={i} className="flex items-center justify-between gap-3 rounded-lg p-3" style={{ background: sisa <= 30 ? "var(--warning-bg)" : "var(--surface-muted)" }}>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold truncate" style={{ color: "var(--text-900)" }}>{item.nama_asset}</p>
+                        <p className="text-[10px] mt-0.5 truncate" style={{ color: "var(--text-subtle)" }}>
+                          {item.kode_asset} · {item.jenis_pekerjaan}
+                        </p>
+                        <p className="text-[10px] mt-0.5 truncate" style={{ color: "var(--text-subtle)" }}>
+                          {[item.ruangan, item.lokasi].filter(Boolean).join(" — ") || "Tanpa ruangan"}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <Badge variant={sisa <= 30 ? "warning" : "secondary"}>{jatuhTempo ? formatDate(jatuhTempo) : "—"}</Badge>
                         <p className="text-[10px] mt-0.5" style={{ color: "var(--text-subtle)" }}>{sisa}h lagi</p>
                       </div>
                     </div>

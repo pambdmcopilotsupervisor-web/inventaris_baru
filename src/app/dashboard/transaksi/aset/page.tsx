@@ -14,7 +14,7 @@ import { CameraCaptureModal } from "@/components/ui/camera-capture-modal"
 import {
   Plus, Pencil, Trash2, Eye, QrCode, Printer, RefreshCw,
   Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-  ArrowRight, Camera, Download, FileText, ImagePlus, X,
+  Archive, ArrowRight, Camera, CheckCircle, Clock, Download, FileText, ImagePlus, Wrench, X,
 } from "lucide-react"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
@@ -75,6 +75,32 @@ interface MutasiAsetHistory {
   pj_tujuan?: string
   pemakai_asal?: string
   pemakai_tujuan?: string
+}
+interface ServiceAsetHistory {
+  id: number
+  asset_id: number
+  tanggal_service: string
+  jatuh_tempo_berikutnya: string | null
+  jenis_pekerjaan: string
+  biaya: number
+  teknisi: string | null
+  keterangan: string | null
+  bukti_foto?: string | null
+}
+interface DisposalHistory {
+  id: number
+  nomor: string | null
+  asset_id: number
+  tgl_pengajuan: string
+  kondisi: string | null
+  keterangan: string | null
+  verif_manager: number
+  verif_ketua: number
+  tgl_verif_manager: string | null
+  tgl_verif_ketua: string | null
+  dibuat_oleh_nm?: string
+  manager_nm?: string
+  ketua_nm?: string
 }
 
 const EMPTY: Partial<Asset> = { kelompok_asset: "komputer", status_barang: "Baik" }
@@ -154,6 +180,18 @@ function getDownloadFileName(asset: Asset, label: "gambar-aset" | "bukti-nota", 
   return `${label}_${code}${getFileExtension(storedName, contentType)}`
 }
 
+function serviceAsetFotoUrl(row: Pick<ServiceAsetHistory, "id" | "bukti_foto">): string | null {
+  if (!row.bukti_foto) return null
+  if (row.bukti_foto.startsWith("http://") || row.bukti_foto.startsWith("https://") || row.bukti_foto.startsWith("/")) return row.bukti_foto
+  return `/api/service-ac/${row.id}/foto`
+}
+
+function DisposalStatusBadge({ row }: { row: DisposalHistory }) {
+  if (row.verif_ketua === 1) return <Badge variant="success"><CheckCircle className="h-3 w-3 mr-1" />Disetujui</Badge>
+  if (row.verif_manager === 1) return <Badge variant="info"><Clock className="h-3 w-3 mr-1" />Menunggu Ketua</Badge>
+  return <Badge variant="warning"><Clock className="h-3 w-3 mr-1" />Menunggu Manager</Badge>
+}
+
 /* ── Main Page ──────────────────────────────────────────────────── */
 export default function AsetPage() {
   const { user } = useAuth()
@@ -173,14 +211,27 @@ export default function AsetPage() {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [editMode, setEditMode]     = useState(false)
   const [selected, setSelected]     = useState<Asset | null>(null)
+  const [detailTab, setDetailTab]   = useState<"info" | "service" | "mutasi" | "disposal">("info")
   const [form, setForm]             = useState<Partial<Asset>>(EMPTY)
   const [errors, setErrors]         = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
+  const serviceHistoryUrl = viewOpen && selected ? `/api/service-ac?asset_id=${selected.id}` : "/api/service-ac?asset_id=0"
   const mutasiHistoryUrl = viewOpen && selected ? `/api/mutasi-aset?asset_id=${selected.id}` : "/api/mutasi-aset?asset_id=0"
+  const disposalHistoryUrl = viewOpen && selected ? `/api/disposal?asset_id=${selected.id}` : "/api/disposal?asset_id=0"
+  const { data: serviceHistory, loading: loadingServiceHistory } = useApi<ServiceAsetHistory[]>(serviceHistoryUrl)
   const { data: mutasiHistory, loading: loadingMutasiHistory } = useApi<MutasiAsetHistory[]>(mutasiHistoryUrl)
+  const { data: disposalHistory, loading: loadingDisposalHistory } = useApi<DisposalHistory[]>(disposalHistoryUrl)
+  const selectedServiceHistory = useMemo(
+    () => (serviceHistory ?? []).filter((service) => service.asset_id === selected?.id),
+    [serviceHistory, selected?.id]
+  )
   const selectedMutasiHistory = useMemo(
     () => (mutasiHistory ?? []).filter((mutasi) => mutasi.asset_id === selected?.id),
     [mutasiHistory, selected?.id]
+  )
+  const selectedDisposalHistory = useMemo(
+    () => (disposalHistory ?? []).filter((disposal) => disposal.asset_id === selected?.id),
+    [disposalHistory, selected?.id]
   )
 
   /* ── Upload gambar ──────────────────────────────────────────── */
@@ -878,7 +929,7 @@ export default function AsetPage() {
                       </Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7" title="Detail"
                         style={{ color: "var(--info)" }}
-                        onClick={() => { setSelected(row); setViewOpen(true) }}>
+                        onClick={() => { setSelected(row); setDetailTab("info"); setViewOpen(true) }}>
                         <Eye className="h-3.5 w-3.5" />
                       </Button>
                       {canManageData && (
@@ -1069,180 +1120,233 @@ export default function AsetPage() {
       </Modal>
 
       {/* ── Detail View Modal ────────────────────────────────────── */}
-      <Modal open={viewOpen} onClose={() => setViewOpen(false)} title="Detail Aset" size="lg">
+      <Modal open={viewOpen} onClose={() => setViewOpen(false)} title={`Detail Aset: ${selected?.nama_asset ?? ""}`} size="xl">
         {selected && (
           <div className="space-y-5">
-            {/* Gambar aset */}
-            {selected.gambar && !isPdfFileName(selected.gambar) && (
-              <div className="relative rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={gambarSrc(selected.id, selected.gambar) ?? ""}
-                  alt={selected.nama_asset}
-                  className="w-full max-h-72 object-contain"
-                  style={{ background: "var(--surface-muted)" }}
-                />
-                <button
-                  type="button"
-                  onClick={() => handleDownloadAssetFile(selected, "gambar")}
-                  className="absolute top-3 right-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm"
-                  style={{ background: "var(--surface)", color: "var(--primary)", border: "1px solid var(--border)" }}
-                  title="Unduh gambar aset"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Unduh
-                </button>
-              </div>
-            )}
-            {selected.gambar && isPdfFileName(selected.gambar) && (
-              <div className="flex items-center justify-between gap-3 rounded-xl p-4" style={{ border: "1px solid var(--border)", background: "var(--surface-muted)" }}>
-                <div className="flex items-center gap-3 min-w-0">
-                  <FileText className="h-6 w-6 shrink-0" style={{ color: "var(--danger)" }} />
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold" style={{ color: "var(--text-900)" }}>Dokumen PDF Aset</p>
-                    <p className="text-xs truncate" style={{ color: "var(--text-subtle)" }}>{selected.gambar}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  <a href={gambarSrc(selected.id, selected.gambar) ?? "#"} target="_blank" rel="noreferrer" className="text-sm font-semibold" style={{ color: "var(--primary)" }}>
-                    Buka PDF
-                  </a>
-                  <button type="button" onClick={() => handleDownloadAssetFile(selected, "gambar")} className="inline-flex items-center gap-1.5 text-sm font-semibold" style={{ color: "var(--primary)" }}>
-                    <Download className="h-4 w-4" />
-                    Unduh
-                  </button>
-                </div>
-              </div>
-            )}
-            {selected.bukti_nota && !isPdfFileName(selected.bukti_nota) && (
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-subtle)" }}>Bukti Nota</p>
-                <div className="relative rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={notaSrc(selected.id, selected.bukti_nota) ?? ""}
-                    alt="Bukti nota aset"
-                    className="w-full max-h-72 object-contain"
-                    style={{ background: "var(--surface-muted)" }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleDownloadAssetFile(selected, "nota")}
-                    className="absolute top-3 right-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm"
-                    style={{ background: "var(--surface)", color: "var(--primary)", border: "1px solid var(--border)" }}
-                    title="Unduh bukti nota"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    Unduh
-                  </button>
-                </div>
-              </div>
-            )}
-            {selected.bukti_nota && isPdfFileName(selected.bukti_nota) && (
-              <div className="flex items-center justify-between gap-3 rounded-xl p-4" style={{ border: "1px solid var(--border)", background: "var(--surface-muted)" }}>
-                <div className="flex items-center gap-3 min-w-0">
-                  <FileText className="h-6 w-6 shrink-0" style={{ color: "var(--danger)" }} />
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold" style={{ color: "var(--text-900)" }}>Bukti Nota PDF</p>
-                    <p className="text-xs truncate" style={{ color: "var(--text-subtle)" }}>{selected.bukti_nota}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  <a href={notaSrc(selected.id, selected.bukti_nota) ?? "#"} target="_blank" rel="noreferrer" className="text-sm font-semibold" style={{ color: "var(--primary)" }}>
-                    Buka PDF
-                  </a>
-                  <button type="button" onClick={() => handleDownloadAssetFile(selected, "nota")} className="inline-flex items-center gap-1.5 text-sm font-semibold" style={{ color: "var(--primary)" }}>
-                    <Download className="h-4 w-4" />
-                    Unduh
-                  </button>
-                </div>
-              </div>
-            )}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="flex gap-2 border-b overflow-x-auto" style={{ borderColor: "var(--border)" }}>
               {[
-                ["Kode Aset", selected.kode_asset],
-                ["Nama Aset", selected.nama_asset],
-                ["Kelompok", selected.kelompok_asset === "komputer" ? "Peralatan Komputer" : "Perabotan Kantor"],
-                ["Kondisi", selected.status_barang],
-                ["Ruangan", selected.nama_ruangan],
-                ["Lokasi", selected.lokasi],
-                ["Penanggung Jawab", selected.nama_pj],
-                ["Divisi PJ", selected.divisi_pj],
-                ["Pemakai", selected.nama_pemakai],
-                ["Tanggal Beli", selected.tgl_beli ? formatDate(selected.tgl_beli) : null],
-                ["Harga Beli", selected.hrg_beli ? formatCurrency(selected.hrg_beli) : null],
-                ["Deskripsi", selected.deskripsi],
-              ].map(([k, v]) => (
-                <div key={String(k)}>
-                  <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>{k}</p>
-                  <p className="mt-0.5 font-medium" style={{ color: "var(--text-900)" }}>{v ?? "—"}</p>
-                </div>
+                { key: "info", label: "Informasi Aset", icon: <Eye className="h-3.5 w-3.5" /> },
+                { key: "service", label: `Service (${selectedServiceHistory.length})`, icon: <Wrench className="h-3.5 w-3.5" /> },
+                { key: "mutasi", label: `Mutasi (${selectedMutasiHistory.length})`, icon: <ArrowRight className="h-3.5 w-3.5" /> },
+                { key: "disposal", label: `Disposal (${selectedDisposalHistory.length})`, icon: <Archive className="h-3.5 w-3.5" /> },
+              ].map(tab => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setDetailTab(tab.key as "info" | "service" | "mutasi" | "disposal")}
+                  className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors duration-150 whitespace-nowrap"
+                  style={{
+                    borderBottomColor: detailTab === tab.key ? "var(--primary)" : "transparent",
+                    color: detailTab === tab.key ? "var(--primary)" : "var(--text-muted)",
+                  }}
+                >
+                  {tab.icon} {tab.label}
+                </button>
               ))}
             </div>
 
-            <div>
-              <div className="flex items-center justify-between gap-3 mb-2">
-                <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>
-                  Riwayat Mutasi
-                </p>
-                <Badge variant={selectedMutasiHistory.length > 0 ? "default" : "secondary"}>
-                  {selectedMutasiHistory.length} Mutasi
-                </Badge>
-              </div>
-              {loadingMutasiHistory ? (
-                <p className="text-sm text-center py-6 rounded-xl" style={{ color: "var(--text-subtle)", background: "var(--surface-muted)", border: "1px solid var(--border)" }}>
-                  Memuat riwayat mutasi...
-                </p>
-              ) : selectedMutasiHistory.length === 0 ? (
-                <p className="text-sm text-center py-6 rounded-xl" style={{ color: "var(--text-subtle)", background: "var(--surface-muted)", border: "1px solid var(--border)" }}>
-                  Belum ada riwayat mutasi untuk aset ini
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {selectedMutasiHistory.map((mutasi) => (
-                    <div key={mutasi.id} className="rounded-xl p-3" style={{ background: "var(--surface-muted)", border: "1px solid var(--border)" }}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold" style={{ color: "var(--text-900)" }}>
-                            {formatDate(mutasi.tgl_mutasi)}
-                          </p>
-                          <p className="text-xs mt-0.5" style={{ color: "var(--text-subtle)" }}>
-                            {mutasi.deskripsi || "—"}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-[1fr_auto_1fr] gap-3 mt-3 items-start">
-                        <div className="rounded-lg p-3" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
-                          <p className="text-[10px] font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-subtle)" }}>Sebelum</p>
-                          <p className="text-xs font-medium" style={{ color: "var(--text-900)" }}>{mutasi.ruangan_asal ?? "—"}</p>
-                          <p className="text-xs mt-1" style={{ color: "var(--text-subtle)" }}>PJ: {mutasi.pj_asal ?? "—"}</p>
-                          <p className="text-xs" style={{ color: "var(--text-subtle)" }}>Pemakai: {mutasi.pemakai_asal ?? "—"}</p>
-                        </div>
-                        <ArrowRight className="h-4 w-4 mt-8" style={{ color: "var(--primary)" }} />
-                        <div className="rounded-lg p-3" style={{ background: "var(--primary-light)", border: "1px solid var(--primary-mid)" }}>
-                          <p className="text-[10px] font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--primary)" }}>Sesudah</p>
-                          <p className="text-xs font-medium" style={{ color: "var(--text-900)" }}>{mutasi.ruangan_tujuan ?? "—"}</p>
-                          <p className="text-xs mt-1" style={{ color: "var(--text-subtle)" }}>PJ: {mutasi.pj_tujuan ?? "—"}</p>
-                          <p className="text-xs" style={{ color: "var(--text-subtle)" }}>Pemakai: {mutasi.pemakai_tujuan ?? "—"}</p>
-                        </div>
-                      </div>
+            {detailTab === "info" && (
+              <div className="space-y-5">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {[
+                    ["Kode Aset", selected.kode_asset],
+                    ["Nama Aset", selected.nama_asset],
+                    ["Kelompok", selected.kelompok_asset === "komputer" ? "Peralatan Komputer" : "Perabotan Kantor"],
+                    ["Kondisi", selected.status_barang],
+                    ["Ruangan", selected.nama_ruangan],
+                    ["Lokasi", selected.lokasi],
+                    ["Penanggung Jawab", selected.nama_pj],
+                    ["Divisi PJ", selected.divisi_pj],
+                    ["Pemakai", selected.nama_pemakai],
+                    ["Tanggal Beli", selected.tgl_beli ? formatDate(selected.tgl_beli) : null],
+                    ["Harga Beli", selected.hrg_beli ? formatCurrency(selected.hrg_beli) : null],
+                    ["Deskripsi", selected.deskripsi],
+                  ].map(([k, v]) => (
+                    <div key={String(k)}>
+                      <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>{k}</p>
+                      <p className="mt-0.5 font-medium" style={{ color: "var(--text-900)" }}>{v ?? "—"}</p>
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
 
-            {/* QR Code preview kecil di detail */}
-            <div className="flex items-center gap-4 p-4 rounded-xl" style={{ background: "var(--primary-light)", border: "1px solid var(--primary-mid)" }}>
-              <QRCodeSVG value={`${origin}/info-asset/${selected.id}`} size={60} level="M" />
-              <div>
-                <p className="text-xs font-semibold" style={{ color: "var(--primary)" }}>QR Code Aset</p>
-                <p className="text-xs mt-0.5" style={{ color: "var(--text-subtle)" }}>Scan untuk melihat info aset</p>
-                <Button variant="outline" size="sm" className="mt-2" onClick={() => { setViewOpen(false); setQrOpen(true) }}>
-                  <QrCode className="h-3.5 w-3.5 mr-1.5" /> Lihat Barcode
-                </Button>
+                {(selected.gambar || selected.bukti_nota) && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {selected.gambar && (
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-subtle)" }}>Gambar / Dokumen Aset</p>
+                        {isPdfFileName(selected.gambar) ? (
+                          <div className="flex items-center justify-between gap-3 rounded-xl p-4" style={{ border: "1px solid var(--border)", background: "var(--surface-muted)" }}>
+                            <div className="flex items-center gap-3 min-w-0">
+                              <FileText className="h-6 w-6 shrink-0" style={{ color: "var(--danger)" }} />
+                              <p className="text-xs truncate" style={{ color: "var(--text-subtle)" }}>{selected.gambar}</p>
+                            </div>
+                            <button type="button" onClick={() => handleDownloadAssetFile(selected, "gambar")} className="inline-flex items-center gap-1.5 text-sm font-semibold" style={{ color: "var(--primary)" }}>
+                              <Download className="h-4 w-4" /> Unduh
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="relative rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={gambarSrc(selected.id, selected.gambar) ?? ""} alt={selected.nama_asset} className="w-full h-56 object-contain" style={{ background: "var(--surface-muted)" }} />
+                            <button type="button" onClick={() => handleDownloadAssetFile(selected, "gambar")} className="absolute top-3 right-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm" style={{ background: "var(--surface)", color: "var(--primary)", border: "1px solid var(--border)" }}>
+                              <Download className="h-3.5 w-3.5" /> Unduh
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {selected.bukti_nota && (
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-subtle)" }}>Bukti Nota</p>
+                        {isPdfFileName(selected.bukti_nota) ? (
+                          <div className="flex items-center justify-between gap-3 rounded-xl p-4" style={{ border: "1px solid var(--border)", background: "var(--surface-muted)" }}>
+                            <div className="flex items-center gap-3 min-w-0">
+                              <FileText className="h-6 w-6 shrink-0" style={{ color: "var(--danger)" }} />
+                              <p className="text-xs truncate" style={{ color: "var(--text-subtle)" }}>{selected.bukti_nota}</p>
+                            </div>
+                            <button type="button" onClick={() => handleDownloadAssetFile(selected, "nota")} className="inline-flex items-center gap-1.5 text-sm font-semibold" style={{ color: "var(--primary)" }}>
+                              <Download className="h-4 w-4" /> Unduh
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="relative rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={notaSrc(selected.id, selected.bukti_nota) ?? ""} alt="Bukti nota aset" className="w-full h-56 object-contain" style={{ background: "var(--surface-muted)" }} />
+                            <button type="button" onClick={() => handleDownloadAssetFile(selected, "nota")} className="absolute top-3 right-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm" style={{ background: "var(--surface)", color: "var(--primary)", border: "1px solid var(--border)" }}>
+                              <Download className="h-3.5 w-3.5" /> Unduh
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex items-center gap-4 p-4 rounded-xl" style={{ background: "var(--primary-light)", border: "1px solid var(--primary-mid)" }}>
+                  <QRCodeSVG value={`${origin}/info-asset/${selected.id}`} size={60} level="M" />
+                  <div>
+                    <p className="text-xs font-semibold" style={{ color: "var(--primary)" }}>QR Code Aset</p>
+                    <p className="text-xs mt-0.5" style={{ color: "var(--text-subtle)" }}>Scan untuk melihat info aset</p>
+                    <Button variant="outline" size="sm" className="mt-2" onClick={() => { setViewOpen(false); setQrOpen(true) }}>
+                      <QrCode className="h-3.5 w-3.5 mr-1.5" /> Lihat Barcode
+                    </Button>
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
+
+            {detailTab === "service" && (
+              <div>
+                {loadingServiceHistory ? (
+                  <p className="text-sm text-center py-8" style={{ color: "var(--text-subtle)" }}>Memuat riwayat service...</p>
+                ) : selectedServiceHistory.length === 0 ? (
+                  <p className="text-sm text-center py-8 rounded-xl" style={{ color: "var(--text-subtle)", background: "var(--surface-muted)", border: "1px solid var(--border)" }}>Belum ada riwayat service untuk aset ini</p>
+                ) : (
+                  <div className="space-y-2">
+                    {selectedServiceHistory.map(service => {
+                      const fotoUrl = serviceAsetFotoUrl(service)
+                      return (
+                        <div key={service.id} className="flex items-start justify-between gap-3 p-3 rounded-lg" style={{ background: "var(--surface-muted)", border: "1px solid var(--border)" }}>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold" style={{ color: "var(--text-900)" }}>{service.jenis_pekerjaan}</p>
+                            <p className="text-xs mt-0.5" style={{ color: "var(--text-subtle)" }}>{formatDate(service.tanggal_service)} · {service.teknisi ?? "—"}</p>
+                            <p className="text-xs mt-0.5" style={{ color: "var(--warning)" }}>
+                              Jatuh tempo berikutnya: {service.jatuh_tempo_berikutnya ? formatDate(service.jatuh_tempo_berikutnya) : "—"}
+                            </p>
+                            {service.keterangan && <p className="text-xs mt-0.5 italic" style={{ color: "var(--text-subtle)" }}>{service.keterangan}</p>}
+                            {fotoUrl && (
+                              <a href={fotoUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold mt-2" style={{ color: "var(--primary)" }}>
+                                <ImagePlus className="h-3.5 w-3.5" /> Lihat bukti foto
+                              </a>
+                            )}
+                          </div>
+                          <span className="font-mono font-semibold text-sm shrink-0" style={{ color: "var(--warning)" }}>{formatCurrency(Number(service.biaya) || 0)}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {detailTab === "mutasi" && (
+              <div>
+                {loadingMutasiHistory ? (
+                  <p className="text-sm text-center py-8" style={{ color: "var(--text-subtle)" }}>Memuat riwayat mutasi...</p>
+                ) : selectedMutasiHistory.length === 0 ? (
+                  <p className="text-sm text-center py-8 rounded-xl" style={{ color: "var(--text-subtle)", background: "var(--surface-muted)", border: "1px solid var(--border)" }}>Belum ada riwayat mutasi untuk aset ini</p>
+                ) : (
+                  <div className="space-y-2">
+                    {selectedMutasiHistory.map(mutasi => (
+                      <div key={mutasi.id} className="rounded-xl p-3" style={{ background: "var(--surface-muted)", border: "1px solid var(--border)" }}>
+                        <p className="text-sm font-semibold" style={{ color: "var(--text-900)" }}>{formatDate(mutasi.tgl_mutasi)}</p>
+                        <p className="text-xs mt-0.5" style={{ color: "var(--text-subtle)" }}>{mutasi.deskripsi || "—"}</p>
+                        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-3 mt-3 items-start">
+                          <div className="rounded-lg p-3" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+                            <p className="text-[10px] font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-subtle)" }}>Sebelum</p>
+                            <p className="text-xs font-medium" style={{ color: "var(--text-900)" }}>{mutasi.ruangan_asal ?? "—"}</p>
+                            <p className="text-xs mt-1" style={{ color: "var(--text-subtle)" }}>PJ: {mutasi.pj_asal ?? "—"}</p>
+                            <p className="text-xs" style={{ color: "var(--text-subtle)" }}>Pemakai: {mutasi.pemakai_asal ?? "—"}</p>
+                          </div>
+                          <ArrowRight className="hidden md:block h-4 w-4 mt-8" style={{ color: "var(--primary)" }} />
+                          <div className="rounded-lg p-3" style={{ background: "var(--primary-light)", border: "1px solid var(--primary-mid)" }}>
+                            <p className="text-[10px] font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--primary)" }}>Sesudah</p>
+                            <p className="text-xs font-medium" style={{ color: "var(--text-900)" }}>{mutasi.ruangan_tujuan ?? "—"}</p>
+                            <p className="text-xs mt-1" style={{ color: "var(--text-subtle)" }}>PJ: {mutasi.pj_tujuan ?? "—"}</p>
+                            <p className="text-xs" style={{ color: "var(--text-subtle)" }}>Pemakai: {mutasi.pemakai_tujuan ?? "—"}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {detailTab === "disposal" && (
+              <div>
+                {loadingDisposalHistory ? (
+                  <p className="text-sm text-center py-8" style={{ color: "var(--text-subtle)" }}>Memuat riwayat disposal...</p>
+                ) : selectedDisposalHistory.length === 0 ? (
+                  <p className="text-sm text-center py-8 rounded-xl" style={{ color: "var(--text-subtle)", background: "var(--surface-muted)", border: "1px solid var(--border)" }}>Belum ada riwayat disposal untuk aset ini</p>
+                ) : (
+                  <div className="space-y-2">
+                    {selectedDisposalHistory.map(disposal => (
+                      <div key={disposal.id} className="rounded-xl p-3" style={{ background: "var(--surface-muted)", border: "1px solid var(--border)" }}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold" style={{ color: "var(--text-900)" }}>{disposal.nomor ?? "Tanpa nomor surat"}</p>
+                            <p className="text-xs mt-0.5" style={{ color: "var(--text-subtle)" }}>{formatDate(disposal.tgl_pengajuan)} · Diajukan oleh {disposal.dibuat_oleh_nm ?? "—"}</p>
+                          </div>
+                          <DisposalStatusBadge row={disposal} />
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>Kondisi</p>
+                            <p className="text-sm font-medium" style={{ color: "var(--text-900)" }}>{disposal.kondisi ?? "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>Keterangan</p>
+                            <p className="text-sm font-medium" style={{ color: "var(--text-900)" }}>{disposal.keterangan ?? "—"}</p>
+                          </div>
+                          <div className="rounded-lg p-3" style={{ background: disposal.verif_manager === 1 ? "var(--success-bg)" : "var(--danger-bg)", border: `1px solid ${disposal.verif_manager === 1 ? "#A7F3D0" : "#FECACA"}` }}>
+                            <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: disposal.verif_manager === 1 ? "var(--success)" : "var(--danger)" }}>Verifikasi Manager</p>
+                            <p className="text-sm font-medium mt-1">{disposal.manager_nm ?? "—"}</p>
+                            <p className="text-xs mt-1" style={{ color: "var(--text-subtle)" }}>{disposal.tgl_verif_manager ? formatDate(disposal.tgl_verif_manager) : "Belum verifikasi"}</p>
+                          </div>
+                          <div className="rounded-lg p-3" style={{ background: disposal.verif_ketua === 1 ? "var(--success-bg)" : "var(--primary-light)", border: `1px solid ${disposal.verif_ketua === 1 ? "#A7F3D0" : "var(--primary-mid)"}` }}>
+                            <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: disposal.verif_ketua === 1 ? "var(--success)" : "var(--primary)" }}>Verifikasi Ketua</p>
+                            <p className="text-sm font-medium mt-1">{disposal.ketua_nm ?? "—"}</p>
+                            <p className="text-xs mt-1" style={{ color: "var(--text-subtle)" }}>{disposal.tgl_verif_ketua ? formatDate(disposal.tgl_verif_ketua) : "Belum verifikasi"}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </Modal>

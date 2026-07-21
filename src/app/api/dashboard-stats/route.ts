@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma, serialize } from "@/lib/prisma"
+import { ensureServiceDueColumns } from "@/lib/service-due"
 
 const EXCLUDED_DIVISI = [
   "ketua koperasi konsumen pedami",
@@ -10,6 +11,8 @@ const EXCLUDED_DIVISI = [
 
 export async function GET() {
   try {
+    await ensureServiceDueColumns()
+
     const now = new Date()
     const today = new Date(now)
     today.setHours(0, 0, 0, 0)
@@ -38,6 +41,7 @@ export async function GET() {
       alertStnk,
       jadwalKir,
       jadwalService,
+      jadwalServiceAset,
     ] = await Promise.all([
       prisma.assets.count(),
       prisma.assets.count({ where: { kelompok_asset: "komputer" } }),
@@ -106,7 +110,42 @@ export async function GET() {
         orderBy: { service: "asc" },
         take: 8,
       }),
+      prisma.riwayat_service_acs.findMany({
+        where: {
+          jatuh_tempo_berikutnya: {
+            gte: today,
+            lte: sixMonthsAhead,
+          },
+        },
+        select: {
+          id: true,
+          asset_id: true,
+          tanggal_service: true,
+          jatuh_tempo_berikutnya: true,
+          jenis_pekerjaan: true,
+          teknisi: true,
+        },
+        orderBy: { jatuh_tempo_berikutnya: "asc" },
+        take: 8,
+      }),
     ])
+
+    const serviceAssetIds = [...new Set(jadwalServiceAset.map((item) => item.asset_id))]
+    const serviceAssets = serviceAssetIds.length > 0
+      ? await prisma.assets.findMany({
+          where: { id: { in: serviceAssetIds } },
+          select: { id: true, kode_asset: true, nama_asset: true, status_barang: true, ruangan_id: true },
+        })
+      : []
+    const serviceRuanganIds = [...new Set(serviceAssets.map((asset) => asset.ruangan_id).filter(Boolean))] as number[]
+    const serviceRuangans = serviceRuanganIds.length > 0
+      ? await prisma.ruangans.findMany({
+          where: { id: { in: serviceRuanganIds } },
+          select: { id: true, ruangan: true, lokasi: true },
+        })
+      : []
+    const serviceAssetMap = new Map(serviceAssets.map((asset) => [Number(asset.id), asset]))
+    const serviceRuanganMap = new Map(serviceRuangans.map((ruangan) => [Number(ruangan.id), ruangan]))
 
     // Gender per Divisi — sesuai KaryawanGenderPerDivisiChart
     const genderPerDivisi = await prisma.$queryRaw<
@@ -150,6 +189,19 @@ export async function GET() {
         alertStnk,
         jadwalKir,
         jadwalService,
+        jadwalServiceAset: jadwalServiceAset.map((item) => ({
+          id: item.id,
+          asset_id: Number(item.asset_id),
+          kode_asset: serviceAssetMap.get(Number(item.asset_id))?.kode_asset ?? "—",
+          nama_asset: serviceAssetMap.get(Number(item.asset_id))?.nama_asset ?? "—",
+          status_barang: serviceAssetMap.get(Number(item.asset_id))?.status_barang ?? "—",
+          ruangan: serviceRuanganMap.get(Number(serviceAssetMap.get(Number(item.asset_id))?.ruangan_id))?.ruangan ?? null,
+          lokasi: serviceRuanganMap.get(Number(serviceAssetMap.get(Number(item.asset_id))?.ruangan_id))?.lokasi ?? null,
+          tanggal_service: item.tanggal_service,
+          jatuh_tempo_berikutnya: item.jatuh_tempo_berikutnya,
+          jenis_pekerjaan: item.jenis_pekerjaan,
+          teknisi: item.teknisi,
+        })),
         genderPerDivisi: genderPerDivisi.map(r => ({
           divisi: r.divisi,
           laki_laki: Number(r.laki_laki),
