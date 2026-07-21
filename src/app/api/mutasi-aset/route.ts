@@ -3,9 +3,11 @@ import { requireSession } from "@/lib/auth"
 import { prisma, serialize } from "@/lib/prisma"
 import { canCreateOrEditTransaksi, getTransaksiActionError } from "@/lib/transaksi-role"
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const assetId = req.nextUrl.searchParams.get("asset_id")
     const mutasiList = await prisma.mutasi_assets.findMany({
+      where: assetId ? { asset_id: Number(assetId) } : undefined,
       orderBy: { tgl_mutasi: "desc" },
     })
 

@@ -14,7 +14,7 @@ import { CameraCaptureModal } from "@/components/ui/camera-capture-modal"
 import {
   Plus, Pencil, Trash2, Eye, QrCode, Printer, RefreshCw,
   Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-  Camera, Download, FileText, ImagePlus, X,
+  ArrowRight, Camera, Download, FileText, ImagePlus, X,
 } from "lucide-react"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
@@ -63,6 +63,18 @@ interface BarcodePrintMeta {
   kondisi: string | null
   lokasi: string | null
   total: number
+}
+interface MutasiAsetHistory {
+  id: number
+  asset_id: number
+  tgl_mutasi: string
+  deskripsi: string
+  ruangan_asal?: string
+  ruangan_tujuan?: string
+  pj_asal?: string
+  pj_tujuan?: string
+  pemakai_asal?: string
+  pemakai_tujuan?: string
 }
 
 const EMPTY: Partial<Asset> = { kelompok_asset: "komputer", status_barang: "Baik" }
@@ -164,6 +176,12 @@ export default function AsetPage() {
   const [form, setForm]             = useState<Partial<Asset>>(EMPTY)
   const [errors, setErrors]         = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
+  const mutasiHistoryUrl = viewOpen && selected ? `/api/mutasi-aset?asset_id=${selected.id}` : "/api/mutasi-aset?asset_id=0"
+  const { data: mutasiHistory, loading: loadingMutasiHistory } = useApi<MutasiAsetHistory[]>(mutasiHistoryUrl)
+  const selectedMutasiHistory = useMemo(
+    () => (mutasiHistory ?? []).filter((mutasi) => mutasi.asset_id === selected?.id),
+    [mutasiHistory, selected?.id]
+  )
 
   /* ── Upload gambar ──────────────────────────────────────────── */
   const [uploading, setUploading]     = useState(false)
@@ -1160,6 +1178,58 @@ export default function AsetPage() {
                   <p className="mt-0.5 font-medium" style={{ color: "var(--text-900)" }}>{v ?? "—"}</p>
                 </div>
               ))}
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>
+                  Riwayat Mutasi
+                </p>
+                <Badge variant={selectedMutasiHistory.length > 0 ? "default" : "secondary"}>
+                  {selectedMutasiHistory.length} Mutasi
+                </Badge>
+              </div>
+              {loadingMutasiHistory ? (
+                <p className="text-sm text-center py-6 rounded-xl" style={{ color: "var(--text-subtle)", background: "var(--surface-muted)", border: "1px solid var(--border)" }}>
+                  Memuat riwayat mutasi...
+                </p>
+              ) : selectedMutasiHistory.length === 0 ? (
+                <p className="text-sm text-center py-6 rounded-xl" style={{ color: "var(--text-subtle)", background: "var(--surface-muted)", border: "1px solid var(--border)" }}>
+                  Belum ada riwayat mutasi untuk aset ini
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {selectedMutasiHistory.map((mutasi) => (
+                    <div key={mutasi.id} className="rounded-xl p-3" style={{ background: "var(--surface-muted)", border: "1px solid var(--border)" }}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold" style={{ color: "var(--text-900)" }}>
+                            {formatDate(mutasi.tgl_mutasi)}
+                          </p>
+                          <p className="text-xs mt-0.5" style={{ color: "var(--text-subtle)" }}>
+                            {mutasi.deskripsi || "—"}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-[1fr_auto_1fr] gap-3 mt-3 items-start">
+                        <div className="rounded-lg p-3" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-subtle)" }}>Sebelum</p>
+                          <p className="text-xs font-medium" style={{ color: "var(--text-900)" }}>{mutasi.ruangan_asal ?? "—"}</p>
+                          <p className="text-xs mt-1" style={{ color: "var(--text-subtle)" }}>PJ: {mutasi.pj_asal ?? "—"}</p>
+                          <p className="text-xs" style={{ color: "var(--text-subtle)" }}>Pemakai: {mutasi.pemakai_asal ?? "—"}</p>
+                        </div>
+                        <ArrowRight className="h-4 w-4 mt-8" style={{ color: "var(--primary)" }} />
+                        <div className="rounded-lg p-3" style={{ background: "var(--primary-light)", border: "1px solid var(--primary-mid)" }}>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--primary)" }}>Sesudah</p>
+                          <p className="text-xs font-medium" style={{ color: "var(--text-900)" }}>{mutasi.ruangan_tujuan ?? "—"}</p>
+                          <p className="text-xs mt-1" style={{ color: "var(--text-subtle)" }}>PJ: {mutasi.pj_tujuan ?? "—"}</p>
+                          <p className="text-xs" style={{ color: "var(--text-subtle)" }}>Pemakai: {mutasi.pemakai_tujuan ?? "—"}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* QR Code preview kecil di detail */}
