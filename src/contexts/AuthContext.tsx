@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react"
 import { clearStoredModuleNavigation } from "@/lib/module-navigation"
+import { hasRequiredJabatan } from "@/lib/transaksi-role"
 
 export interface AuthUser {
   id: number
@@ -112,12 +113,12 @@ export function useAuth() {
 
 // Helper: apakah user bisa verifikasi sebagai Manager?
 export function canVerifManager(user: AuthUser | null): boolean {
-  return user?.jabatan === "Manager"
+  return hasRequiredJabatan(user?.jabatan, "Manager")
 }
 
 // Helper: apakah user bisa verifikasi sebagai Ketua?
 export function canVerifKetua(user: AuthUser | null): boolean {
-  return user?.jabatan === "Ketua"
+  return hasRequiredJabatan(user?.jabatan, "Ketua")
 }
 
 // Helper: apakah user adalah admin?
