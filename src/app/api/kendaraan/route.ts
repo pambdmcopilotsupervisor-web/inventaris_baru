@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { requireSession } from "@/lib/auth"
 import { prisma, serialize } from "@/lib/prisma"
 import { canCreateOrEditTransaksi, getTransaksiActionError } from "@/lib/transaksi-role"
+import { normalizeKendaraanCreateData } from "@/lib/kendaraan-input"
 
 function getNextSequentialCode(codes: Array<string | null | undefined>): string {
   let nextPrefix = ""
@@ -108,11 +109,14 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const existingCodes = await prisma.data_r2r4s.findMany({ select: { kode_brg: true } })
+    const createData = normalizeKendaraanCreateData(body, getNextSequentialCode(existingCodes.map(kendaraan => kendaraan.kode_brg)))
+
+    if (!createData.kode_brg || !createData.jns_brg || !createData.plat || !createData.nm_brg) {
+      return NextResponse.json({ error: "Kode barang, jenis, plat, dan nama kendaraan wajib diisi" }, { status: 400 })
+    }
+
     const data = await prisma.data_r2r4s.create({
-      data: {
-        ...body,
-        kode_brg: getNextSequentialCode(existingCodes.map(kendaraan => kendaraan.kode_brg)),
-      },
+      data: createData,
     })
     return NextResponse.json(serialize(data), { status: 201 })
   } catch (err) {
