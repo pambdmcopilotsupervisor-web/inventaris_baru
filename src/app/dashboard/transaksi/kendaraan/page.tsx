@@ -9,7 +9,8 @@ import { ConfirmDelete } from "@/components/ui/confirm-delete"
 import { TextField, SelectField, TextareaField } from "@/components/ui/form-field"
 import { Input } from "@/components/ui/input"
 import { CameraCaptureModal } from "@/components/ui/camera-capture-modal"
-import { Plus, Pencil, Trash2, Eye, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, Wrench, CreditCard, Info, FileText, ImagePlus, X, ImageOff, Camera, Download } from "lucide-react"
+import { ImageAdjustModal } from "@/components/ui/image-adjust-modal"
+import { Plus, Pencil, Trash2, Eye, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, Wrench, CreditCard, Info, FileText, ImagePlus, X, ImageOff, Camera, Download, Crop } from "lucide-react"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
 import { useCrud } from "@/hooks/useCrud"
@@ -280,6 +281,8 @@ export default function KendaraanPage() {
   const [pendingFiles, setPendingFiles] = useState<Partial<Record<UploadImgField, File>>>({})
   const [pendingFileNames, setPendingFileNames] = useState<Partial<Record<UploadImgField, string>>>({})
   const [cameraField, setCameraField] = useState<UploadImgField | null>(null)
+  const [imageAdjust, setImageAdjust] = useState<{ file: File; field: UploadImgField; kendaraanId?: number } | null>(null)
+  const [loadingAdjust, setLoadingAdjust] = useState<UploadImgField | null>(null)
 
   const resetUploadState = () => {
     Object.values(localPreviews).forEach(src => { if (src) URL.revokeObjectURL(src) })
@@ -287,6 +290,8 @@ export default function KendaraanPage() {
     setPendingFiles({})
     setPendingFileNames({})
     setUploadErr(null)
+    setImageAdjust(null)
+    setLoadingAdjust(null)
   }
 
   const closeKendaraanModal = () => {
@@ -330,13 +335,7 @@ export default function KendaraanPage() {
     }
   }
 
-  const handleSelectFile = (file: File, field: UploadImgField, kendaraanId?: number) => {
-    const error = validateVehicleFile(file)
-    if (error) {
-      setUploadErr(error)
-      return
-    }
-
+  const handlePreparedVehicleFile = (file: File, field: UploadImgField, kendaraanId?: number) => {
     if (kendaraanId) {
       if (localPreviews[field]) {
         URL.revokeObjectURL(localPreviews[field]!)
@@ -359,6 +358,57 @@ export default function KendaraanPage() {
     setPendingFiles(p => ({ ...p, [field]: file }))
     setPendingFileNames(p => ({ ...p, [field]: file.name }))
     setUploadErr(null)
+  }
+
+  const handleSelectFile = (file: File, field: UploadImgField, kendaraanId?: number) => {
+    const error = validateVehicleFile(file)
+    if (error) {
+      setUploadErr(error)
+      return
+    }
+
+    if (file.type.startsWith("image/")) {
+      setImageAdjust({ file, field, kendaraanId })
+      setUploadErr(null)
+      return
+    }
+
+    handlePreparedVehicleFile(file, field, kendaraanId)
+  }
+
+  const handleEditExistingImage = async (field: UploadImgField, kendaraanId?: number) => {
+    const pending = pendingFiles[field]
+    if (pending?.type.startsWith("image/")) {
+      setImageAdjust({ file: pending, field, kendaraanId })
+      setUploadErr(null)
+      return
+    }
+
+    if (!selected) return
+    const key = form[field] as string | null
+    const src = gambarSrc(selected.id, key, field)
+    if (!src || !key || isPdfFileName(key)) return
+
+    setLoadingAdjust(field)
+    setUploadErr(null)
+    try {
+      const response = await fetch(src)
+      if (!response.ok) throw new Error("Gagal mengambil foto")
+
+      const blob = await response.blob()
+      if (!blob.type.startsWith("image/")) throw new Error("File bukan gambar")
+
+      const file = new File(
+        [blob],
+        getDownloadFileName(selected, field, key, blob.type),
+        { type: blob.type || "image/jpeg" },
+      )
+      setImageAdjust({ file, field, kendaraanId: selected.id })
+    } catch {
+      setUploadErr(`Gagal membuka ${IMG_LABELS[field]} untuk diedit`)
+    } finally {
+      setLoadingAdjust(null)
+    }
   }
 
   const handleHapusGambar = async (kendaraanId: number, field: UploadImgField) => {
@@ -692,7 +742,8 @@ export default function KendaraanPage() {
                   const key = form[field] as string | null
                   const src = localPreviews[field] ?? (selected ? gambarSrc(selected.id, key, field) : null)
                   const isPdf = pendingFiles[field]?.type === "application/pdf" || (!pendingFiles[field] && isPdfFileName(key))
-                  const busy = uploading === field
+                  const busy = uploading === field || loadingAdjust === field
+                  const canEditImage = Boolean(src && !isPdf)
                   return (
                     <div key={field} className="space-y-1.5">
                       <p className="text-xs font-medium" style={{ color: "var(--text-700)" }}>{IMG_LABELS[field]}</p>
@@ -757,7 +808,7 @@ export default function KendaraanPage() {
                           </button>
                         )}
                       </div>
-                      <div className="grid grid-cols-2 gap-1.5">
+                      <div className="grid grid-cols-3 gap-1.5">
                         <label
                           className="flex items-center justify-center gap-1.5 w-full rounded-lg px-2 py-1.5 text-xs font-medium cursor-pointer transition-colors"
                           style={{
@@ -769,7 +820,7 @@ export default function KendaraanPage() {
                           }}
                         >
                           <ImagePlus className="h-3.5 w-3.5" />
-                          {busy ? "Uploading..." : src || isPdf ? "Ganti" : "Upload"}
+                          {uploading === field ? "Uploading..." : src || isPdf ? "Ganti" : "Upload"}
                           <input
                             type="file"
                             accept={VEHICLE_FILE_ACCEPT}
@@ -782,6 +833,23 @@ export default function KendaraanPage() {
                             }}
                           />
                         </label>
+                        <button
+                          type="button"
+                          disabled={busy || !canEditImage}
+                          onClick={() => handleEditExistingImage(field, editMode && selected ? selected.id : undefined)}
+                          className="flex items-center justify-center gap-1.5 w-full rounded-lg px-2 py-1.5 text-xs font-medium cursor-pointer transition-colors"
+                          style={{
+                            border: "1px solid var(--border-strong)",
+                            background: "var(--surface-muted)",
+                            color: "var(--text-700)",
+                            opacity: busy || !canEditImage ? 0.45 : 1,
+                            pointerEvents: busy || !canEditImage ? "none" : "auto",
+                          }}
+                          title={`Edit ${IMG_LABELS[field]}`}
+                        >
+                          <Crop className="h-3.5 w-3.5" />
+                          {loadingAdjust === field ? "Memuat..." : "Edit"}
+                        </button>
                         <button
                           type="button"
                           disabled={busy}
@@ -828,6 +896,18 @@ export default function KendaraanPage() {
         onCapture={(file) => {
           if (!cameraField) return
           handleSelectFile(file, cameraField, editMode && selected ? selected.id : undefined)
+        }}
+      />
+
+      <ImageAdjustModal
+        open={Boolean(imageAdjust)}
+        file={imageAdjust?.file ?? null}
+        title={imageAdjust ? `Edit ${IMG_LABELS[imageAdjust.field]}` : "Edit Foto"}
+        onClose={() => setImageAdjust(null)}
+        onSave={(editedFile) => {
+          if (!imageAdjust) return
+          handlePreparedVehicleFile(editedFile, imageAdjust.field, imageAdjust.kendaraanId)
+          setImageAdjust(null)
         }}
       />
 
