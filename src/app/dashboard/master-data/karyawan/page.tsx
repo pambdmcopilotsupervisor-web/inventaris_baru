@@ -9,7 +9,7 @@ import { Modal } from "@/components/ui/modal"
 import { ConfirmDelete } from "@/components/ui/confirm-delete"
 import { TextField, SelectField, TextareaField } from "@/components/ui/form-field"
 import { SearchableSelect } from "@/components/ui/searchable-select"
-import { ArrowRight, Plus, Pencil, Trash2, Eye, RefreshCw } from "lucide-react"
+import { ArrowRight, Plus, Pencil, Trash2, Eye, RefreshCw, FileText, FileSpreadsheet } from "lucide-react"
 import { formatDate } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
 import { useAuth } from "@/contexts/AuthContext"
@@ -64,6 +64,10 @@ function hitungMasaKerja(tgl: string): string {
   return `${y} tahun ${m} bulan ${d} hari`
 }
 
+function formatExcelDate(value: string | null | undefined): string {
+  return value ? formatDate(value) : ""
+}
+
 const EMPTY: Partial<Karyawan> = { jkel: "Laki-Laki", status_karyawan: "Aktif", jabatan: "Staff" }
 
 /* ─── Main Page ──────────────────────────────────────────────────── */
@@ -78,10 +82,13 @@ export default function KaryawanPage() {
   const [modalOpen, setModalOpen]   = useState(false)
   const [viewOpen, setViewOpen]     = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
   const [editMode, setEditMode]     = useState(false)
   const [selected, setSelected]     = useState<Karyawan | null>(null)
   const [saving, setSaving]         = useState(false)
   const [deleting, setDeleting]     = useState(false)
+  const [exporting, setExporting]   = useState<"pdf" | "excel" | null>(null)
+  const [exportFormat, setExportFormat] = useState<"pdf" | "excel">("pdf")
   const [form, setForm]             = useState<Partial<Karyawan>>(EMPTY)
   const [errors, setErrors]         = useState<Record<string, string>>({})
 
@@ -162,6 +169,106 @@ export default function KaryawanPage() {
     } finally { setDeleting(false) }
   }
 
+  const handleExportPdf = async () => {
+    setExporting("pdf")
+    try {
+      const response = await fetch("/api/karyawan/export/pdf")
+      if (!response.ok) throw new Error("Gagal mengunduh PDF data karyawan")
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = `Data_Karyawan_${new Date().toISOString().slice(0, 10)}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      setExportOpen(false)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Gagal mengunduh PDF data karyawan")
+    } finally {
+      setExporting(null)
+    }
+  }
+
+  const handleExportExcel = async () => {
+    setExporting("excel")
+    try {
+      const subdivisiResponse = await fetch("/api/subdivisi")
+      const subdivisiRows = subdivisiResponse.ok ? await subdivisiResponse.json() as Subdivisi[] : []
+      const divisiMap = new Map((divisis ?? []).map(divisi => [Number(divisi.id), divisi.nama_divisi]))
+      const subdivisiMap = new Map(subdivisiRows.map(subdivisi => [Number(subdivisi.id), subdivisi]))
+
+      const { utils, writeFile } = await import("xlsx")
+      const wb = utils.book_new()
+      const wsData: (string | number | null)[][] = [
+        ["DATA KARYAWAN"],
+        ["KOPERASI KONSUMEN PEDAMI"],
+        [`Dicetak pada: ${new Date().toLocaleString("id-ID")}`],
+        [],
+        [
+          "No", "NIK", "Nama Karyawan", "Jabatan", "Divisi", "Sub Divisi", "Jenis Kelamin", "Status",
+          "Tempat Lahir", "Tanggal Lahir", "Tanggal Masuk", "Tanggal Keluar", "Agama", "Pendidikan",
+          "No HP", "No KTP", "No Rekening", "Nama Bank", "BPJS Ketenagakerjaan", "BPJS Kesehatan",
+          "Kontak Darurat", "Alamat",
+        ],
+        ...list.map((row, index) => {
+          const subdivisi = row.subdivisi_id ? subdivisiMap.get(Number(row.subdivisi_id)) : null
+          const divisiId = subdivisi?.divisi_id ?? row.divisi_id ?? null
+
+          return [
+            index + 1,
+            row.nik,
+            row.nama_karyawan,
+            row.jabatan,
+            divisiId ? divisiMap.get(Number(divisiId)) ?? "" : "",
+            subdivisi?.nama_sub ?? row.nama_subdivisi ?? "",
+            row.jkel,
+            row.status_karyawan ?? "",
+            row.tempat_lahir ?? "",
+            formatExcelDate(row.tanggal_lahir),
+            formatExcelDate(row.tanggal_masuk_kerja),
+            formatExcelDate(row.tanggal_keluar),
+            row.agama ?? "",
+            row.pendidikan_terakhir ?? "",
+            row.no_hp ?? "",
+            row.no_ktp ?? "",
+            row.no_rekening ?? "",
+            row.nama_bank ?? "",
+            row.no_bpjs_ketenagakerjaan ?? "",
+            row.no_bpjs_kesehatan ?? "",
+            row.kontak_darurat ?? "",
+            row.alamat ?? "",
+          ]
+        }),
+      ]
+
+      const ws = utils.aoa_to_sheet(wsData)
+      ws["!cols"] = [
+        { wch: 4 }, { wch: 18 }, { wch: 28 }, { wch: 18 }, { wch: 22 }, { wch: 22 },
+        { wch: 14 }, { wch: 12 }, { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
+        { wch: 12 }, { wch: 14 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 16 },
+        { wch: 24 }, { wch: 22 }, { wch: 22 }, { wch: 36 },
+      ]
+      utils.book_append_sheet(wb, ws, "Data Karyawan")
+      writeFile(wb, `Data_Karyawan_${new Date().toISOString().slice(0, 10)}.xlsx`)
+      setExportOpen(false)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Gagal membuat Excel data karyawan")
+    } finally {
+      setExporting(null)
+    }
+  }
+
+  const handleExportCetak = () => {
+    if (exportFormat === "pdf") {
+      void handleExportPdf()
+    } else {
+      void handleExportExcel()
+    }
+  }
+
   const statusVariant = (s: string | null): BadgeProps["variant"] => {
     switch (s) {
       case "Aktif":    return "success"
@@ -211,13 +318,16 @@ export default function KaryawanPage() {
     <div className="space-y-5">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold" style={{ color: "var(--text-900)" }}>Data Karyawan</h1>
           <p className="text-xs mt-0.5" style={{ color: "var(--text-subtle)" }}>Kelola data seluruh karyawan Koperasi Konsumen Pedami</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={refetch}><RefreshCw className="h-3.5 w-3.5" /></Button>
+          <Button variant="outline" size="sm" onClick={() => { setExportFormat("pdf"); setExportOpen(true) }} disabled={loading}>
+            <FileText className="h-3.5 w-3.5 mr-1.5" />Export/Cetak
+          </Button>
           {canManageKaryawan && (
             <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Tambah Karyawan</Button>
           )}
@@ -357,6 +467,46 @@ export default function KaryawanPage() {
           <TextareaField label="Alamat"
             value={form.alamat ?? ""} onChange={e => set("alamat", e.target.value)}
             className="md:col-span-2" />
+        </div>
+      </Modal>
+
+      {/* ── Export / Cetak Modal ─────────────────────────────────── */}
+      <Modal
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        size="sm"
+        title="Export/Cetak Data Karyawan"
+        footer={<>
+          <Button variant="outline" onClick={() => setExportOpen(false)} disabled={!!exporting}>Batal</Button>
+          <Button onClick={handleExportCetak} disabled={!!exporting || loading}>
+            {exporting ? "Memproses..." : "Export/Cetak"}
+          </Button>
+        </>}
+      >
+        <div className="space-y-3">
+          {(["pdf", "excel"] as const).map(format => (
+            <button
+              key={format}
+              type="button"
+              onClick={() => setExportFormat(format)}
+              className="w-full rounded-lg px-4 py-3 text-left transition-colors"
+              style={{
+                border: `2px solid ${exportFormat === format ? "var(--primary)" : "var(--border)"}`,
+                background: exportFormat === format ? "var(--primary-light)" : "var(--surface)",
+                color: exportFormat === format ? "var(--primary)" : "var(--text-muted)",
+              }}
+            >
+              <span className="flex items-center gap-3">
+                {format === "pdf" ? <FileText className="h-4 w-4" /> : <FileSpreadsheet className="h-4 w-4" />}
+                <span>
+                  <span className="block text-sm font-semibold">{format === "pdf" ? "PDF (.pdf)" : "Excel (.xlsx)"}</span>
+                  <span className="block text-xs mt-0.5" style={{ color: "var(--text-subtle)" }}>
+                    {format === "pdf" ? "File siap cetak dengan tabel ringkas." : "File spreadsheet dengan kolom data lengkap."}
+                  </span>
+                </span>
+              </span>
+            </button>
+          ))}
         </div>
       </Modal>
 
