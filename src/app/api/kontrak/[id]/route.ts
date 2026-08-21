@@ -3,6 +3,7 @@ import { requireSession } from "@/lib/auth"
 import { prisma, serialize } from "@/lib/prisma"
 import { canCreateOrEditTransaksi, canDeleteTransaksi, getTransaksiActionError } from "@/lib/transaksi-role"
 import { uploadKontrakPdf } from "@/lib/kontrak-file"
+import { syncRunningContractBilling } from "@/lib/kendaraan-rental-status"
 
 function toNullableString(value: FormDataEntryValue | string | null | undefined): string | null {
   if (typeof value !== "string") return null
@@ -105,6 +106,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       data.file = fileValue
     }
 
+    const oldDetails = await prisma.kontrak_details.findMany({
+      where: { kontrak_id: Number(id) },
+      select: { data_r2r4_id: true },
+    })
+
     const updated = await prisma.kontraks.update({
       where: { id: BigInt(id) },
       data,
@@ -120,6 +126,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         })),
       })
     }
+    await syncRunningContractBilling([
+      ...oldDetails.map((detail) => detail.data_r2r4_id ?? 0),
+      ...kendaraan_ids,
+    ], { includeHabisKontrak: true })
 
     return NextResponse.json(serialize(updated))
   } catch (err) {
@@ -137,8 +147,13 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   try {
     const { id } = await params
+    const oldDetails = await prisma.kontrak_details.findMany({
+      where: { kontrak_id: Number(id) },
+      select: { data_r2r4_id: true },
+    })
     await prisma.kontrak_details.deleteMany({ where: { kontrak_id: Number(id) } })
     await prisma.kontraks.delete({ where: { id: BigInt(id) } })
+    await syncRunningContractBilling(oldDetails.map((detail) => detail.data_r2r4_id ?? 0), { includeHabisKontrak: true })
     return NextResponse.json({ success: true })
   } catch { return NextResponse.json({ error: "Gagal menghapus" }, { status: 500 }) }
 }

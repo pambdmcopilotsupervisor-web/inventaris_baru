@@ -7,7 +7,15 @@ type DateParts = {
 function toDateParts(value: string | Date | null | undefined): DateParts | null {
   if (!value) return null
 
-  const dateText = typeof value === "string" ? value.slice(0, 10) : value.toISOString().slice(0, 10)
+  if (value instanceof Date) {
+    return {
+      year: value.getFullYear(),
+      month: value.getMonth() + 1,
+      day: value.getDate(),
+    }
+  }
+
+  const dateText = value.slice(0, 10)
   const match = dateText.match(/^(\d{4})-(\d{2})-(\d{2})$/)
   if (!match) return null
 

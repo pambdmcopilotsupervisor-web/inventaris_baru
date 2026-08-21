@@ -177,9 +177,9 @@ export default function KendaraanPage() {
     const next = { ...f, [k]: v || null }
     // Business logic: tgl_stop_tagihan → auto set stat
     if (k === "tgl_stop_tagihan") {
-      if (v) {
+      if (v && f.stat === "Sewa - Kontrak Berjalan") {
         next.stat = "Sewa dihentikan"
-      } else if (f.stat === "Sewa dihentikan") {
+      } else if (!v && f.stat === "Sewa dihentikan") {
         next.stat = "Sewa - Kontrak Berjalan"
       }
     }
@@ -605,19 +605,24 @@ export default function KendaraanPage() {
                   {/* KIR */}
                   <td className="px-3 py-3 text-xs">{row.tgl_akhir_kir ? formatDate(row.tgl_akhir_kir) : "—"}</td>
                   <td className="px-3 py-3 text-xs">{row.pemegang ?? "—"}</td>
-                  {/* Kontrak (badge AKTIF/EXPIRED sesuai pedami) */}
-                  <td className="px-3 py-3 min-w-[160px]">
+                  {/* Kontrak */}
+                  <td className="px-3 py-3 min-w-[220px] max-w-[280px]">
                     {(row.kontrak_info ?? []).length === 0 ? (
                       <span className="text-xs" style={{ color: "var(--text-subtle)" }}>—</span>
                     ) : (
-                      <div className="space-y-1">
+                      <div className="space-y-2">
                         {(row.kontrak_info ?? []).slice(0, 2).map(k => (
-                          <div key={k.id} className="flex items-center gap-1 text-xs">
-                            <Badge variant={k.aktif ? "success" : "secondary"} className="text-[9px] shrink-0">
-                              {k.aktif ? "AKTIF" : "EXPIRED"}
-                            </Badge>
-                            <span className="font-mono font-semibold truncate max-w-[80px]">{k.no_kontrak ?? "—"}</span>
-                            <span style={{ color: "var(--text-subtle)" }}>({k.masa_sewa}bln)</span>
+                          <div key={k.id} className="min-w-0 text-xs">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <Badge variant={k.aktif ? "success" : "secondary"} className="text-[9px] shrink-0">
+                                {k.aktif ? "AKTIF" : "EXPIRED"}
+                              </Badge>
+                              <span className="font-semibold truncate" style={{ color: "var(--text-900)" }}>{k.judul}</span>
+                            </div>
+                            <div className="mt-0.5 flex items-center gap-1.5 pl-[50px]" style={{ color: "var(--text-subtle)" }}>
+                              <span className="font-mono truncate">{k.no_kontrak ?? "Tanpa No."}</span>
+                              <span className="shrink-0">• {k.masa_sewa} bulan</span>
+                            </div>
                           </div>
                         ))}
                       </div>

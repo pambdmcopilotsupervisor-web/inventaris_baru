@@ -3,6 +3,8 @@ import { requireSession } from "@/lib/auth"
 import { prisma, serialize } from "@/lib/prisma"
 import { canCreateOrEditTransaksi, getTransaksiActionError } from "@/lib/transaksi-role"
 import { normalizeKendaraanCreateData } from "@/lib/kendaraan-input"
+import { applyManualStopTagihanStatus, syncRunningContractBilling } from "@/lib/kendaraan-rental-status"
+import { calculateMasaSewaBulan } from "@/lib/kontrak-date"
 
 function getNextSequentialCode(codes: Array<string | null | undefined>): string {
   let nextPrefix = ""
@@ -30,6 +32,8 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const search = searchParams.get("search") ?? ""
     const jns    = searchParams.get("jns") ?? ""
+
+    await syncRunningContractBilling()
 
     const kendaraans = await prisma.data_r2r4s.findMany({
       where: {
@@ -72,9 +76,7 @@ export async function GET(req: NextRequest) {
       const kontrakInfo = kontraksForKendaraan.map(kt => {
         const tglAkhir = new Date(kt.tgl_akhir)
         const aktif    = today >= new Date(kt.tgl_awal) && today <= tglAkhir
-        const masaSewa = Math.round(
-          (new Date(kt.tgl_akhir).getTime() - new Date(kt.tgl_awal).getTime()) / (30 * 24 * 60 * 60 * 1000)
-        )
+        const masaSewa = calculateMasaSewaBulan(kt.tgl_awal, kt.tgl_akhir)
         return {
           id:         Number(kt.id),
           no_kontrak: kt.no_kontrak,
@@ -84,6 +86,9 @@ export async function GET(req: NextRequest) {
           masa_sewa:  masaSewa,
           aktif,
         }
+      }).sort((a, b) => {
+        if (a.aktif !== b.aktif) return a.aktif ? -1 : 1
+        return new Date(b.tgl_akhir).getTime() - new Date(a.tgl_akhir).getTime()
       })
 
       return {
@@ -110,6 +115,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const existingCodes = await prisma.data_r2r4s.findMany({ select: { kode_brg: true } })
     const createData = normalizeKendaraanCreateData(body, getNextSequentialCode(existingCodes.map(kendaraan => kendaraan.kode_brg)))
+    applyManualStopTagihanStatus(createData)
 
     if (!createData.kode_brg || !createData.jns_brg || !createData.plat || !createData.nm_brg) {
       return NextResponse.json({ error: "Kode barang, jenis, plat, dan nama kendaraan wajib diisi" }, { status: 400 })

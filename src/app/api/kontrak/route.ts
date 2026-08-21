@@ -4,6 +4,7 @@ import { prisma, serialize } from "@/lib/prisma"
 import { canCreateOrEditTransaksi, getTransaksiActionError } from "@/lib/transaksi-role"
 import { uploadKontrakPdf } from "@/lib/kontrak-file"
 import { calculateMasaSewaBulan } from "@/lib/kontrak-date"
+import { syncRunningContractBilling } from "@/lib/kendaraan-rental-status"
 
 function getStatus(tglAwal: Date, tglAkhir: Date): string {
   const now = new Date(); now.setHours(0, 0, 0, 0)
@@ -87,6 +88,8 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const statusFilter = searchParams.get("status") ?? ""
 
+    await syncRunningContractBilling()
+
     const kontraks = await prisma.kontraks.findMany({
       orderBy: { tgl_akhir: "desc" },
     })
@@ -163,6 +166,7 @@ export async function POST(req: NextRequest) {
           data_r2r4_id: Number(kid),
         })),
       })
+      await syncRunningContractBilling(kendaraan_ids, { includeHabisKontrak: true })
     }
 
     return NextResponse.json(serialize(kontrak), { status: 201 })
