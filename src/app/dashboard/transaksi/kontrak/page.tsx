@@ -13,6 +13,7 @@ import { formatDate } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
 import { useAuth } from "@/contexts/AuthContext"
 import { canCreateOrEditTransaksi, canDeleteTransaksi } from "@/lib/transaksi-role"
+import { calculateMasaSewaBulan } from "@/lib/kontrak-date"
 
 /* ── Types ─────────────────────────────────────────────────────── */
 interface KendaraanDetail { id: number; data_r2r4_id: number | null; plat: string; nm_brg: string; jns_brg: string }
@@ -51,12 +52,6 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-/* ── Masa sewa compute ──────────────────────────────────────────── */
-function getMasaSewa(tglAwal: string, tglAkhir: string): number {
-  if (!tglAwal || !tglAkhir) return 0
-  return Math.round((new Date(tglAkhir).getTime() - new Date(tglAwal).getTime()) / (30 * 24 * 60 * 60 * 1000))
-}
-
 /* ── Main Page ──────────────────────────────────────────────────── */
 export default function KontrakPage() {
   const { user } = useAuth()
@@ -89,7 +84,7 @@ export default function KontrakPage() {
   const [kendaraanDropdown, setKendaraanDropdown] = useState(false)
 
   // Auto-calculated masa sewa
-  const masaSewa = getMasaSewa(form.tgl_awal, form.tgl_akhir)
+  const masaSewa = calculateMasaSewaBulan(form.tgl_awal, form.tgl_akhir)
 
   const setF = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
 

@@ -3,6 +3,7 @@ import { requireSession } from "@/lib/auth"
 import { prisma, serialize } from "@/lib/prisma"
 import { canCreateOrEditTransaksi, getTransaksiActionError } from "@/lib/transaksi-role"
 import { uploadKontrakPdf } from "@/lib/kontrak-file"
+import { calculateMasaSewaBulan } from "@/lib/kontrak-date"
 
 function getStatus(tglAwal: Date, tglAkhir: Date): string {
   const now = new Date(); now.setHours(0, 0, 0, 0)
@@ -15,10 +16,6 @@ function getStatus(tglAwal: Date, tglAkhir: Date): string {
   if (now >= awal && now <= akhir)           return "AKTIF"
   if (now < awal)                            return "AKAN DATANG"
   return "UNKNOWN"
-}
-
-function getMasaSewa(tglAwal: Date, tglAkhir: Date): number {
-  return Math.round((tglAkhir.getTime() - tglAwal.getTime()) / (30 * 24 * 60 * 60 * 1000))
 }
 
 function toNullableString(value: FormDataEntryValue | string | null | undefined): string | null {
@@ -103,7 +100,7 @@ export async function GET(req: NextRequest) {
 
     const enriched = kontraks.map(k => {
       const status   = getStatus(k.tgl_awal, k.tgl_akhir)
-      const masaSewa = getMasaSewa(k.tgl_awal, k.tgl_akhir)
+      const masaSewa = calculateMasaSewaBulan(k.tgl_awal, k.tgl_akhir)
 
       const details = allDetails
         .filter(d => d.kontrak_id === Number(k.id) && d.data_r2r4_id)

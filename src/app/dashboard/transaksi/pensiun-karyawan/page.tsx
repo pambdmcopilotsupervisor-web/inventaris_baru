@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Modal } from "@/components/ui/modal"
 import { ConfirmDelete } from "@/components/ui/confirm-delete"
 import { TextField, SelectField, TextareaField, FormField } from "@/components/ui/form-field"
-import { Plus, Eye, Pencil, Trash2, RefreshCw, Search, Info } from "lucide-react"
+import { Plus, Eye, Pencil, Trash2, RefreshCw, Search, Info, FileSpreadsheet, FileText } from "lucide-react"
 import { formatDate, formatCurrency } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
 
@@ -53,10 +53,13 @@ export default function PensiunKaryawanPage() {
   const [modalOpen, setModalOpen]   = useState(false)
   const [viewOpen, setViewOpen]     = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
   const [editMode, setEditMode]     = useState(false)
   const [selected, setSelected]     = useState<PensiunKaryawan | null>(null)
   const [saving, setSaving]         = useState(false)
   const [deleting, setDeleting]     = useState(false)
+  const [exporting, setExporting]   = useState<"pdf" | "excel" | null>(null)
+  const [exportFormat, setExportFormat] = useState<"pdf" | "excel">("pdf")
   const [errors, setErrors]         = useState<Record<string, string>>({})
 
   const [form, setForm] = useState({
@@ -183,6 +186,33 @@ export default function PensiunKaryawanPage() {
     } finally { setDeleting(false) }
   }
 
+  const handleExport = async (format: "excel" | "pdf") => {
+    setExporting(format)
+    try {
+      const response = await fetch(`/api/pensiun-karyawan/export/${format}`)
+      if (!response.ok) throw new Error(`Gagal mengunduh ${format === "pdf" ? "PDF" : "Excel"} pensiun karyawan`)
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = `Pensiun_Karyawan_${new Date().toISOString().slice(0, 10)}.${format === "pdf" ? "pdf" : "xlsx"}`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      setExportOpen(false)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Gagal mengunduh file pensiun karyawan")
+    } finally {
+      setExporting(null)
+    }
+  }
+
+  const handleExportCetak = () => {
+    void handleExport(exportFormat)
+  }
+
   const columns: Column<PensiunKaryawan>[] = [
     { key: "nama_karyawan",  header: "Karyawan", cell: (r) => <span className="font-semibold">{r.nama_karyawan}</span> },
     { key: "tgl_pensiun",    header: "Tgl Pensiun", cell: (r) => formatDate(r.tgl_pensiun) },
@@ -195,15 +225,18 @@ export default function PensiunKaryawanPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold" style={{ color: "var(--text-900)" }}>Pensiun Karyawan</h1>
           <p className="text-xs mt-0.5" style={{ color: "var(--text-subtle)" }}>
             Data karyawan pensiun — setiap penambahan otomatis mengubah status karyawan menjadi Pensiun
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
           <Button variant="outline" size="sm" onClick={refetch}><RefreshCw className="h-3.5 w-3.5" /></Button>
+          <Button variant="outline" size="sm" onClick={() => { setExportFormat("pdf"); setExportOpen(true) }} disabled={loading}>
+            <FileText className="h-3.5 w-3.5 mr-1.5" />Export/Cetak
+          </Button>
           <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1.5" />Tambah Data</Button>
         </div>
       </div>
@@ -337,6 +370,46 @@ export default function PensiunKaryawanPage() {
           <TextareaField label="Keterangan Tambahan"
             value={form.keterangan} onChange={e => setF("keterangan", e.target.value)}
             placeholder="Catatan tambahan terkait pensiun..." />
+        </div>
+      </Modal>
+
+      {/* ── Export / Cetak Modal ─────────────────────────────────── */}
+      <Modal
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        size="sm"
+        title="Export/Cetak Pensiun Karyawan"
+        footer={<>
+          <Button variant="outline" onClick={() => setExportOpen(false)} disabled={!!exporting}>Batal</Button>
+          <Button onClick={handleExportCetak} disabled={!!exporting || loading}>
+            {exporting ? "Memproses..." : "Export/Cetak"}
+          </Button>
+        </>}
+      >
+        <div className="space-y-3">
+          {(["pdf", "excel"] as const).map(format => (
+            <button
+              key={format}
+              type="button"
+              onClick={() => setExportFormat(format)}
+              className="w-full rounded-lg px-4 py-3 text-left transition-colors"
+              style={{
+                border: `2px solid ${exportFormat === format ? "var(--primary)" : "var(--border)"}`,
+                background: exportFormat === format ? "var(--primary-light)" : "var(--surface)",
+                color: exportFormat === format ? "var(--primary)" : "var(--text-muted)",
+              }}
+            >
+              <span className="flex items-center gap-3">
+                {format === "pdf" ? <FileText className="h-4 w-4" /> : <FileSpreadsheet className="h-4 w-4" />}
+                <span>
+                  <span className="block text-sm font-semibold">{format === "pdf" ? "PDF (.pdf)" : "Excel (.xlsx)"}</span>
+                  <span className="block text-xs mt-0.5" style={{ color: "var(--text-subtle)" }}>
+                    {format === "pdf" ? "File siap cetak dengan tabel ringkas." : "File spreadsheet dengan kolom data lengkap."}
+                  </span>
+                </span>
+              </span>
+            </button>
+          ))}
         </div>
       </Modal>
 
