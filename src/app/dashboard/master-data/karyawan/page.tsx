@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useMemo } from "react"
 import { DataTable, Column } from "@/components/ui/data-table"
 import { Button } from "@/components/ui/button"
 import { Badge, type BadgeProps } from "@/components/ui/badge"
@@ -30,12 +30,23 @@ interface Karyawan extends Record<string, unknown> {
   nama_subdivisi?: string | null
 }
 interface Divisi    { id: number; kode_divisi: string; nama_divisi: string }
-interface Subdivisi { id: number; kode_sub: string; nama_sub: string; divisi_id: number }
+interface Subdivisi { id: number; kode_sub: string; nama_sub: string; divisi_id: number; nama_divisi?: string }
 interface MutasiKaryawan extends Record<string, unknown> {
   id: number; karyawan_id: number; tgl_mutasi: string; no_sk: string | null
   jabatan_asal: string | null; divisi_asal: string | null; subdivisi_asal: string | null
   jabatan_tujuan: string | null; divisi_tujuan: string | null; subdivisi_tujuan: string | null
   alasan: string | null
+}
+interface PenempatanKerja {
+  key: string
+  jabatan: string | null
+  divisi: string | null
+  subdivisi: string | null
+  mulai: Date | null
+  sampai: Date | null
+  sampaiLabel: string
+  masaKerja: string
+  isCurrent: boolean
 }
 
 const JABATAN = ["Ketua","Bendahara","Sekretaris","Manager","Kepala Divisi","Koordinator","Staff","All Karyawan"]
@@ -64,6 +75,30 @@ function hitungMasaKerja(tgl: string): string {
   return `${y} tahun ${m} bulan ${d} hari`
 }
 
+function parseDate(value: string | null | undefined): Date | null {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  date.setHours(0, 0, 0, 0)
+  return date
+}
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date)
+  next.setDate(next.getDate() + days)
+  return next
+}
+
+function formatDurasiKerja(mulai: Date | null, sampai: Date | null): string {
+  if (!mulai || !sampai || sampai.getTime() < mulai.getTime()) return "—"
+  const diff = sampai.getTime() - mulai.getTime()
+  const y = Math.floor(diff / (365.25 * 24 * 60 * 60 * 1000))
+  const rem = diff - y * 365.25 * 24 * 60 * 60 * 1000
+  const m = Math.floor(rem / (30.44 * 24 * 60 * 60 * 1000))
+  const d = Math.floor((rem - m * 30.44 * 24 * 60 * 60 * 1000) / (24 * 60 * 60 * 1000))
+  return `${y} tahun ${m} bulan ${d} hari`
+}
+
 function formatExcelDate(value: string | null | undefined): string {
   return value ? formatDate(value) : ""
 }
@@ -75,9 +110,12 @@ export default function KaryawanPage() {
   const { user } = useAuth()
   const { data, loading, refetch } = useApi<Karyawan[]>("/api/karyawan")
   const { data: divisis }    = useApi<Divisi[]>("/api/divisi")
+  const { data: semuaSubdivisi } = useApi<Subdivisi[]>("/api/subdivisi")
   const { data: mutasis }    = useApi<MutasiKaryawan[]>("/api/mutasi-karyawan")
   const list = data ?? []
   const canManageKaryawan = (user?.role ?? "user").toLowerCase() !== "user"
+  const divisiMap = useMemo(() => new Map((divisis ?? []).map(d => [Number(d.id), d.nama_divisi])), [divisis])
+  const subdivisiMap = useMemo(() => new Map((semuaSubdivisi ?? []).map(s => [Number(s.id), s])), [semuaSubdivisi])
 
   const [modalOpen, setModalOpen]   = useState(false)
   const [viewOpen, setViewOpen]     = useState(false)
@@ -278,11 +316,77 @@ export default function KaryawanPage() {
     }
   }
 
-  const selectedMutasiHistory = selected
+  const selectedMutasiHistory = useMemo(() => selected
     ? (mutasis ?? [])
         .filter(m => Number(m.karyawan_id) === Number(selected.id))
         .sort((a, b) => new Date(b.tgl_mutasi).getTime() - new Date(a.tgl_mutasi).getTime())
-    : []
+    : [], [mutasis, selected])
+
+  const selectedMasaKerjaPerDivisi = useMemo<PenempatanKerja[]>(() => {
+    if (!selected) return []
+
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    const tanggalMasuk = parseDate(selected.tanggal_masuk_kerja)
+    const tanggalKeluar = parseDate(selected.tanggal_keluar)
+    const selesaiAktif = tanggalKeluar ?? today
+    const currentSubdivisi = selected.subdivisi_id ? subdivisiMap.get(Number(selected.subdivisi_id)) : null
+    const currentDivisiId = currentSubdivisi?.divisi_id ?? selected.divisi_id ?? null
+    const currentDivisi = currentDivisiId ? divisiMap.get(Number(currentDivisiId)) ?? null : null
+    const currentSubdivisiName = currentSubdivisi?.nama_sub ?? selected.nama_subdivisi ?? null
+    const riwayatAsc = [...selectedMutasiHistory].sort((a, b) => new Date(a.tgl_mutasi).getTime() - new Date(b.tgl_mutasi).getTime())
+
+    if (riwayatAsc.length === 0) {
+      return [{
+        key: "current",
+        jabatan: selected.jabatan,
+        divisi: currentDivisi,
+        subdivisi: currentSubdivisiName,
+        mulai: tanggalMasuk,
+        sampai: tanggalKeluar,
+        sampaiLabel: tanggalKeluar ? formatDate(tanggalKeluar) : "Sekarang",
+        masaKerja: formatDurasiKerja(tanggalMasuk, selesaiAktif),
+        isCurrent: !tanggalKeluar,
+      }]
+    }
+
+    const rows: PenempatanKerja[] = []
+    const firstMutationDate = parseDate(riwayatAsc[0]?.tgl_mutasi)
+    rows.push({
+      key: `awal-${riwayatAsc[0]?.id ?? "0"}`,
+      jabatan: riwayatAsc[0]?.jabatan_asal ?? null,
+      divisi: riwayatAsc[0]?.divisi_asal ?? null,
+      subdivisi: riwayatAsc[0]?.subdivisi_asal ?? null,
+      mulai: tanggalMasuk,
+      sampai: firstMutationDate ? addDays(firstMutationDate, -1) : null,
+      sampaiLabel: firstMutationDate ? formatDate(addDays(firstMutationDate, -1)) : "—",
+      masaKerja: formatDurasiKerja(tanggalMasuk, firstMutationDate),
+      isCurrent: false,
+    })
+
+    riwayatAsc.forEach((mutasi, index) => {
+      const mulai = parseDate(mutasi.tgl_mutasi)
+      const nextMulai = parseDate(riwayatAsc[index + 1]?.tgl_mutasi)
+      const isLast = index === riwayatAsc.length - 1
+      const sampai = nextMulai ? addDays(nextMulai, -1) : tanggalKeluar
+      const durasiSampai = nextMulai ?? selesaiAktif
+
+      rows.push({
+        key: `mutasi-${mutasi.id}`,
+        jabatan: isLast ? mutasi.jabatan_tujuan ?? selected.jabatan : mutasi.jabatan_tujuan,
+        divisi: isLast ? mutasi.divisi_tujuan ?? currentDivisi : mutasi.divisi_tujuan,
+        subdivisi: isLast ? mutasi.subdivisi_tujuan ?? currentSubdivisiName : mutasi.subdivisi_tujuan,
+        mulai,
+        sampai,
+        sampaiLabel: nextMulai ? formatDate(addDays(nextMulai, -1)) : tanggalKeluar ? formatDate(tanggalKeluar) : "Sekarang",
+        masaKerja: formatDurasiKerja(mulai, durasiSampai),
+        isCurrent: isLast && !tanggalKeluar,
+      })
+    })
+
+    return rows
+  }, [divisiMap, selected, selectedMutasiHistory, subdivisiMap])
 
   /* ─── Columns ────────────────────────────────────────────────── */
   const columns: Column<Karyawan>[] = [
@@ -537,6 +641,44 @@ export default function KaryawanPage() {
               <div className="col-span-2">
                 <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>Alamat</p>
                 <p className="mt-0.5 font-medium" style={{ color: "var(--text-900)" }}>{selected.alamat ?? "—"}</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-subtle)" }}>Masa Kerja per Divisi</p>
+                <Badge variant="secondary" className="text-[10px]">{selectedMasaKerjaPerDivisi.length} penempatan</Badge>
+              </div>
+
+              <div className="overflow-hidden rounded-lg" style={{ border: "1px solid var(--border)" }}>
+                <div className="hidden md:grid grid-cols-[1.15fr_0.9fr_1.1fr] gap-3 px-4 py-2 text-[10px] font-semibold uppercase tracking-wide" style={{ background: "var(--surface-muted)", color: "var(--text-subtle)" }}>
+                  <span>Divisi / Sub Divisi</span>
+                  <span>Periode</span>
+                  <span>Masa Kerja</span>
+                </div>
+                {selectedMasaKerjaPerDivisi.map((row, index) => (
+                  <div key={row.key} className="grid grid-cols-1 md:grid-cols-[1.15fr_0.9fr_1.1fr] gap-3 px-4 py-3" style={{ borderTop: index === 0 ? "none" : "1px solid var(--border)" }}>
+                    <div>
+                      <p className="md:hidden text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--text-subtle)" }}>Divisi / Sub Divisi</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-semibold" style={{ color: "var(--text-900)" }}>{row.divisi ?? "—"}</p>
+                        {row.isCurrent && <Badge variant="success" className="text-[10px]">Aktif</Badge>}
+                      </div>
+                      <p className="text-xs mt-0.5" style={{ color: "var(--text-subtle)" }}>
+                        {row.subdivisi ?? "—"}{row.jabatan ? ` • ${row.jabatan}` : ""}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="md:hidden text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--text-subtle)" }}>Periode</p>
+                      <p className="font-medium" style={{ color: "var(--text-900)" }}>{row.mulai ? formatDate(row.mulai) : "—"}</p>
+                      <p className="text-xs mt-0.5" style={{ color: "var(--text-subtle)" }}>s/d {row.sampaiLabel}</p>
+                    </div>
+                    <div>
+                      <p className="md:hidden text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--text-subtle)" }}>Masa Kerja</p>
+                      <p className="font-semibold" style={{ color: "var(--text-900)" }}>{row.masaKerja}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 
