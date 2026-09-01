@@ -1,6 +1,6 @@
 "use client"
 
-import React from "react"
+import React, { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -12,7 +12,10 @@ import {
 import {
   Table, TableHeader, TableBody, TableHead, TableRow, TableCell,
 } from "@/components/ui/table"
-import { Users, TrendingDown, UserCheck, AlertTriangle, RefreshCw } from "lucide-react"
+import { Modal } from "@/components/ui/modal"
+import { SearchableSelect } from "@/components/ui/searchable-select"
+import { SelectField } from "@/components/ui/form-field"
+import { Users, TrendingDown, UserCheck, AlertTriangle, RefreshCw, FileText, FileSpreadsheet } from "lucide-react"
 import { useApi } from "@/hooks/useApi"
 
 interface RekapData {
@@ -33,11 +36,32 @@ interface RekapData {
     divisi: string; laki_laki: number; perempuan: number; campuran: number
   }[]
 }
+interface KaryawanOption {
+  id: number
+  nik: string
+  nama_karyawan: string
+  jabatan: string
+}
+interface DivisiOption {
+  id: number
+  kode_divisi: string
+  nama_divisi: string
+}
 
-const STATUS_COLORS = ['#059669', '#DC2626', '#94A3B8']
+type CetakMasaKerjaMode = "all" | "karyawan" | "divisi"
+type CetakMasaKerjaFormat = "pdf" | "excel"
 
 export default function RekapKaryawanPage() {
   const { data, loading, refetch } = useApi<RekapData>("/api/laporan/rekap-karyawan")
+  const { data: karyawanOptions, loading: loadingKaryawan } = useApi<KaryawanOption[]>("/api/karyawan")
+  const { data: divisiOptions, loading: loadingDivisi } = useApi<DivisiOption[]>("/api/divisi")
+  const [cetakOpen, setCetakOpen] = useState(false)
+  const [printingMasaKerja, setPrintingMasaKerja] = useState(false)
+  const [cetakMode, setCetakMode] = useState<CetakMasaKerjaMode>("all")
+  const [cetakFormat, setCetakFormat] = useState<CetakMasaKerjaFormat>("pdf")
+  const [selectedKaryawanId, setSelectedKaryawanId] = useState("")
+  const [selectedDivisiId, setSelectedDivisiId] = useState("")
+  const [cetakError, setCetakError] = useState("")
 
   const stats            = data?.stats
   const rekapPerDivisi   = data?.rekapPerDivisi ?? []
@@ -73,20 +97,75 @@ export default function RekapKaryawanPage() {
     return "secondary"
   }
 
+  const openCetakMasaKerja = () => {
+    setCetakMode("all")
+    setCetakFormat("pdf")
+    setSelectedKaryawanId("")
+    setSelectedDivisiId("")
+    setCetakError("")
+    setCetakOpen(true)
+  }
+
+  const handleCetakMasaKerja = async () => {
+    const qs = new URLSearchParams()
+    if (cetakMode === "karyawan") {
+      if (!selectedKaryawanId) {
+        setCetakError("Pilih nama karyawan terlebih dahulu")
+        return
+      }
+      qs.set("karyawan_id", selectedKaryawanId)
+    }
+    if (cetakMode === "divisi") {
+      if (!selectedDivisiId) {
+        setCetakError("Pilih divisi terlebih dahulu")
+        return
+      }
+      qs.set("divisi_id", selectedDivisiId)
+    }
+
+    setCetakError("")
+    setPrintingMasaKerja(true)
+    try {
+      const query = qs.toString()
+      const response = await fetch(`/api/laporan/rekap-masa-kerja-karyawan/${cetakFormat}${query ? `?${query}` : ""}`)
+      if (!response.ok) throw new Error(`Gagal mengunduh ${cetakFormat === "pdf" ? "PDF" : "Excel"} rekap masa kerja karyawan`)
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = `Rekap_Masa_Kerja_Karyawan_${new Date().toISOString().slice(0, 10)}.${cetakFormat === "pdf" ? "pdf" : "xlsx"}`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      setCetakOpen(false)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Gagal membuat file rekap masa kerja karyawan")
+    } finally {
+      setPrintingMasaKerja(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold" style={{ color: "var(--text-900)" }}>Rekap Karyawan</h1>
           <p className="text-xs mt-0.5" style={{ color: "var(--text-subtle)" }}>
             Rekapitulasi data karyawan — usia pensiun 56 tahun, warning 1 tahun ke depan
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={refetch} disabled={loading}>
-          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={openCetakMasaKerja}>
+            <FileText className="h-3.5 w-3.5 mr-1.5" />Cetak Masa Kerja
+          </Button>
+          <Button variant="outline" size="sm" onClick={refetch} disabled={loading}>
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+          </Button>
+        </div>
       </div>
 
       {/* ── Stats (sesuai KaryawanStatsOverview) ────────────────── */}
@@ -180,7 +259,7 @@ export default function RekapKaryawanPage() {
         <CardHeader className="pb-3">
           <CardTitle>Rekap Karyawan per Divisi</CardTitle>
           <p className="text-xs" style={{ color: "var(--text-subtle)" }}>
-            Kolom "Aktif" mengecualikan jabatan: Ketua/Bendahara/Sekretaris Koperasi &amp; All Divisi
+            Kolom &quot;Aktif&quot; mengecualikan jabatan: Ketua/Bendahara/Sekretaris Koperasi &amp; All Divisi
           </p>
         </CardHeader>
         <CardContent className="p-0">
@@ -313,6 +392,89 @@ export default function RekapKaryawanPage() {
           )}
         </CardContent>
       </Card>
+
+      <Modal
+        open={cetakOpen}
+        onClose={() => setCetakOpen(false)}
+        title="Cetak Rekap Masa Kerja"
+        size="md"
+        footer={<>
+          <Button variant="outline" onClick={() => setCetakOpen(false)} disabled={printingMasaKerja}>Batal</Button>
+          <Button onClick={handleCetakMasaKerja} disabled={printingMasaKerja}>
+            {cetakFormat === "pdf" ? <FileText className="h-3.5 w-3.5 mr-1.5" /> : <FileSpreadsheet className="h-3.5 w-3.5 mr-1.5" />}
+            {printingMasaKerja ? "Memproses..." : cetakFormat === "pdf" ? "Cetak PDF" : "Cetak Excel"}
+          </Button>
+        </>}
+      >
+        <div className="space-y-4">
+          {cetakError && (
+            <div className="rounded-lg px-4 py-3 text-sm" style={{ background: "var(--danger-bg)", color: "var(--danger)" }}>
+              {cetakError}
+            </div>
+          )}
+
+          <SelectField
+            label="Pilihan Cetak"
+            value={cetakMode}
+            onChange={(e) => {
+              const mode = e.target.value as CetakMasaKerjaMode
+              setCetakMode(mode)
+              setSelectedKaryawanId("")
+              setSelectedDivisiId("")
+              setCetakError("")
+            }}
+            options={[
+              { value: "all", label: "Cetak Semua" },
+              { value: "karyawan", label: "Nama Karyawan" },
+              { value: "divisi", label: "Divisi" },
+            ]}
+          />
+
+          <SelectField
+            label="Format File"
+            value={cetakFormat}
+            onChange={(e) => setCetakFormat(e.target.value as CetakMasaKerjaFormat)}
+            options={[
+              { value: "pdf", label: "PDF (.pdf)" },
+              { value: "excel", label: "Excel (.xlsx)" },
+            ]}
+          />
+
+          {cetakMode === "karyawan" && (
+            <SearchableSelect
+              label="Nama Karyawan"
+              required
+              value={selectedKaryawanId}
+              onChange={(value) => { setSelectedKaryawanId(value); setCetakError("") }}
+              placeholder="Pilih nama karyawan"
+              searchPlaceholder="Cari nama atau NIK..."
+              loading={loadingKaryawan}
+              options={(karyawanOptions ?? []).map((karyawan) => ({
+                value: String(karyawan.id),
+                label: karyawan.nama_karyawan,
+                description: `${karyawan.nik} - ${karyawan.jabatan}`,
+              }))}
+            />
+          )}
+
+          {cetakMode === "divisi" && (
+            <SearchableSelect
+              label="Divisi"
+              required
+              value={selectedDivisiId}
+              onChange={(value) => { setSelectedDivisiId(value); setCetakError("") }}
+              placeholder="Pilih divisi"
+              searchPlaceholder="Cari divisi..."
+              loading={loadingDivisi}
+              options={(divisiOptions ?? []).map((divisi) => ({
+                value: String(divisi.id),
+                label: divisi.nama_divisi,
+                description: divisi.kode_divisi,
+              }))}
+            />
+          )}
+        </div>
+      </Modal>
 
     </div>
   )
