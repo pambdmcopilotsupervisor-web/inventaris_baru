@@ -500,7 +500,7 @@ export default function KaryawanPage() {
               setSelectedDivisiId(v)
               setSubdivisiOptions([])
               setLoadingSubdivisi(!!v)
-              setForm(f => ({ ...f, subdivisi_id: null }))
+              setForm(f => ({ ...f, divisi_id: v ? Number(v) : null, subdivisi_id: null }))
             }}
             placeholder="— Pilih Divisi —"
             searchPlaceholder="Cari divisi..."

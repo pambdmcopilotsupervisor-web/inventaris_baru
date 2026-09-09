@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma, serialize } from "@/lib/prisma"
 import { requireSession } from "@/lib/auth"
+import { sanitizeKaryawanUpdateData } from "@/lib/karyawan-input"
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -9,7 +10,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     if (!karyawan) return NextResponse.json({ error: "Tidak ditemukan" }, { status: 404 })
 
     // Ambil subdivisi + divisi untuk keperluan auto-fill form
-    let divisi_id: number | null = null
+    let divisi_id: number | null = karyawan.divisi_id ?? null
     let nama_divisi: string | null = null
     let nama_subdivisi: string | null = null
 
@@ -23,6 +24,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         const divisi = await prisma.divisis.findUnique({ where: { id: BigInt(subdivisi.divisi_id) } })
         if (divisi) nama_divisi = divisi.nama_divisi
       }
+    } else if (divisi_id) {
+      const divisi = await prisma.divisis.findUnique({ where: { id: BigInt(divisi_id) } })
+      if (divisi) nama_divisi = divisi.nama_divisi
     }
 
     return NextResponse.json(serialize({
@@ -47,15 +51,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const { id } = await params
     const body = await req.json()
-    // Hapus field computed yang tidak ada di db
-    const data = { ...body }
-    delete data.divisi_id
-    delete data.nama_divisi
-    delete data.nama_subdivisi
-    // Normalisasi field tanggal: string kosong → null (hindari error Prisma @db.Date)
-    for (const k of ["tanggal_masuk_kerja", "tanggal_keluar", "tanggal_lahir"]) {
-      if (k in data && (data[k] === "" || data[k] === undefined)) data[k] = null
-    }
+    const data = sanitizeKaryawanUpdateData(body)
     const updated = await prisma.karyawans.update({ where: { id: BigInt(id) }, data })
     return NextResponse.json(serialize(updated))
   } catch (err) {

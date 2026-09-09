@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma, serialize } from "@/lib/prisma"
 import { requireSession } from "@/lib/auth"
+import { normalizeKaryawanCreateData } from "@/lib/karyawan-input"
 
 export async function GET(req: NextRequest) {
   try {
@@ -41,13 +42,15 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json()
-    // Normalisasi field tanggal: string kosong → null (hindari error Prisma @db.Date)
-    for (const k of ["tanggal_masuk_kerja", "tanggal_keluar", "tanggal_lahir"]) {
-      if (k in body && (body[k] === "" || body[k] === undefined)) body[k] = null
+    const data = normalizeKaryawanCreateData(body)
+    if (!data.nik || !data.nama_karyawan || !data.jabatan || !data.jkel) {
+      return NextResponse.json({ error: "Field wajib tidak lengkap" }, { status: 400 })
     }
-    const karyawan = await prisma.karyawans.create({ data: body })
+
+    const karyawan = await prisma.karyawans.create({ data })
     return NextResponse.json(serialize(karyawan), { status: 201 })
-  } catch {
+  } catch (err) {
+    console.error("[karyawan:create]", err)
     return NextResponse.json({ error: "Gagal menyimpan data karyawan" }, { status: 500 })
   }
 }
