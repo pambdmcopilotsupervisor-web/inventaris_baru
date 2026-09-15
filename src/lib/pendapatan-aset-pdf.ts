@@ -15,8 +15,17 @@ interface PendapatanAsetPdfOptions {
   printedBy?: string | null
 }
 
-function fmtNumber(value: number): string {
-  return value.toLocaleString("id-ID")
+const rupiahAccountingFormatter = new Intl.NumberFormat("id-ID", {
+  style: "currency",
+  currency: "IDR",
+  currencyDisplay: "symbol",
+  currencySign: "accounting",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+})
+
+function fmtRupiahAccounting(value: number): string {
+  return rupiahAccountingFormatter.format(Number(value) || 0).replace(/\u00A0/g, " ")
 }
 
 function buildNotes(
@@ -47,7 +56,7 @@ function buildNotes(
       }
 
       notes.push(
-        `${label} mengalami ${status} sebesar Rp ${fmtNumber(Math.abs(delta))} dari ${(monthLabels[prevMonth!] ?? "").toUpperCase()} ke ${(monthLabels[month] ?? "").toUpperCase()}`
+        `${label} mengalami ${status} sebesar ${fmtRupiahAccounting(Math.abs(delta))} dari ${(monthLabels[prevMonth!] ?? "").toUpperCase()} ke ${(monthLabels[month] ?? "").toUpperCase()}`
         + (detail.length > 0 ? ` dengan ${detail.join(" | ")}` : "")
         + ".",
       )
@@ -93,6 +102,7 @@ function drawSimpleTable(
   headers: string[],
   rows: Array<Array<string | number>>,
   colWidths: number[],
+  rightAlignColumns: number[] = [],
 ): number {
   let y = ensurePage(doc, yStart, 40)
   doc.font("Helvetica-Bold").fontSize(10).fillColor("#0f172a").text(title, MARGIN, y)
@@ -113,9 +123,10 @@ function drawSimpleTable(
     row.forEach((cell, index) => {
       doc.rect(x, y, colWidths[index], 18).strokeColor("#cbd5e1").stroke()
       const isNumber = typeof cell === "number"
+      const alignRight = isNumber || rightAlignColumns.includes(index)
       doc.font("Helvetica").fontSize(7.5).fillColor("#0f172a").text(String(cell), x + 3, y + 5, {
         width: colWidths[index] - 6,
-        align: isNumber ? "right" : index === 0 ? "center" : "left",
+        align: alignRight ? "right" : index === 0 ? "center" : "left",
       })
       x += colWidths[index]
     })
@@ -182,16 +193,24 @@ export function generatePendapatanAsetPdf(data: PendapatanAsetReportData, option
     const incomeRows = data.incomeRows.map((row, index) => ([
       index + 1,
       row.label,
-      ...data.months.map((month) => row.months[month] ?? 0),
-      row.total,
+      ...data.months.map((month) => row.months[month] ? fmtRupiahAccounting(row.months[month]) : "-"),
+      fmtRupiahAccounting(row.total),
     ]))
     incomeRows.push([
       "",
       "TOTAL PENDAPATAN",
-      ...data.months.map((month) => data.incomeTotalsByMonth[month] ?? 0),
-      data.grandTotal,
+      ...data.months.map((month) => fmtRupiahAccounting(data.incomeTotalsByMonth[month] ?? 0)),
+      fmtRupiahAccounting(data.grandTotal),
     ])
-    y = drawSimpleTable(doc, y, "Tabel Pendapatan", incomeHeaders, incomeRows, [28, 190, ...data.months.map(() => 72), 90])
+    y = drawSimpleTable(
+      doc,
+      y,
+      "Tabel Pendapatan",
+      incomeHeaders,
+      incomeRows,
+      [28, 190, ...data.months.map(() => 72), 90],
+      Array.from({ length: data.months.length + 1 }, (_, index) => index + 2),
+    )
 
     const unitHeaders = ["No", "Jumlah Unit Aktif", ...data.months.map((month) => data.monthLabels[month]), "Total"]
     const unitRows = data.unitRows.map((row, index) => ([

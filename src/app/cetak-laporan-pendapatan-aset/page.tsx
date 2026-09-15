@@ -48,8 +48,17 @@ const MONTHS: Record<number, string> = {
   7: "Juli", 8: "Agustus", 9: "September", 10: "Oktober", 11: "November", 12: "Desember",
 }
 
-function formatNumber(value: number): string {
-  return value.toLocaleString("id-ID")
+const rupiahAccountingFormatter = new Intl.NumberFormat("id-ID", {
+  style: "currency",
+  currency: "IDR",
+  currencyDisplay: "symbol",
+  currencySign: "accounting",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+})
+
+function formatRupiahAccounting(value: number): string {
+  return rupiahAccountingFormatter.format(Number(value) || 0).replace(/\u00A0/g, " ")
 }
 
 function buildSubtitle(params: FilterParams | null): string {
@@ -94,7 +103,7 @@ function buildNotes(
       }
 
       notes.push(
-        `${label} mengalami ${status} sebesar Rp ${Math.abs(delta).toLocaleString("id-ID")} dari ${(monthLabels[prevMonth!] ?? "").toUpperCase()} ke ${(monthLabels[month] ?? "").toUpperCase()}` +
+        `${label} mengalami ${status} sebesar ${formatRupiahAccounting(Math.abs(delta))} dari ${(monthLabels[prevMonth!] ?? "").toUpperCase()} ke ${(monthLabels[month] ?? "").toUpperCase()}` +
         (details.length > 0 ? ` dengan ${details.join(" | ")}` : "") + ".",
       )
     }
@@ -264,9 +273,9 @@ export default function CetakLaporanPendapatanAsetPage() {
                 <td className="text-center">{index + 1}</td>
                 <td>{row.label}</td>
                 {data.months.map((month) => (
-                  <td key={month} className="text-right">{row.months[month] ? formatNumber(row.months[month]) : "—"}</td>
+                  <td key={month} className="text-right">{row.months[month] ? formatRupiahAccounting(row.months[month]) : "—"}</td>
                 ))}
-                <td className="text-right"><strong>{formatNumber(row.total)}</strong></td>
+                <td className="text-right"><strong>{formatRupiahAccounting(row.total)}</strong></td>
               </tr>
             ))}
           </tbody>
@@ -274,9 +283,9 @@ export default function CetakLaporanPendapatanAsetPage() {
             <tr>
               <td colSpan={2}><strong>TOTAL PENDAPATAN</strong></td>
               {data.months.map((month) => (
-                <td key={month} className="text-right"><strong>{formatNumber(data.incomeTotalsByMonth[month] ?? 0)}</strong></td>
+                <td key={month} className="text-right"><strong>{formatRupiahAccounting(data.incomeTotalsByMonth[month] ?? 0)}</strong></td>
               ))}
-              <td className="text-right"><strong>{formatNumber(data.grandTotal)}</strong></td>
+              <td className="text-right"><strong>{formatRupiahAccounting(data.grandTotal)}</strong></td>
             </tr>
           </tfoot>
         </table>
@@ -322,7 +331,7 @@ export default function CetakLaporanPendapatanAsetPage() {
             </ul>
           </div>
           <div style={{ marginTop: 10 }}>
-            <strong>Grafik Total Pendapatan:</strong> {incomeTotals.map((value) => formatNumber(value)).join(" • ")}
+            <strong>Grafik Total Pendapatan:</strong> {incomeTotals.map((value) => formatRupiahAccounting(value)).join(" • ")}
           </div>
         </div>
       </div>
