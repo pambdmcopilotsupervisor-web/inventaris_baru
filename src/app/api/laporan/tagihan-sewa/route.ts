@@ -74,22 +74,25 @@ export async function GET(req: NextRequest) {
 
     const periodLabel = startDate.toLocaleDateString("id-ID", { month: "long", year: "numeric", timeZone: "UTC" })
 
-    // Ambil kendaraan dengan status sewa atau pernah dijual
-    const vehicles = await prisma.data_r2r4s.findMany({
-      where: {
-        OR: [
-          { stat: { in: ["Sewa - Kontrak Berjalan", "Sewa dihentikan"] } },
-          // Kendaraan terjual (yang mungkin masih ada kontrak aktif saat itu)
-        ],
-      },
-    })
-
-    // Ambil kontrak details dan kontrak
+    // Ambil kontrak details, kontrak, dan penjualan lebih dulu agar laporan historis berbasis kontrak,
+    // bukan status kendaraan saat ini.
     const kontrakDetails = await prisma.kontrak_details.findMany()
     const kontraks       = await prisma.kontraks.findMany()
+    const penjualans     = await prisma.penjualan_r2r4s.findMany()
 
-    // Ambil penjualan
-    const penjualans = await prisma.penjualan_r2r4s.findMany()
+    const kontrakVehicleIds = kontrakDetails
+      .map((detail) => detail.data_r2r4_id)
+      .filter((id): id is number => typeof id === "number")
+    const penjualanIds = penjualans
+      .map((penjualan) => penjualan.data_r2r4_id)
+      .filter((id): id is number => typeof id === "number")
+    const reportVehicleIds = [...new Set([...kontrakVehicleIds, ...penjualanIds])]
+
+    const vehicles = reportVehicleIds.length > 0
+      ? await prisma.data_r2r4s.findMany({
+          where: { id: { in: reportVehicleIds.map((id) => BigInt(id)) } },
+        })
+      : []
 
     const kontrakMap = new Map(kontraks.map(k => [Number(k.id), k]))
     const penjualanMap = new Map(penjualans.map(p => [p.data_r2r4_id, p]))

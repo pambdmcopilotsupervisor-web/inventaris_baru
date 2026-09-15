@@ -100,11 +100,11 @@ async function loadSharedData() {
   ])
 
   const penjualanIds = penjualanRaw.map((p) => p.data_r2r4_id).filter(Boolean) as number[]
+  const kontrakVehicleIds = kontrakDetails.map((detail) => detail.data_r2r4_id).filter(Boolean) as number[]
+  const reportVehicleIds = new Set([...kontrakVehicleIds, ...penjualanIds])
 
   const vehicles = allVehicles.filter((vehicle) =>
-    vehicle.stat === "Sewa - Kontrak Berjalan"
-    || vehicle.stat === "Sewa dihentikan"
-    || penjualanIds.includes(Number(vehicle.id)),
+    reportVehicleIds.has(Number(vehicle.id)),
   )
 
   const kontrakMap = new Map(kontraks.map((kontrak) => [Number(kontrak.id), kontrak]))
