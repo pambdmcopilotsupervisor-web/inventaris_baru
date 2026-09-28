@@ -44,28 +44,35 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json(serialize(updated))
     }
 
-    // ── Verifikasi Ketua ─────────────────────────────────────────────
+    // ── Verifikasi Pengurus/Bendahara ────────────────────────────────
     // Syarat: Manager harus sudah verifikasi dulu
-    if (action === "verif_ketua") {
-      if (!hasRequiredJabatan(auth.user.jabatan, "Ketua")) {
-        return NextResponse.json({ error: "Hanya user dengan jabatan Ketua yang dapat melakukan verifikasi ketua" }, { status: 403 })
+    if (action === "verif_bendahara") {
+      if (!hasRequiredJabatan(auth.user.jabatan, "Bendahara")) {
+        return NextResponse.json({ error: "Hanya user dengan jabatan Bendahara yang dapat melakukan Verif Pengurus" }, { status: 403 })
+      }
+      if (!auth.user.karyawan_id) {
+        return NextResponse.json({ error: "User Bendahara harus terhubung dengan data karyawan" }, { status: 403 })
       }
       if (!record.verif_manager) {
         return NextResponse.json({ error: "Harus diverifikasi Manager terlebih dahulu" }, { status: 400 })
       }
       if (record.verif_ketua === 1) {
-        return NextResponse.json({ error: "Sudah diverifikasi oleh Ketua" }, { status: 400 })
+        return NextResponse.json({ error: "Permohonan ini sudah diverifikasi oleh Ketua" }, { status: 400 })
+      }
+      if (record.verif_bendahara === 1) {
+        return NextResponse.json({ error: "Sudah diverifikasi oleh Pengurus" }, { status: 400 })
       }
 
       const updated = await prisma.permohonan_disposal.update({
         where: { id: BigInt(id) },
         data: {
-          verif_ketua:     1,
-          tgl_verif_ketua: new Date(),
+          verif_bendahara:     1,
+          tgl_verif_bendahara: new Date(),
+          bendahara_id:        auth.user.karyawan_id,
         },
       })
 
-      // UPDATE asset status_barang → 'Disposal' setelah Ketua verifikasi
+      // UPDATE asset status_barang → 'Disposal' setelah Verif Pengurus
       await prisma.assets.update({
         where: { id: BigInt(record.asset_id) },
         data: { status_barang: "Disposal" },
@@ -79,7 +86,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: getTransaksiActionError("update") }, { status: 403 })
     }
 
-    if (record.verif_manager !== 0 || record.verif_ketua !== 0) {
+    if ((record.verif_manager ?? 0) !== 0 || (record.verif_ketua ?? 0) !== 0 || (record.verif_bendahara ?? 0) !== 0) {
       return NextResponse.json({ error: "Tidak dapat diubah — sudah dalam proses verifikasi" }, { status: 400 })
     }
 
@@ -109,8 +116,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     const { id } = await params
     const record = await prisma.permohonan_disposal.findUnique({ where: { id: BigInt(id) } })
 
-    // Jika sudah diverifikasi ketua (status disposal sudah set), batalkan status aset
-    if (record && record.verif_ketua === 1) {
+    // Jika sudah diverifikasi Ketua lama atau Pengurus baru (status disposal sudah set), batalkan status aset
+    if (record && (record.verif_ketua === 1 || record.verif_bendahara === 1)) {
       await prisma.assets.update({
         where: { id: BigInt(record.asset_id) },
         data: { status_barang: "Baik" },

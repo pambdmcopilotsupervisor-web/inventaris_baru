@@ -116,9 +116,9 @@ export function canVerifManager(user: AuthUser | null): boolean {
   return hasRequiredJabatan(user?.jabatan, "Manager")
 }
 
-// Helper: apakah user bisa verifikasi sebagai Ketua?
-export function canVerifKetua(user: AuthUser | null): boolean {
-  return hasRequiredJabatan(user?.jabatan, "Ketua")
+// Helper: apakah user bisa Verif Pengurus sebagai Bendahara?
+export function canVerifBendahara(user: AuthUser | null): boolean {
+  return hasRequiredJabatan(user?.jabatan, "Bendahara")
 }
 
 // Helper: apakah user adalah admin?

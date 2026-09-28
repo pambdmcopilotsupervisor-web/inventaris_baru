@@ -37,7 +37,8 @@ export async function GET(req: NextRequest) {
       nama_asset:     d.asset_id ? aMap.get(d.asset_id) ?? "—" : "—",
       dibuat_oleh_nm: d.dibuat_oleh ? kMap.get(d.dibuat_oleh)?.nama_karyawan ?? "—" : "—",
       manager_nm:     d.manager_id ? kMap.get(d.manager_id)?.nama_karyawan ?? "—" : "—",
-      ketua_nm:       d.ketua_id   ? kMap.get(d.ketua_id)?.nama_karyawan   ?? "—" : "—",
+      ketua_nm:       d.ketua_id ? kMap.get(d.ketua_id)?.nama_karyawan ?? "—" : "—",
+      bendahara_nm:   d.bendahara_id ? kMap.get(d.bendahara_id)?.nama_karyawan ?? "—" : "—",
     }))
 
     return NextResponse.json(serialize(enriched))
@@ -62,11 +63,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Field wajib tidak lengkap" }, { status: 400 })
     }
 
-    // Auto-fill ketua_id dan manager_id dari jabatan
-    const [ketua, manager] = await Promise.all([
-      prisma.karyawans.findFirst({ where: { jabatan: "Ketua" } }),
-      prisma.karyawans.findFirst({ where: { jabatan: "Manager" } }),
-    ])
+    // Auto-fill manager_id dari jabatan. bendahara_id diisi dari user login saat Verif Pengurus.
+    const manager = await prisma.karyawans.findFirst({ where: { jabatan: "Manager" } })
 
     // Format nomor surat
     const nomorFormatted = nomor ? formatNomor(String(nomor)) : null
@@ -81,9 +79,11 @@ export async function POST(req: NextRequest) {
         // Status awal: belum diverifikasi
         verif_manager: 0,
         verif_ketua:   0,
+        verif_bendahara: 0,
         dibuat_oleh:   dibuat_oleh ? Number(dibuat_oleh) : null,
         manager_id:    manager ? Number(manager.id) : null,
-        ketua_id:      ketua   ? Number(ketua.id)   : null,
+        ketua_id:      null,
+        bendahara_id:  null,
       },
     })
 

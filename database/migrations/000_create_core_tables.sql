@@ -444,7 +444,7 @@ CREATE TABLE IF NOT EXISTS `mutasi_assets` (
 
 CREATE TABLE IF NOT EXISTS `permohonan_disposal` (
   `id`               bigint UNSIGNED NOT NULL AUTO_INCREMENT,
-  `nomor`            varchar(30)     DEFAULT NULL,
+  `nomor`            varchar(100)    DEFAULT NULL,
   `asset_id`         int             NOT NULL,
   `tgl_pengajuan`    date            NOT NULL,
   `gambar`           varchar(100)    DEFAULT NULL,
@@ -452,12 +452,15 @@ CREATE TABLE IF NOT EXISTS `permohonan_disposal` (
   `dibuat_oleh`      int             DEFAULT NULL,
   `verif_manager`    int             DEFAULT NULL,
   `verif_ketua`      int             DEFAULT NULL,
-  `keterangan`       varchar(255)    DEFAULT NULL,
+  `verif_bendahara`  int             DEFAULT NULL,
+  `keterangan`       text            DEFAULT NULL,
   `created_at`       timestamp       NULL DEFAULT NULL,
   `updated_at`       timestamp       NULL DEFAULT NULL,
   `tgl_verif_manager` datetime       DEFAULT NULL,
   `tgl_verif_ketua`  datetime        DEFAULT NULL,
+  `tgl_verif_bendahara` datetime     DEFAULT NULL,
   `ketua_id`         int             DEFAULT NULL,
+  `bendahara_id`     int             DEFAULT NULL,
   `manager_id`       int             DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -354,7 +354,7 @@ model pensiun_karyawans {
 
 model permohonan_disposal {
   id                BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
-  nomor             String?   @db.VarChar(30)
+  nomor             String?   @db.VarChar(100)
   asset_id          Int
   tgl_pengajuan     DateTime  @db.Date
   gambar            String?   @db.VarChar(100)
@@ -362,12 +362,15 @@ model permohonan_disposal {
   dibuat_oleh       Int?
   verif_manager     Int?
   verif_ketua       Int?
-  keterangan        String?   @db.VarChar(255)
+  verif_bendahara   Int?
+  keterangan        String?   @db.Text
   created_at        DateTime? @db.Timestamp(0)
   updated_at        DateTime? @db.Timestamp(0)
   tgl_verif_manager DateTime? @db.DateTime(0)
   tgl_verif_ketua   DateTime? @db.DateTime(0)
+  tgl_verif_bendahara DateTime? @db.DateTime(0)
   ketua_id          Int?
+  bendahara_id      Int?
   manager_id        Int?
 }
 

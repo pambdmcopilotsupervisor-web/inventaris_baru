@@ -96,11 +96,14 @@ interface DisposalHistory {
   keterangan: string | null
   verif_manager: number
   verif_ketua: number
+  verif_bendahara: number
   tgl_verif_manager: string | null
   tgl_verif_ketua: string | null
+  tgl_verif_bendahara: string | null
   dibuat_oleh_nm?: string
   manager_nm?: string
   ketua_nm?: string
+  bendahara_nm?: string
 }
 
 const EMPTY: Partial<Asset> = { kelompok_asset: "komputer", status_barang: "Baik" }
@@ -187,8 +190,8 @@ function serviceAsetFotoUrl(row: Pick<ServiceAsetHistory, "id" | "bukti_foto">):
 }
 
 function DisposalStatusBadge({ row }: { row: DisposalHistory }) {
-  if (row.verif_ketua === 1) return <Badge variant="success"><CheckCircle className="h-3 w-3 mr-1" />Disetujui</Badge>
-  if (row.verif_manager === 1) return <Badge variant="info"><Clock className="h-3 w-3 mr-1" />Menunggu Ketua</Badge>
+  if (row.verif_ketua === 1 || row.verif_bendahara === 1) return <Badge variant="success"><CheckCircle className="h-3 w-3 mr-1" />Disetujui</Badge>
+  if (row.verif_manager === 1) return <Badge variant="info"><Clock className="h-3 w-3 mr-1" />Menunggu Pengurus</Badge>
   return <Badge variant="warning"><Clock className="h-3 w-3 mr-1" />Menunggu Manager</Badge>
 }
 
@@ -1335,10 +1338,10 @@ export default function AsetPage() {
                             <p className="text-sm font-medium mt-1">{disposal.manager_nm ?? "—"}</p>
                             <p className="text-xs mt-1" style={{ color: "var(--text-subtle)" }}>{disposal.tgl_verif_manager ? formatDate(disposal.tgl_verif_manager) : "Belum verifikasi"}</p>
                           </div>
-                          <div className="rounded-lg p-3" style={{ background: disposal.verif_ketua === 1 ? "var(--success-bg)" : "var(--primary-light)", border: `1px solid ${disposal.verif_ketua === 1 ? "#A7F3D0" : "var(--primary-mid)"}` }}>
-                            <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: disposal.verif_ketua === 1 ? "var(--success)" : "var(--primary)" }}>Verifikasi Ketua</p>
-                            <p className="text-sm font-medium mt-1">{disposal.ketua_nm ?? "—"}</p>
-                            <p className="text-xs mt-1" style={{ color: "var(--text-subtle)" }}>{disposal.tgl_verif_ketua ? formatDate(disposal.tgl_verif_ketua) : "Belum verifikasi"}</p>
+                          <div className="rounded-lg p-3" style={{ background: (disposal.verif_ketua === 1 || disposal.verif_bendahara === 1) ? "var(--success-bg)" : "var(--primary-light)", border: `1px solid ${(disposal.verif_ketua === 1 || disposal.verif_bendahara === 1) ? "#A7F3D0" : "var(--primary-mid)"}` }}>
+                            <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: (disposal.verif_ketua === 1 || disposal.verif_bendahara === 1) ? "var(--success)" : "var(--primary)" }}>{disposal.verif_ketua === 1 ? "Verifikasi Ketua" : "Verif Pengurus"}</p>
+                            <p className="text-sm font-medium mt-1">{disposal.verif_ketua === 1 ? (disposal.ketua_nm ?? "—") : (disposal.bendahara_nm ?? "—")}</p>
+                            <p className="text-xs mt-1" style={{ color: "var(--text-subtle)" }}>{disposal.verif_ketua === 1 ? (disposal.tgl_verif_ketua ? formatDate(disposal.tgl_verif_ketua) : "Belum verifikasi") : (disposal.tgl_verif_bendahara ? formatDate(disposal.tgl_verif_bendahara) : "Belum verifikasi")}</p>
                           </div>
                         </div>
                       </div>

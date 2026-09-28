@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useState } from "react"
 import { DataTable, Column } from "@/components/ui/data-table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -8,21 +8,21 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Modal } from "@/components/ui/modal"
 import { ConfirmDelete } from "@/components/ui/confirm-delete"
 import { TextField, SelectField, TextareaField, FormField } from "@/components/ui/form-field"
-import { Plus, Eye, Pencil, Trash2, RefreshCw, Search, CheckCircle, Clock, AlertTriangle, Printer, Info } from "lucide-react"
+import { Plus, Eye, Pencil, Trash2, RefreshCw, Search, CheckCircle, Clock, Printer, Info } from "lucide-react"
 import { formatDate, formatCurrency } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
-import { useAuth, canVerifManager, canVerifKetua } from "@/contexts/AuthContext"
+import { useAuth, canVerifManager, canVerifBendahara } from "@/contexts/AuthContext"
 import { canCreateOrEditTransaksi, canDeleteTransaksi } from "@/lib/transaksi-role"
 
 /* ── Types ─────────────────────────────────────────────────────── */
-interface Disposal {
+interface Disposal extends Record<string, unknown> {
   id: number; nomor: string | null; asset_id: number; tgl_pengajuan: string
   kondisi: string | null; keterangan: string | null
-  dibuat_oleh: number | null; verif_manager: number; verif_ketua: number
-  tgl_verif_manager: string | null; tgl_verif_ketua: string | null
-  manager_id: number | null; ketua_id: number | null
+  dibuat_oleh: number | null; verif_manager: number; verif_ketua: number; verif_bendahara: number
+  tgl_verif_manager: string | null; tgl_verif_ketua: string | null; tgl_verif_bendahara: string | null
+  manager_id: number | null; ketua_id: number | null; bendahara_id: number | null
   // enriched
-  nama_asset?: string; dibuat_oleh_nm?: string; manager_nm?: string; ketua_nm?: string
+  nama_asset?: string; dibuat_oleh_nm?: string; manager_nm?: string; ketua_nm?: string; bendahara_nm?: string
 }
 
 interface Asset {
@@ -30,8 +30,6 @@ interface Asset {
   hrg_beli: number | null; ruangan_id: number | null
   nama_ruangan?: string | null; lokasi?: string | null
 }
-
-interface Karyawan { id: number; nik: string; nama_karyawan: string; jabatan: string }
 
 /* ── Helper: bulan romawi ───────────────────────────────────────── */
 const BULAN_ROMAWI: Record<number, string> = {
@@ -46,7 +44,7 @@ function previewNomor(kode: string): string {
 }
 
 /* ── Badge helper ───────────────────────────────────────────────── */
-function VerifBadge({ value, tgl }: { value: number; tgl: string | null }) {
+function VerifBadge({ value, tgl }: { value: number | null; tgl: string | null }) {
   return value === 1
     ? <div className="flex flex-col gap-0.5">
         <Badge variant="success" className="text-[10px]"><CheckCircle className="h-3 w-3 mr-1" />Sudah Verifikasi</Badge>
@@ -55,11 +53,29 @@ function VerifBadge({ value, tgl }: { value: number; tgl: string | null }) {
     : <Badge variant="destructive" className="text-[10px]"><Clock className="h-3 w-3 mr-1" />Belum Verifikasi</Badge>
 }
 
+function isFinalVerified(row: Disposal): boolean {
+  return row.verif_ketua === 1 || row.verif_bendahara === 1
+}
+
+function FinalVerifCell({ row }: { row: Disposal }) {
+  const isLegacyKetua = row.verif_ketua === 1
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>
+        {isLegacyKetua ? "Ketua" : "Pengurus"}
+      </span>
+      <VerifBadge
+        value={isLegacyKetua ? row.verif_ketua : row.verif_bendahara}
+        tgl={isLegacyKetua ? row.tgl_verif_ketua : row.tgl_verif_bendahara}
+      />
+    </div>
+  )
+}
+
 /* ── Main Page ──────────────────────────────────────────────────── */
 export default function DisposalPage() {
   const { data, loading, refetch } = useApi<Disposal[]>("/api/disposal")
   const { data: allAssets }    = useApi<Asset[]>("/api/aset")
-  const { data: allKaryawans } = useApi<Karyawan[]>("/api/karyawan")
   const { user: authUser }     = useAuth()
   const list = data ?? []
   const canManageData = canCreateOrEditTransaksi(authUser?.role)
@@ -72,7 +88,7 @@ export default function DisposalPage() {
   const [selected, setSelected]       = useState<Disposal | null>(null)
   const [saving, setSaving]           = useState(false)
   const [deleting, setDeleting]       = useState(false)
-  const [verifAction, setVerifAction] = useState<"verif_manager" | "verif_ketua" | null>(null)
+  const [verifAction, setVerifAction] = useState<"verif_manager" | "verif_bendahara" | null>(null)
   const [errors, setErrors]           = useState<Record<string, string>>({})
 
   // Form state
@@ -122,7 +138,7 @@ export default function DisposalPage() {
   const openEdit = (row: Disposal) => {
     if (!canManageData) return
     // Edit hanya boleh jika KEDUA verifikasi = 0
-    if (row.verif_manager !== 0 || row.verif_ketua !== 0) return
+    if ((row.verif_manager ?? 0) !== 0 || (row.verif_ketua ?? 0) !== 0 || (row.verif_bendahara ?? 0) !== 0) return
     setSelected(row)
     const a = allAssets?.find(a => a.id === row.asset_id)
     setAssetSearch(a ? `${a.kode_asset} — ${a.nama_asset}` : `ID ${row.asset_id}`)
@@ -177,7 +193,7 @@ export default function DisposalPage() {
     } finally { setSaving(false) }
   }
 
-  // Verifikasi Manager atau Ketua
+  // Verifikasi Manager atau Pengurus
   const handleVerifikasi = async () => {
     if (!selected || !verifAction) return
     setSaving(true)
@@ -202,8 +218,8 @@ export default function DisposalPage() {
 
   /* ── Status disposal overall ──────────────────────────────────── */
   const getStatusBadge = (row: Disposal) => {
-    if (row.verif_ketua === 1)   return <Badge variant="success">Disetujui</Badge>
-    if (row.verif_manager === 1) return <Badge variant="info">Menunggu Ketua</Badge>
+    if (isFinalVerified(row)) return <Badge variant="success">Disetujui</Badge>
+    if (row.verif_manager === 1) return <Badge variant="info">Menunggu Pengurus</Badge>
     return <Badge variant="warning">Menunggu Manager</Badge>
   }
 
@@ -215,7 +231,7 @@ export default function DisposalPage() {
     { key: "dibuat_oleh_nm",header:"Diajukan Oleh",cell: (r) => r.dibuat_oleh_nm ?? "—" },
     { key: "kondisi",      header: "Kondisi",      cell: (r) => r.kondisi ? <Badge variant="warning" className="text-xs">{r.kondisi}</Badge> : "—" },
     { key: "verif_manager",header: "Verif Manager",cell: (r) => <VerifBadge value={r.verif_manager} tgl={r.tgl_verif_manager} /> },
-    { key: "verif_ketua",  header: "Verif Ketua",  cell: (r) => <VerifBadge value={r.verif_ketua} tgl={r.tgl_verif_ketua} /> },
+    { key: "verif_final", header: "Verif Akhir", cell: (r) => <FinalVerifCell row={r} /> },
     { key: "status",       header: "Status",       cell: (r) => getStatusBadge(r) },
   ]
 
@@ -227,7 +243,7 @@ export default function DisposalPage() {
         <div>
           <h1 className="text-xl font-bold" style={{ color: "var(--text-900)" }}>Permohonan Disposal Aset</h1>
           <p className="text-xs mt-0.5" style={{ color: "var(--text-subtle)" }}>
-            Proses penghapusan aset — membutuhkan verifikasi 2 tahap (Manager → Ketua)
+            Proses penghapusan aset — membutuhkan verifikasi 2 tahap (Manager → Pengurus)
           </p>
         </div>
         <div className="flex gap-2">
@@ -240,7 +256,7 @@ export default function DisposalPage() {
       <div className="flex items-start gap-3 rounded-xl p-4" style={{ background: "var(--warning-bg)", border: "1px solid #FDE68A" }}>
         <Info className="h-4 w-4 mt-0.5 shrink-0" style={{ color: "var(--warning)" }} />
         <p className="text-xs" style={{ color: "#92400E" }}>
-          <strong>Alur Disposal:</strong> Buat permohonan → <strong>Verifikasi Manager</strong> (set status Disetujui Manager) → <strong>Verifikasi Ketua</strong> (set status Disposal &amp; ubah kondisi aset menjadi "Disposal") → Cetak PDF
+          <strong>Alur Disposal:</strong> Buat permohonan → <strong>Verifikasi Manager</strong> (set status Disetujui Manager) → <strong>Verif Pengurus</strong> oleh Bendahara (set status Disposal &amp; ubah kondisi aset menjadi &quot;Disposal&quot;) → Cetak PDF
         </p>
       </div>
 
@@ -249,8 +265,8 @@ export default function DisposalPage() {
         {[
           { label: "Total Permohonan",     value: list.length,                                            color: "var(--primary)" },
           { label: "Menunggu Manager",     value: list.filter(d => d.verif_manager === 0).length,        color: "var(--warning)" },
-          { label: "Menunggu Ketua",       value: list.filter(d => d.verif_manager === 1 && d.verif_ketua === 0).length, color: "var(--info)" },
-          { label: "Disetujui (Disposal)", value: list.filter(d => d.verif_ketua === 1).length,          color: "var(--success)" },
+          { label: "Menunggu Pengurus",    value: list.filter(d => d.verif_manager === 1 && !isFinalVerified(d)).length, color: "var(--info)" },
+          { label: "Disetujui (Disposal)", value: list.filter(isFinalVerified).length,                   color: "var(--success)" },
         ].map(s => (
           <Card key={s.label}><CardContent className="p-4">
             <p className="text-xs" style={{ color: "var(--text-subtle)" }}>{s.label}</p>
@@ -261,17 +277,17 @@ export default function DisposalPage() {
 
       {/* Table */}
       <DataTable
-        data={list as any} columns={columns as any}
+        data={list} columns={columns}
         searchKeys={["nomor", "nama_asset", "keterangan", "dibuat_oleh_nm"]} loading={loading}
-        actions={(row: any) => (
+        actions={(row) => (
           <div className="flex items-center justify-center gap-0.5 flex-nowrap">
             {/* View */}
             <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--info)" }}
               title="Detail" onClick={() => { setSelected(row); setViewOpen(true) }}>
               <Eye className="h-3.5 w-3.5" />
             </Button>
-            {/* Edit — hanya jika belum ada verifikasi DAN user adalah admin */}
-            {row.verif_manager === 0 && row.verif_ketua === 0 && canManageData && (
+            {/* Edit — hanya jika belum ada verifikasi DAN user adalah admin/operator */}
+            {row.verif_manager === 0 && row.verif_ketua === 0 && row.verif_bendahara === 0 && canManageData && (
               <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--warning)" }}
                 title="Edit" onClick={() => openEdit(row)}>
                 <Pencil className="h-3.5 w-3.5" />
@@ -285,16 +301,16 @@ export default function DisposalPage() {
                 <CheckCircle className="h-3.5 w-3.5" />
               </Button>
             )}
-            {/* Verifikasi Ketua — hanya tampil jika Manager sudah verif DAN user punya jabatan Ketua */}
-            {row.verif_manager === 1 && row.verif_ketua === 0 && canVerifKetua(authUser) && (
+            {/* Verif Pengurus — hanya tampil jika Manager sudah verif DAN user punya jabatan Bendahara */}
+            {row.verif_manager === 1 && !isFinalVerified(row) && canVerifBendahara(authUser) && (
               <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--primary)" }}
-                title="Verifikasi Ketua — klik untuk menyetujui (aset akan jadi Disposal)"
-                onClick={() => { setSelected(row); setVerifAction("verif_ketua"); setVerifOpen(true) }}>
+                title="Verif Pengurus — klik untuk menyetujui (aset akan jadi Disposal)"
+                onClick={() => { setSelected(row); setVerifAction("verif_bendahara"); setVerifOpen(true) }}>
                 <CheckCircle className="h-3.5 w-3.5" />
               </Button>
             )}
             {/* Cetak PDF — hanya setelah KEDUA verifikasi selesai */}
-            {row.verif_manager === 1 && row.verif_ketua === 1 && (
+            {row.verif_manager === 1 && isFinalVerified(row) && (
               <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--primary)" }}
                 title="Cetak PDF" onClick={() => alert("Cetak PDF — akan tersedia segera")}>
                 <Printer className="h-3.5 w-3.5" />
@@ -414,31 +430,31 @@ export default function DisposalPage() {
       {/* ── Konfirmasi Verifikasi Modal ───────────────────────────── */}
       <Modal
         open={verifOpen} onClose={() => setVerifOpen(false)} size="sm"
-        title={verifAction === "verif_manager" ? "Verifikasi Manager" : "Verifikasi Ketua"}
+        title={verifAction === "verif_manager" ? "Verifikasi Manager" : "Verif Pengurus"}
         footer={<>
           <Button variant="outline" onClick={() => setVerifOpen(false)}>Batal</Button>
           <Button onClick={handleVerifikasi} disabled={saving}
-            style={{ background: verifAction === "verif_ketua" ? "var(--primary)" : "var(--success)", color: "#fff" }}>
+            style={{ background: verifAction === "verif_bendahara" ? "var(--primary)" : "var(--success)", color: "#fff" }}>
             {saving ? "Memproses..." : "Ya, Verifikasi"}
           </Button>
         </>}
       >
         <div className="flex items-start gap-4">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full" style={{ background: verifAction === "verif_ketua" ? "var(--primary-light)" : "var(--success-bg)" }}>
-            <CheckCircle className="h-5 w-5" style={{ color: verifAction === "verif_ketua" ? "var(--primary)" : "var(--success)" }} />
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full" style={{ background: verifAction === "verif_bendahara" ? "var(--primary-light)" : "var(--success-bg)" }}>
+            <CheckCircle className="h-5 w-5" style={{ color: verifAction === "verif_bendahara" ? "var(--primary)" : "var(--success)" }} />
           </div>
           <div className="pt-1">
             <p className="text-sm font-semibold" style={{ color: "var(--text-900)" }}>
               {verifAction === "verif_manager"
                 ? "Verifikasi sebagai Manager"
-                : "Verifikasi sebagai Ketua"}
+                : "Verif Pengurus sebagai Bendahara"}
             </p>
             <p className="text-xs mt-1" style={{ color: "var(--text-subtle)" }}>
               Aset: <strong>{selected?.nama_asset}</strong>
             </p>
-            {verifAction === "verif_ketua" && (
+            {verifAction === "verif_bendahara" && (
               <div className="mt-3 rounded-lg px-3 py-2 text-xs" style={{ background: "var(--danger-bg)", color: "var(--danger)" }}>
-                <strong>⚠ Perhatian:</strong> Setelah verifikasi Ketua, status aset akan <strong>berubah menjadi "Disposal"</strong> secara permanen.
+                <strong>Perhatian:</strong> Setelah Verif Pengurus, status aset akan <strong>berubah menjadi &quot;Disposal&quot;</strong> secara permanen.
               </div>
             )}
           </div>
@@ -472,10 +488,15 @@ export default function DisposalPage() {
                 <p className="font-semibold text-sm">{selected.manager_nm ?? "—"}</p>
                 <VerifBadge value={selected.verif_manager} tgl={selected.tgl_verif_manager} />
               </div>
-              <div className="rounded-xl p-4 space-y-2" style={{ background: selected.verif_ketua === 1 ? "var(--success-bg)" : "var(--primary-light)", border: `1px solid ${selected.verif_ketua === 1 ? "#A7F3D0" : "var(--primary-mid)"}` }}>
-                <p className="text-xs font-bold uppercase tracking-wider" style={{ color: selected.verif_ketua === 1 ? "var(--success)" : "var(--primary)" }}>Verifikasi Ketua</p>
-                <p className="font-semibold text-sm">{selected.ketua_nm ?? "—"}</p>
-                <VerifBadge value={selected.verif_ketua} tgl={selected.tgl_verif_ketua} />
+              <div className="rounded-xl p-4 space-y-2" style={{ background: isFinalVerified(selected) ? "var(--success-bg)" : "var(--primary-light)", border: `1px solid ${isFinalVerified(selected) ? "#A7F3D0" : "var(--primary-mid)"}` }}>
+                <p className="text-xs font-bold uppercase tracking-wider" style={{ color: isFinalVerified(selected) ? "var(--success)" : "var(--primary)" }}>
+                  {selected.verif_ketua === 1 ? "Verifikasi Ketua" : "Verif Pengurus"}
+                </p>
+                <p className="font-semibold text-sm">{selected.verif_ketua === 1 ? (selected.ketua_nm ?? "—") : (selected.bendahara_nm ?? "—")}</p>
+                <VerifBadge
+                  value={selected.verif_ketua === 1 ? selected.verif_ketua : selected.verif_bendahara}
+                  tgl={selected.verif_ketua === 1 ? selected.tgl_verif_ketua : selected.tgl_verif_bendahara}
+                />
               </div>
             </div>
 
@@ -492,7 +513,7 @@ export default function DisposalPage() {
       <ConfirmDelete open={deleteOpen} onClose={() => setDeleteOpen(false)}
         onConfirm={handleDelete} loading={deleting}
         title="Hapus Permohonan Disposal"
-        description={`Hapus permohonan disposal untuk aset "${selected?.nama_asset}"? ${selected?.verif_ketua === 1 ? "Status aset akan dikembalikan ke 'Baik'." : ""}`}
+        description={`Hapus permohonan disposal untuk aset "${selected?.nama_asset}"? ${selected && isFinalVerified(selected) ? "Status aset akan dikembalikan ke 'Baik'." : ""}`}
       />
     </div>
   )

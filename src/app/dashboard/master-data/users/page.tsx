@@ -142,7 +142,7 @@ export default function UsersPage() {
         <span className="font-semibold" style={{ color: "var(--primary)" }}>Role:</span>
         {[
           { role: "admin",    label: "Admin — akses penuh, dapat edit semua data & approve semua cuti" },
-          { role: "operator", label: "Operator — verifikasi (Manager/Ketua)" },
+          { role: "operator", label: "Operator — verifikasi (Manager/Pengurus)" },
           { role: "user",     label: "User — akses read + ajukan cuti (hak approval otomatis dari jabatan)" },
         ].map(r => (
           <div key={r.role} className="flex items-center gap-1.5">
