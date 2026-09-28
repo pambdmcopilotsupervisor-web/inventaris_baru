@@ -2,6 +2,40 @@ import { NextRequest, NextResponse } from "next/server"
 import { requireSession } from "@/lib/auth"
 import { prisma, serialize } from "@/lib/prisma"
 import { canCreateOrEditTransaksi, canDeleteTransaksi, getTransaksiActionError, hasRequiredJabatan } from "@/lib/transaksi-role"
+import { uploadServiceBuktiImage } from "@/lib/service-bukti-file"
+
+function toNullableString(value: FormDataEntryValue | string | null | undefined): string | null {
+  if (typeof value !== "string") return null
+  const trimmed = value.trim()
+  return trimmed ? trimmed : null
+}
+
+async function parseDisposalEditRequest(req: NextRequest, jsonBody?: Record<string, unknown>) {
+  const contentType = req.headers.get("content-type") ?? ""
+
+  if (contentType.includes("multipart/form-data")) {
+    const formData = await req.formData()
+    const rawFoto = formData.get("foto") ?? formData.get("gambar")
+    const foto = rawFoto instanceof File && rawFoto.size > 0 ? rawFoto : null
+
+    return {
+      tgl_pengajuan: toNullableString(formData.get("tgl_pengajuan")),
+      kondisi: toNullableString(formData.get("kondisi")),
+      keterangan: toNullableString(formData.get("keterangan")),
+      foto,
+      gambar: formData.has("gambar") && typeof formData.get("gambar") === "string" ? toNullableString(formData.get("gambar")) : undefined,
+    }
+  }
+
+  const body = jsonBody ?? await req.json()
+  return {
+    tgl_pengajuan: toNullableString(body.tgl_pengajuan as string | null | undefined),
+    kondisi: toNullableString(body.kondisi as string | null | undefined),
+    keterangan: toNullableString(body.keterangan as string | null | undefined),
+    foto: null,
+    gambar: Object.prototype.hasOwnProperty.call(body, "gambar") ? toNullableString(body.gambar as string | null | undefined) : undefined,
+  }
+}
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -20,8 +54,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   try {
     const { id } = await params
-    const body = await req.json()
-    const { action, ...data } = body
+    const contentType = req.headers.get("content-type") ?? ""
+    const body = contentType.includes("multipart/form-data") ? null : await req.json()
+    const action = body?.action
 
     const record = await prisma.permohonan_disposal.findUnique({ where: { id: BigInt(id) } })
     if (!record) return NextResponse.json({ error: "Tidak ditemukan" }, { status: 404 })
@@ -90,17 +125,24 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: "Tidak dapat diubah — sudah dalam proses verifikasi" }, { status: 400 })
     }
 
+    const data = await parseDisposalEditRequest(req, body ?? undefined)
+    const storedFoto = data.foto ? await uploadServiceBuktiImage(data.foto, "disposal") : data.gambar
+
     const updated = await prisma.permohonan_disposal.update({
       where: { id: BigInt(id) },
       data: {
         tgl_pengajuan: data.tgl_pengajuan ? new Date(data.tgl_pengajuan) : undefined,
         kondisi:       data.kondisi ?? undefined,
         keterangan:    data.keterangan ?? undefined,
+        gambar:        typeof storedFoto !== "undefined" ? storedFoto : undefined,
       },
     })
     return NextResponse.json(serialize(updated))
   } catch (err) {
     console.error(err)
+    if (err instanceof Error && (err.message.includes("JPG") || err.message.includes("Ukuran"))) {
+      return NextResponse.json({ error: err.message }, { status: 400 })
+    }
     return NextResponse.json({ error: "Gagal memperbarui" }, { status: 500 })
   }
 }

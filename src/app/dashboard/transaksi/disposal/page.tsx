@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Modal } from "@/components/ui/modal"
 import { ConfirmDelete } from "@/components/ui/confirm-delete"
 import { TextField, SelectField, TextareaField, FormField } from "@/components/ui/form-field"
-import { Plus, Eye, Pencil, Trash2, RefreshCw, Search, CheckCircle, Clock, Printer, Info } from "lucide-react"
+import { Plus, Eye, Pencil, Trash2, RefreshCw, Search, CheckCircle, Clock, Printer, Info, FileText, ImageIcon, ImagePlus, X } from "lucide-react"
 import { formatDate, formatCurrency } from "@/lib/utils"
 import { useApi } from "@/hooks/useApi"
 import { useAuth, canVerifManager, canVerifBendahara } from "@/contexts/AuthContext"
@@ -18,18 +18,24 @@ import { canCreateOrEditTransaksi, canDeleteTransaksi } from "@/lib/transaksi-ro
 interface Disposal extends Record<string, unknown> {
   id: number; nomor: string | null; asset_id: number; tgl_pengajuan: string
   kondisi: string | null; keterangan: string | null
+  gambar: string | null
   dibuat_oleh: number | null; verif_manager: number; verif_ketua: number; verif_bendahara: number
   tgl_verif_manager: string | null; tgl_verif_ketua: string | null; tgl_verif_bendahara: string | null
   manager_id: number | null; ketua_id: number | null; bendahara_id: number | null
   // enriched
   nama_asset?: string; dibuat_oleh_nm?: string; manager_nm?: string; ketua_nm?: string; bendahara_nm?: string
+  asset_gambar?: string | null
 }
 
 interface Asset {
   id: number; kode_asset: string; nama_asset: string
-  hrg_beli: number | null; ruangan_id: number | null
+  hrg_beli: number | null; ruangan_id: number | null; gambar?: string | null
   nama_ruangan?: string | null; lokasi?: string | null
 }
+
+const DISPOSAL_PHOTO_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"]
+const DISPOSAL_PHOTO_ACCEPT = "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+const DISPOSAL_PHOTO_MAX_BYTES = 5 * 1024 * 1024
 
 /* ── Helper: bulan romawi ───────────────────────────────────────── */
 const BULAN_ROMAWI: Record<number, string> = {
@@ -72,6 +78,96 @@ function FinalVerifCell({ row }: { row: Disposal }) {
   )
 }
 
+function gambarSrc(assetId: number, gambar: string | null | undefined): string | null {
+  if (!gambar) return null
+  if (gambar.startsWith("http://") || gambar.startsWith("https://") || gambar.startsWith("/")) return gambar
+  return `/api/aset/${assetId}/gambar`
+}
+
+function isPdfFileName(value: string | null | undefined): boolean {
+  return Boolean(value?.toLowerCase().endsWith(".pdf"))
+}
+
+function disposalGambarSrc(disposalId: number, gambar: string | null | undefined): string | null {
+  if (!gambar) return null
+  if (gambar.startsWith("http://") || gambar.startsWith("https://") || gambar.startsWith("/")) return gambar
+  return `/api/disposal/${disposalId}/gambar`
+}
+
+function validateDisposalPhoto(file: File): string | null {
+  const allowedByName = /\.(jpe?g|png|webp)$/i.test(file.name)
+  if (!DISPOSAL_PHOTO_TYPES.includes(file.type) && !allowedByName) return "Foto harus berupa JPG, PNG, atau WEBP"
+  if (file.size > DISPOSAL_PHOTO_MAX_BYTES) return "Ukuran foto maksimal 5 MB"
+  return null
+}
+
+function AssetPhotoPreview({ assetId, gambar, nama, compact = false }: { assetId: number; gambar?: string | null; nama: string; compact?: boolean }) {
+  const src = gambarSrc(assetId, gambar)
+  const isPdf = isPdfFileName(gambar)
+
+  if (!src) {
+    return (
+      <div
+        className={`flex shrink-0 items-center justify-center rounded-lg ${compact ? "h-11 w-14" : "h-40 w-full"}`}
+        style={{ background: "var(--surface-muted)", border: "1px solid var(--border)" }}
+      >
+        <ImageIcon className={compact ? "h-4 w-4" : "h-8 w-8"} style={{ color: "var(--text-subtle)" }} />
+      </div>
+    )
+  }
+
+  if (isPdf) {
+    if (compact) {
+      return (
+        <div
+          className="flex h-11 w-14 shrink-0 items-center justify-center rounded-lg"
+          style={{ background: "var(--surface-muted)", border: "1px solid var(--border)", color: "var(--danger)" }}
+          title="Dokumen aset"
+        >
+          <FileText className="h-4 w-4" />
+        </div>
+      )
+    }
+
+    return (
+      <a
+        href={src}
+        target="_blank"
+        rel="noreferrer"
+        className="flex h-40 w-full shrink-0 items-center justify-center rounded-lg"
+        style={{ background: "var(--surface-muted)", border: "1px solid var(--border)", color: "var(--danger)" }}
+        title="Buka dokumen aset"
+      >
+        <FileText className="h-8 w-8" />
+      </a>
+    )
+  }
+
+  return (
+    <div className={`shrink-0 overflow-hidden rounded-lg ${compact ? "h-11 w-14" : "h-40 w-full"}`} style={{ border: "1px solid var(--border)", background: "var(--surface-muted)" }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt={nama} className="h-full w-full object-cover" />
+    </div>
+  )
+}
+
+function PhotoPreviewBox({ src, alt }: { src: string | null; alt: string }) {
+  if (!src) {
+    return (
+      <div className="flex h-40 w-full items-center justify-center rounded-lg" style={{ background: "var(--surface-muted)", border: "1px solid var(--border)" }}>
+        <ImageIcon className="h-8 w-8" style={{ color: "var(--text-subtle)" }} />
+      </div>
+    )
+  }
+
+  return (
+    <div className="h-40 w-full overflow-hidden rounded-lg" style={{ background: "var(--surface-muted)", border: "1px solid var(--border)" }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt={alt} className="h-full w-full object-cover" />
+    </div>
+  )
+}
+
 /* ── Main Page ──────────────────────────────────────────────────── */
 export default function DisposalPage() {
   const { data, loading, refetch } = useApi<Disposal[]>("/api/disposal")
@@ -88,17 +184,21 @@ export default function DisposalPage() {
   const [selected, setSelected]       = useState<Disposal | null>(null)
   const [saving, setSaving]           = useState(false)
   const [deleting, setDeleting]       = useState(false)
+  const [printingId, setPrintingId]   = useState<number | null>(null)
   const [verifAction, setVerifAction] = useState<"verif_manager" | "verif_bendahara" | null>(null)
   const [errors, setErrors]           = useState<Record<string, string>>({})
+  const [disposalFile, setDisposalFile] = useState<File | null>(null)
+  const [disposalPreview, setDisposalPreview] = useState<string | null>(null)
+  const [disposalPhotoRemoved, setDisposalPhotoRemoved] = useState(false)
 
   // Form state
   const [form, setForm] = useState({
-    nomor: "", asset_id: "", tgl_pengajuan: "", kondisi: "", keterangan: "", dibuat_oleh: "",
+    nomor: "", asset_id: "", tgl_pengajuan: "", kondisi: "", keterangan: "",
   })
 
   // Info aset auto-fill (read-only)
   const [assetInfo, setAssetInfo] = useState<{
-    kode: string; nama: string; hrg_beli: string; lokasi: string
+    id: number; kode: string; nama: string; hrg_beli: string; lokasi: string; gambar?: string | null
   } | null>(null)
 
   // Asset search
@@ -111,6 +211,38 @@ export default function DisposalPage() {
      a.nama_asset.toLowerCase().includes(assetSearch.toLowerCase()))
   ).slice(0, 20)
 
+  const resetDisposalPhoto = (markRemoved = false) => {
+    if (disposalPreview?.startsWith("blob:")) URL.revokeObjectURL(disposalPreview)
+    setDisposalFile(null)
+    setDisposalPreview(null)
+    setDisposalPhotoRemoved(markRemoved)
+  }
+
+  const setExistingDisposalPhoto = (row: Disposal | null) => {
+    if (disposalPreview?.startsWith("blob:")) URL.revokeObjectURL(disposalPreview)
+    setDisposalFile(null)
+    setDisposalPreview(row ? disposalGambarSrc(row.id, row.gambar) : null)
+    setDisposalPhotoRemoved(false)
+  }
+
+  const handleSelectDisposalPhoto = (file: File) => {
+    const validationError = validateDisposalPhoto(file)
+    if (validationError) {
+      setErrors(prev => ({ ...prev, gambar: validationError }))
+      return
+    }
+
+    if (disposalPreview?.startsWith("blob:")) URL.revokeObjectURL(disposalPreview)
+    setDisposalFile(file)
+    setDisposalPreview(URL.createObjectURL(file))
+    setDisposalPhotoRemoved(false)
+    setErrors(prev => {
+      const next = { ...prev }
+      delete next.gambar
+      return next
+    })
+  }
+
   // Saat pilih aset → auto-fill info aset (READ-ONLY sesuai Filament afterStateUpdated)
   const handleSelectAsset = async (asset: Asset) => {
     setAssetSearch(`${asset.kode_asset} — ${asset.nama_asset}`)
@@ -118,20 +250,23 @@ export default function DisposalPage() {
     setForm(f => ({ ...f, asset_id: String(asset.id) }))
 
     setAssetInfo({
+      id:      asset.id,
       kode:    asset.kode_asset,
       nama:    asset.nama_asset,
       hrg_beli: asset.hrg_beli ? formatCurrency(asset.hrg_beli) : "—",
       lokasi:  asset.nama_ruangan
         ? `${asset.nama_ruangan}${asset.lokasi ? ` — ${asset.lokasi}` : ""}`
         : "—",
+      gambar:  asset.gambar ?? null,
     })
   }
 
   const openAdd = () => {
     if (!canManageData) return
     setSelected(null); setErrors({})
-    setForm({ nomor: "", asset_id: "", tgl_pengajuan: new Date().toISOString().split("T")[0], kondisi: "", keterangan: "", dibuat_oleh: "" })
+    setForm({ nomor: "", asset_id: "", tgl_pengajuan: new Date().toISOString().split("T")[0], kondisi: "", keterangan: "" })
     setAssetSearch(""); setAssetInfo(null)
+    resetDisposalPhoto()
     setModalOpen(true)
   }
 
@@ -144,10 +279,14 @@ export default function DisposalPage() {
     setAssetSearch(a ? `${a.kode_asset} — ${a.nama_asset}` : `ID ${row.asset_id}`)
     if (a) {
       setAssetInfo({
+        id:       a.id,
         kode:     a.kode_asset,
         nama:     a.nama_asset,
         hrg_beli: a.hrg_beli ? formatCurrency(a.hrg_beli) : "—",
-        lokasi:   a.nama_ruangan ?? "—",
+        lokasi:   a.nama_ruangan
+          ? `${a.nama_ruangan}${a.lokasi ? ` — ${a.lokasi}` : ""}`
+          : "—",
+        gambar:   a.gambar ?? null,
       })
     }
     // Tampilkan hanya kode awal dari nomor surat (strip suffix)
@@ -158,8 +297,8 @@ export default function DisposalPage() {
       tgl_pengajuan: row.tgl_pengajuan?.split("T")[0] ?? "",
       kondisi:      row.kondisi ?? "",
       keterangan:   row.keterangan ?? "",
-      dibuat_oleh:  String(row.dibuat_oleh ?? ""),
     })
+    setExistingDisposalPhoto(row)
     setErrors({})
     setModalOpen(true)
   }
@@ -177,18 +316,21 @@ export default function DisposalPage() {
     try {
       const url    = selected ? `/api/disposal/${selected.id}` : "/api/disposal"
       const method = selected ? "PUT" : "POST"
+      const body = new FormData()
+      body.append("nomor", form.nomor || "")
+      body.append("asset_id", form.asset_id)
+      body.append("tgl_pengajuan", form.tgl_pengajuan)
+      body.append("kondisi", form.kondisi)
+      body.append("keterangan", form.keterangan)
+      if (disposalFile) body.append("foto", disposalFile)
+      if (!disposalFile && disposalPhotoRemoved) body.append("gambar", "")
+
       const res = await fetch(url, {
-        method, headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          nomor:         form.nomor || null,
-          asset_id:      Number(form.asset_id),
-          tgl_pengajuan: form.tgl_pengajuan,
-          kondisi:       form.kondisi,
-          keterangan:    form.keterangan,
-          dibuat_oleh:   form.dibuat_oleh ? Number(form.dibuat_oleh) : null,
-        }),
+        method,
+        body,
       })
       if (!res.ok) { const j = await res.json(); setErrors({ _: j.error ?? "Gagal" }); return }
+      resetDisposalPhoto()
       setModalOpen(false); refetch()
     } finally { setSaving(false) }
   }
@@ -214,6 +356,31 @@ export default function DisposalPage() {
       await fetch(`/api/disposal/${selected.id}`, { method: "DELETE" })
       setDeleteOpen(false); refetch()
     } finally { setDeleting(false) }
+  }
+
+  const handleDownloadPdf = async (row: Disposal) => {
+    setPrintingId(row.id)
+    try {
+      const res = await fetch(`/api/disposal/${row.id}/pdf`)
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.error ?? "Gagal membuat PDF")
+      }
+
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = `Permohonan_Disposal_${(row.nomor ?? row.nama_asset ?? row.id).toString().replace(/[^a-z0-9_-]+/gi, "_")}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Gagal mengunduh PDF")
+    } finally {
+      setPrintingId(null)
+    }
   }
 
   /* ── Status disposal overall ──────────────────────────────────── */
@@ -312,8 +479,8 @@ export default function DisposalPage() {
             {/* Cetak PDF — hanya setelah KEDUA verifikasi selesai */}
             {row.verif_manager === 1 && isFinalVerified(row) && (
               <Button variant="ghost" size="icon" className="h-7 w-7" style={{ color: "var(--primary)" }}
-                title="Cetak PDF" onClick={() => alert("Cetak PDF — akan tersedia segera")}>
-                <Printer className="h-3.5 w-3.5" />
+                title="Unduh PDF" disabled={printingId === row.id} onClick={() => handleDownloadPdf(row)}>
+                <Printer className={`h-3.5 w-3.5 ${printingId === row.id ? "animate-spin" : ""}`} />
               </Button>
             )}
             {/* Delete */}
@@ -378,6 +545,7 @@ export default function DisposalPage() {
                       onMouseEnter={e => ((e.currentTarget as HTMLElement).style.background = "var(--primary-light)")}
                       onMouseLeave={e => ((e.currentTarget as HTMLElement).style.background = "transparent")}
                     >
+                      <AssetPhotoPreview assetId={a.id} gambar={a.gambar} nama={a.nama_asset} compact />
                       <div>
                         <p className="font-semibold" style={{ color: "var(--text-900)" }}>{a.kode_asset}</p>
                         <p className="text-xs" style={{ color: "var(--text-subtle)" }}>{a.nama_asset}</p>
@@ -396,30 +564,95 @@ export default function DisposalPage() {
                 <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Informasi Aset</span>
                 <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full font-medium" style={{ background: "var(--surface-hover)", color: "var(--text-subtle)" }}>Read-only · Otomatis diisi</span>
               </div>
-              <div className="p-4 grid grid-cols-2 gap-4 text-sm">
-                {[
-                  ["Kode Aset",   assetInfo.kode],
-                  ["Nama Aset",   assetInfo.nama],
-                  ["Harga Beli",  assetInfo.hrg_beli],
-                  ["Lokasi Aset", assetInfo.lokasi],
-                ].map(([k, v]) => (
-                  <div key={String(k)}>
-                    <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>{k}</p>
-                    <p className="mt-0.5 font-medium" style={{ color: "var(--text-900)" }}>{v}</p>
-                  </div>
-                ))}
+              <div className="p-4 grid gap-4 md:grid-cols-[180px_1fr] text-sm">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-subtle)" }}>Foto Barang</p>
+                  <AssetPhotoPreview assetId={assetInfo.id} gambar={assetInfo.gambar} nama={assetInfo.nama} />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {[
+                    ["Kode Aset",   assetInfo.kode],
+                    ["Nama Aset",   assetInfo.nama],
+                    ["Harga Beli",  assetInfo.hrg_beli],
+                    ["Lokasi Aset", assetInfo.lokasi],
+                  ].map(([k, v]) => (
+                    <div key={String(k)}>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>{k}</p>
+                      <p className="mt-0.5 font-medium" style={{ color: "var(--text-900)" }}>{v}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!assetInfo && selected?.asset_gambar && (
+            <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+              <div className="px-4 py-2.5 flex items-center gap-2" style={{ background: "var(--surface-muted)", borderBottom: "1px solid var(--border)" }}>
+                <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Informasi Aset</span>
+              </div>
+              <div className="p-4">
+                <p className="text-[10px] font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-subtle)" }}>Foto Barang</p>
+                <AssetPhotoPreview assetId={selected.asset_id} gambar={selected.asset_gambar} nama={selected.nama_asset ?? "Foto barang"} />
               </div>
             </div>
           )}
 
           <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>Diajukan Oleh</p>
+              <p className="mt-1 rounded-lg px-3 py-2 text-sm font-medium" style={{ background: "var(--surface-muted)", border: "1px solid var(--border)", color: "var(--text-900)" }}>
+                {selected?.dibuat_oleh_nm ?? authUser?.nama_karyawan ?? "—"}
+              </p>
+            </div>
             <TextField label="Tanggal Pengajuan" type="date" required error={errors.tgl_pengajuan}
               value={form.tgl_pengajuan} onChange={e => setForm(f => ({ ...f, tgl_pengajuan: e.target.value }))} />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
             <SelectField label="Kondisi Aset" required error={errors.kondisi}
               value={form.kondisi} onChange={e => setForm(f => ({ ...f, kondisi: e.target.value }))}
               placeholder="— Pilih Kondisi —"
               options={[{ value: "Rusak Sebagian", label: "Rusak Sebagian" }, { value: "Rusak Total", label: "Rusak Total" }]} />
           </div>
+
+          <FormField label="Foto Kondisi Terakhir" error={errors.gambar}>
+            <div className="space-y-3">
+              <div className="relative max-w-sm">
+                <PhotoPreviewBox src={disposalPreview} alt="Foto kondisi terakhir" />
+                {disposalPreview && (
+                  <button
+                    type="button"
+                    onClick={() => resetDisposalPhoto(true)}
+                    className="absolute -right-2 -top-2 flex h-7 w-7 items-center justify-center rounded-full text-white transition-opacity hover:opacity-80"
+                    style={{ background: "var(--danger)" }}
+                    title="Hapus foto"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+              {canManageData && (
+                <label
+                  className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+                  style={{ border: "1px dashed var(--border-strong)", background: "var(--surface-muted)", color: "var(--text-700)" }}
+                >
+                  <ImagePlus className="h-4 w-4" />
+                  {disposalPreview ? "Ganti Foto" : "Upload Foto"}
+                  <input
+                    type="file"
+                    accept={DISPOSAL_PHOTO_ACCEPT}
+                    className="hidden"
+                    onChange={e => {
+                      const file = e.target.files?.[0]
+                      if (file) handleSelectDisposalPhoto(file)
+                      e.target.value = ""
+                    }}
+                  />
+                </label>
+              )}
+            </div>
+          </FormField>
 
           <TextareaField label="Keterangan / Alasan Disposal" required error={errors.keterangan}
             value={form.keterangan} onChange={e => setForm(f => ({ ...f, keterangan: e.target.value }))}
@@ -465,20 +698,32 @@ export default function DisposalPage() {
       <Modal open={viewOpen} onClose={() => setViewOpen(false)} title="Detail Permohonan Disposal" size="lg">
         {selected && (
           <div className="space-y-5">
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              {[
-                ["No. Surat",      selected.nomor ?? "—"],
-                ["Aset",           selected.nama_asset ?? "—"],
-                ["Tgl Pengajuan",  formatDate(selected.tgl_pengajuan)],
-                ["Kondisi",        selected.kondisi ?? "—"],
-                ["Diajukan Oleh",  selected.dibuat_oleh_nm ?? "—"],
-                ["Keterangan",     selected.keterangan ?? "—"],
-              ].map(([k, v]) => (
-                <div key={String(k)}>
-                  <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>{k}</p>
-                  <p className="mt-0.5 font-medium" style={{ color: "var(--text-900)" }}>{v}</p>
+            <div className="grid gap-4 md:grid-cols-[240px_1fr] text-sm">
+              <div className="space-y-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-subtle)" }}>Foto Aset</p>
+                  <AssetPhotoPreview assetId={selected.asset_id} gambar={selected.asset_gambar} nama={selected.nama_asset ?? "Foto barang"} />
                 </div>
-              ))}
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-subtle)" }}>Foto Kondisi Terakhir</p>
+                  <PhotoPreviewBox src={disposalGambarSrc(selected.id, selected.gambar)} alt="Foto kondisi terakhir" />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {[
+                  ["No. Surat",      selected.nomor ?? "—"],
+                  ["Aset",           selected.nama_asset ?? "—"],
+                  ["Tgl Pengajuan",  formatDate(selected.tgl_pengajuan)],
+                  ["Kondisi",        selected.kondisi ?? "—"],
+                  ["Diajukan Oleh",  selected.dibuat_oleh_nm ?? "—"],
+                  ["Keterangan",     selected.keterangan ?? "—"],
+                ].map(([k, v]) => (
+                  <div key={String(k)}>
+                    <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-subtle)" }}>{k}</p>
+                    <p className="mt-0.5 font-medium" style={{ color: "var(--text-900)" }}>{v}</p>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {/* Verifikasi status */}

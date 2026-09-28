@@ -51,7 +51,7 @@ export function validateServiceBuktiImage(file: File): string | null {
 
 export async function uploadServiceBuktiImage(
   file: File,
-  folder: "servis-kendaraan" | "service-aset",
+  folder: "servis-kendaraan" | "service-aset" | "disposal",
 ): Promise<string> {
   const validationError = validateServiceBuktiImage(file)
   if (validationError) throw new Error(validationError)
