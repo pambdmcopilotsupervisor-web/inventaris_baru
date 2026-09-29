@@ -63,7 +63,7 @@ export interface PendapatanAsetReportData {
   vehicleTrendDetails: { r2: Record<number, VehicleTrendChange>; r4: Record<number, VehicleTrendChange> }
 }
 
-const BILLING_CUTOFF_DAY = 20
+const BILLING_CUTOFF_DAY = 19
 
 function isSameUtcMonth(date: Date, year: number, month: number): boolean {
   return date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month
@@ -77,11 +77,11 @@ function isStillBillableThisPeriod(date: Date | null, year: number, month: numbe
   return date.getUTCDate() > BILLING_CUTOFF_DAY
 }
 
-function isContractStartBillableThisPeriod(date: Date, year: number, month: number): boolean {
+function hasContractStartedBillingThisPeriod(date: Date, year: number, month: number): boolean {
   if (date.getUTCFullYear() < year) return true
   if (date.getUTCFullYear() === year && date.getUTCMonth() + 1 < month) return true
   if (!isSameUtcMonth(date, year, month)) return false
-  return date.getUTCDate() < BILLING_CUTOFF_DAY
+  return date.getUTCDate() <= BILLING_CUTOFF_DAY
 }
 
 async function loadSharedData() {
@@ -162,7 +162,7 @@ function getActiveVehicles(
 
     const kontrak = periodKontraks[0]
     const contractStart = new Date(kontrak.tgl_awal)
-    if (!isContractStartBillableThisPeriod(contractStart, year, month)) continue
+    if (!hasContractStartedBillingThisPeriod(contractStart, year, month)) continue
 
     const contractEnd = new Date(kontrak.tgl_akhir)
     if (!isStillBillableThisPeriod(contractEnd, year, month)) continue

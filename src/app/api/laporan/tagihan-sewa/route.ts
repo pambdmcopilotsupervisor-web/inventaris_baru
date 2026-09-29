@@ -24,7 +24,7 @@ interface ReportRow {
 }
 
 type IndexedReportRow = ReportRow & { no: number }
-const BILLING_CUTOFF_DAY = 20
+const BILLING_CUTOFF_DAY = 19
 
 function sortKontraksByEndDateDesc<T extends { tgl_akhir: Date; id: bigint | number }>(items: T[]): T[] {
   return [...items].sort((a, b) => {
@@ -60,11 +60,11 @@ function isStillBillableThisPeriod(date: Date | null, year: number, month: numbe
   return date.getUTCDate() > BILLING_CUTOFF_DAY
 }
 
-function isContractStartBillableThisPeriod(date: Date, year: number, month: number): boolean {
+function hasContractStartedBillingThisPeriod(date: Date, year: number, month: number): boolean {
   if (date.getUTCFullYear() < year) return true
   if (date.getUTCFullYear() === year && date.getUTCMonth() + 1 < month) return true
   if (!isSameUtcMonth(date, year, month)) return false
-  return date.getUTCDate() < BILLING_CUTOFF_DAY
+  return date.getUTCDate() <= BILLING_CUTOFF_DAY
 }
 
 export async function GET(req: NextRequest) {
@@ -132,7 +132,7 @@ export async function GET(req: NextRequest) {
 
       const kontrak = periodKontraks[0]
       const contractStart = new Date(kontrak.tgl_awal)
-      const billableByContractStart = isContractStartBillableThisPeriod(contractStart, yearNum, monthNum)
+      const billableByContractStart = hasContractStartedBillingThisPeriod(contractStart, yearNum, monthNum)
       const contractEnd = new Date(kontrak.tgl_akhir)
       const saleDate = penjualan?.tgl_jual ? new Date(penjualan.tgl_jual) : null
       const stopDate = vehicle.tgl_stop_tagihan ? new Date(vehicle.tgl_stop_tagihan) : null
