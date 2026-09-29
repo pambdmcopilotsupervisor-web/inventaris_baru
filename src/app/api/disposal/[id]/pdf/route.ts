@@ -44,6 +44,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       id: Number(disposal.id),
       nomor: disposal.nomor,
       tgl_pengajuan: disposal.tgl_pengajuan,
+      diajukan_pada: disposal.created_at,
       kondisi: disposal.kondisi,
       keterangan: disposal.keterangan,
       gambar: disposal.gambar,

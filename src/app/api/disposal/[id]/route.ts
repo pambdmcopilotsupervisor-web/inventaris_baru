@@ -74,6 +74,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         data: {
           verif_manager:     1,
           tgl_verif_manager: new Date(),
+          updated_at:        new Date(),
         },
       })
       return NextResponse.json(serialize(updated))
@@ -104,6 +105,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           verif_bendahara:     1,
           tgl_verif_bendahara: new Date(),
           bendahara_id:        auth.user.karyawan_id,
+          updated_at:          new Date(),
         },
       })
 
@@ -135,6 +137,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         kondisi:       data.kondisi ?? undefined,
         keterangan:    data.keterangan ?? undefined,
         gambar:        typeof storedFoto !== "undefined" ? storedFoto : undefined,
+        updated_at:    new Date(),
       },
     })
     return NextResponse.json(serialize(updated))

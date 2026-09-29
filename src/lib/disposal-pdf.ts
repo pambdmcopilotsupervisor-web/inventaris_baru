@@ -15,6 +15,7 @@ export interface DisposalPdfData {
   id: number
   nomor: string | null
   tgl_pengajuan: Date | string
+  diajukan_pada: Date | string | null
   kondisi: string | null
   keterangan: string | null
   gambar: string | null
@@ -64,6 +65,15 @@ function fmtDateTime(value: Date | string | null | undefined): string {
     day: "2-digit",
     month: "long",
     year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Makassar",
+  }).format(new Date(value))
+}
+
+function fmtTime(value: Date | string | null | undefined): string {
+  if (!value) return "-"
+  return new Intl.DateTimeFormat("id-ID", {
     hour: "2-digit",
     minute: "2-digit",
     timeZone: "Asia/Makassar",
@@ -175,20 +185,49 @@ function drawImagePanel(doc: PDFKit.PDFDocument, title: string, image: Buffer | 
 
 function drawSignatures(doc: PDFKit.PDFDocument, data: DisposalPdfData, y: number): number {
   const signW = CONTENT_W / 3
-  const names = [
-    ["Diajukan oleh", data.dibuat_oleh_nm ?? "-"],
-    ["Verifikasi Manager", data.manager_nm ?? "-"],
-    [data.verif_ketua === 1 ? "Verifikasi Ketua" : "Verif Pengurus", data.verif_ketua === 1 ? data.ketua_nm ?? "-" : data.bendahara_nm ?? "-"],
+  const signatureH = 114
+  const dateGap = 10
+  const submitAt = data.diajukan_pada ?? data.tgl_pengajuan
+  const finalVerificationAt = data.tgl_verif_ketua ?? data.tgl_verif_bendahara
+  const signatures = [
+    {
+      role: "Diajukan oleh",
+      name: data.dibuat_oleh_nm ?? "-",
+      dateLabel: "Tanggal Pengajuan",
+      date: fmtDate(submitAt),
+      time: data.diajukan_pada ? fmtTime(data.diajukan_pada) : "-",
+    },
+    {
+      role: "Verifikasi Manager",
+      name: data.manager_nm ?? "-",
+      dateLabel: "Tanggal Verifikasi",
+      date: data.verif_manager === 1 ? fmtDate(data.tgl_verif_manager) : "-",
+      time: data.verif_manager === 1 ? fmtTime(data.tgl_verif_manager) : "-",
+    },
+    {
+      role: data.verif_ketua === 1 ? "Verifikasi Ketua" : "Verif Pengurus",
+      name: data.verif_ketua === 1 ? data.ketua_nm ?? "-" : data.bendahara_nm ?? "-",
+      dateLabel: "Tanggal Verifikasi",
+      date: (data.verif_ketua === 1 || data.verif_bendahara === 1) ? fmtDate(finalVerificationAt) : "-",
+      time: (data.verif_ketua === 1 || data.verif_bendahara === 1) ? fmtTime(finalVerificationAt) : "-",
+    },
   ]
 
-  names.forEach(([role, name], index) => {
+  signatures.forEach(({ role, name, dateLabel, date, time }, index) => {
     const x = MARGIN + index * signW
-    doc.fillColor("#64748b").font("Helvetica").fontSize(8).text(role, x, y, { width: signW, align: "center" })
-    doc.moveTo(x + 26, y + 56).lineTo(x + signW - 26, y + 56).strokeColor("#94a3b8").lineWidth(0.5).stroke()
-    doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(8).text(name, x + 8, y + 62, { width: signW - 16, align: "center" })
+    const innerX = x + 8
+    const innerW = signW - 16
+
+    doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(8).text(role, innerX, y + 9, { width: innerW, align: "center" })
+    doc.fillColor("#64748b").font("Helvetica").fontSize(7).text(`${dateLabel}:`, innerX, y + 24, { width: innerW, align: "center" })
+    doc.fillColor("#334155").font("Helvetica").fontSize(7).text(date, innerX, y + 24 + dateGap, { width: innerW, align: "center" })
+    doc.fillColor("#64748b").font("Helvetica").fontSize(7).text("Waktu:", innerX, y + 43, { width: innerW, align: "center" })
+    doc.fillColor("#334155").font("Helvetica").fontSize(7).text(time, innerX, y + 53, { width: innerW, align: "center" })
+    doc.moveTo(x + 26, y + 86).lineTo(x + signW - 26, y + 86).strokeColor("#94a3b8").lineWidth(0.5).stroke()
+    doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(8).text(name, innerX, y + 93, { width: innerW, align: "center" })
   })
 
-  return y + 84
+  return y + signatureH + 10
 }
 
 export async function generateDisposalPdf(data: DisposalPdfData, options: DisposalPdfOptions): Promise<Buffer> {
@@ -205,14 +244,15 @@ export async function generateDisposalPdf(data: DisposalPdfData, options: Dispos
     doc.on("error", reject)
 
     let y = drawHeader(doc, data, options)
+    const diajukanPada = data.diajukan_pada ? fmtDateTime(data.diajukan_pada) : fmtDate(data.tgl_pengajuan)
     y = sectionTitle(doc, "Informasi Permohonan", y)
     y = drawInfoGrid(doc, y, [
-      ["Tanggal Pengajuan", fmtDate(data.tgl_pengajuan)],
+      ["Tanggal Pengajuan", diajukanPada],
       ["Status Permohonan", statusText(data)],
       ["Diajukan Oleh", data.dibuat_oleh_nm ?? "-"],
       ["Kondisi Diajukan", data.kondisi ?? "-"],
-      ["Verifikasi Manager", data.verif_manager === 1 ? `Sudah - ${fmtDate(data.tgl_verif_manager)}` : "Belum"],
-      ["Verifikasi Akhir", (data.verif_ketua === 1 || data.verif_bendahara === 1) ? `Sudah - ${fmtDate(data.tgl_verif_ketua ?? data.tgl_verif_bendahara)}` : "Belum"],
+      ["Verifikasi Manager", data.verif_manager === 1 ? `Sudah - ${fmtDateTime(data.tgl_verif_manager)}` : "Belum"],
+      ["Verifikasi Akhir", (data.verif_ketua === 1 || data.verif_bendahara === 1) ? `Sudah - ${fmtDateTime(data.tgl_verif_ketua ?? data.tgl_verif_bendahara)}` : "Belum"],
     ])
 
     y = sectionTitle(doc, "Informasi Aset", y + 4)

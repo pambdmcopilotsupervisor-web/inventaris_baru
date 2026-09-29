@@ -124,6 +124,7 @@ export async function POST(req: NextRequest) {
     const nomorFormatted = nomor ? formatNomor(String(nomor)) : null
     const storedFoto = foto ? await uploadServiceBuktiImage(foto, "disposal") : (gambar ?? null)
 
+    const now = new Date()
     const disposal = await prisma.permohonan_disposal.create({
       data: {
         nomor:         nomorFormatted,
@@ -140,6 +141,8 @@ export async function POST(req: NextRequest) {
         manager_id:    manager ? Number(manager.id) : null,
         ketua_id:      null,
         bendahara_id:  null,
+        created_at:    now,
+        updated_at:    now,
       },
     })
 
