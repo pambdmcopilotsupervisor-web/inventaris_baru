@@ -125,14 +125,12 @@ export async function GET(req: NextRequest) {
       const periodKontraks = vehicleKontraks.filter(k => {
         const kStart = new Date(k.tgl_awal)   // Prisma returns UTC date
         const kEnd   = new Date(k.tgl_akhir)
-        return kStart <= endDate && kEnd >= startDate
+        return kStart <= endDate && kEnd >= startDate && hasContractStartedBillingThisPeriod(kStart, yearNum, monthNum)
       })
 
       if (periodKontraks.length === 0) continue
 
       const kontrak = periodKontraks[0]
-      const contractStart = new Date(kontrak.tgl_awal)
-      const billableByContractStart = hasContractStartedBillingThisPeriod(contractStart, yearNum, monthNum)
       const contractEnd = new Date(kontrak.tgl_akhir)
       const saleDate = penjualan?.tgl_jual ? new Date(penjualan.tgl_jual) : null
       const stopDate = vehicle.tgl_stop_tagihan ? new Date(vehicle.tgl_stop_tagihan) : null
@@ -143,7 +141,6 @@ export async function GET(req: NextRequest) {
 
       // Cek apakah tagihan sudah berhenti sebelum atau di dalam periode ini
       const stopReasons: string[] = []
-      if (!billableByContractStart) continue
       if (!billableByContract && stopsBillingInThisPeriod(contractEnd, yearNum, monthNum)) stopReasons.push("kontrak berakhir")
       if (!billableBySale && stopsBillingInThisPeriod(saleDate, yearNum, monthNum)) stopReasons.push("kendaraan terjual")
       if (!billableByStop && stopsBillingInThisPeriod(stopDate, yearNum, monthNum)) stopReasons.push("tagihan dihentikan")

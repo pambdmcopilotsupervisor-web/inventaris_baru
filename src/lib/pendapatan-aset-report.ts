@@ -156,14 +156,11 @@ function getActiveVehicles(
     const periodKontraks = vehicleKontraks.filter((kontrak) => {
       const start = new Date(kontrak.tgl_awal)
       const end = new Date(kontrak.tgl_akhir)
-      return start <= endDate && end >= startDate
+      return start <= endDate && end >= startDate && hasContractStartedBillingThisPeriod(start, year, month)
     })
     if (periodKontraks.length === 0) continue
 
     const kontrak = periodKontraks[0]
-    const contractStart = new Date(kontrak.tgl_awal)
-    if (!hasContractStartedBillingThisPeriod(contractStart, year, month)) continue
-
     const contractEnd = new Date(kontrak.tgl_akhir)
     if (!isStillBillableThisPeriod(contractEnd, year, month)) continue
 
