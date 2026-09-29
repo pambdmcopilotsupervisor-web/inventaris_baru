@@ -77,6 +77,13 @@ function isStillBillableThisPeriod(date: Date | null, year: number, month: numbe
   return date.getUTCDate() > BILLING_CUTOFF_DAY
 }
 
+function isContractStartBillableThisPeriod(date: Date, year: number, month: number): boolean {
+  if (date.getUTCFullYear() < year) return true
+  if (date.getUTCFullYear() === year && date.getUTCMonth() + 1 < month) return true
+  if (!isSameUtcMonth(date, year, month)) return false
+  return date.getUTCDate() < BILLING_CUTOFF_DAY
+}
+
 async function loadSharedData() {
   const [penjualanRaw, kontrakDetails, kontraks, penjualans, allVehicles] = await Promise.all([
     prisma.penjualan_r2r4s.findMany({ select: { data_r2r4_id: true } }),
@@ -154,6 +161,9 @@ function getActiveVehicles(
     if (periodKontraks.length === 0) continue
 
     const kontrak = periodKontraks[0]
+    const contractStart = new Date(kontrak.tgl_awal)
+    if (!isContractStartBillableThisPeriod(contractStart, year, month)) continue
+
     const contractEnd = new Date(kontrak.tgl_akhir)
     if (!isStillBillableThisPeriod(contractEnd, year, month)) continue
 
