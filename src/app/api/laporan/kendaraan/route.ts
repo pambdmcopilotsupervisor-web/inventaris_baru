@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { prisma, serialize } from "@/lib/prisma"
+import { serialize } from "@/lib/prisma"
+import { getKendaraanReportRecords } from "@/lib/kendaraan-report"
 
 export async function GET(req: NextRequest) {
   try {
@@ -7,13 +8,7 @@ export async function GET(req: NextRequest) {
     const jns_brg = searchParams.get("jns_brg") || null
     const stat    = searchParams.get("stat")    || null
 
-    const records = await prisma.data_r2r4s.findMany({
-      where: {
-        ...(jns_brg ? { jns_brg } : {}),
-        ...(stat    ? { stat }    : {}),
-      },
-      orderBy: { kode_brg: "asc" },
-    })
+    const records = await getKendaraanReportRecords({ jns_brg, stat })
 
     return NextResponse.json(serialize(records))
   } catch (e) {

@@ -475,8 +475,18 @@ export default function KendaraanPage() {
       if (laporanStat) params.stat    = laporanStat
 
       if (laporanFormat === "pdf") {
-        sessionStorage.setItem("cetak-laporan-kendaraan-params", JSON.stringify(params))
-        window.open("/cetak-laporan-kendaraan", "_blank")
+        const qs = new URLSearchParams(params)
+        const response = await fetch(`/api/laporan/kendaraan/pdf?${qs}`)
+        if (!response.ok) throw new Error("Gagal mengunduh PDF laporan kendaraan")
+        const blob = await response.blob()
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement("a")
+        link.href = url
+        link.download = `Laporan_Kendaraan_R2R4_${new Date().toISOString().slice(0, 10)}.pdf`
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+        URL.revokeObjectURL(url)
         setLaporanOpen(false)
       } else {
         const qs = new URLSearchParams(params)
@@ -507,6 +517,8 @@ export default function KendaraanPage() {
         writeFile(wb, `Laporan_Kendaraan_R2R4_${new Date().toISOString().slice(0,10)}.xlsx`)
         setLaporanOpen(false)
       }
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Gagal mengunduh laporan kendaraan")
     } finally { setLaporanLoading(false) }
   }
 
@@ -1200,7 +1212,7 @@ export default function KendaraanPage() {
             </div>
             {laporanFormat === "pdf" && (
               <p className="text-xs" style={{ color: "var(--text-subtle)" }}>
-                Akan membuka tab baru — gunakan Ctrl+P / Cmd+P untuk mencetak atau simpan sebagai PDF.
+                File PDF akan langsung diunduh setelah laporan selesai disiapkan.
               </p>
             )}
           </div>
