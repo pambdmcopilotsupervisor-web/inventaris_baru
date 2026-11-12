@@ -127,7 +127,7 @@ export default function ServiceACPage() {
   const openAdd = () => {
     if (!canManageData) return
     setEditMode(false); setSelected(null); setErrors({})
-    setForm({ ...EMPTY, tanggal_service: new Date().toISOString().split("T")[0] })
+    setForm({ ...EMPTY })
     setAssetSearch(""); setAssetInfo(null)
     setFotoFile(null); setFotoPreview(null); setFileInputKey(v => v + 1)
     setModalOpen(true)

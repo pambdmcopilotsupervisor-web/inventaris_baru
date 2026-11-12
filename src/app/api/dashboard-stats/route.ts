@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import type { riwayat_service_acs } from "@prisma/client"
 import { prisma, serialize } from "@/lib/prisma"
 import { ensureServiceDueColumns } from "@/lib/service-due"
 
@@ -110,24 +111,27 @@ export async function GET() {
         orderBy: { service: "asc" },
         take: 8,
       }),
-      prisma.riwayat_service_acs.findMany({
-        where: {
-          jatuh_tempo_berikutnya: {
-            gte: today,
-            lte: sixMonthsAhead,
-          },
-        },
-        select: {
-          id: true,
-          asset_id: true,
-          tanggal_service: true,
-          jatuh_tempo_berikutnya: true,
-          jenis_pekerjaan: true,
-          teknisi: true,
-        },
-        orderBy: { jatuh_tempo_berikutnya: "asc" },
-        take: 8,
-      }),
+      // Gunakan service terakhir per aset, termasuk jika jatuh temponya di luar rentang jadwal.
+      prisma.$queryRaw<Array<Pick<riwayat_service_acs,
+        "id" | "asset_id" | "tanggal_service" | "jatuh_tempo_berikutnya" | "jenis_pekerjaan" | "teknisi"
+      >>>`
+        SELECT r.id, r.asset_id, r.tanggal_service, r.jatuh_tempo_berikutnya,
+               r.jenis_pekerjaan, r.teknisi
+        FROM riwayat_service_acs r
+        WHERE r.jatuh_tempo_berikutnya >= ${today}
+          AND r.jatuh_tempo_berikutnya <= ${sixMonthsAhead}
+          AND NOT EXISTS (
+            SELECT 1
+            FROM riwayat_service_acs terbaru
+            WHERE terbaru.asset_id = r.asset_id
+              AND (
+                terbaru.tanggal_service > r.tanggal_service
+                OR (terbaru.tanggal_service = r.tanggal_service AND terbaru.id > r.id)
+              )
+          )
+        ORDER BY r.jatuh_tempo_berikutnya ASC, r.id ASC
+        LIMIT 8
+      `,
     ])
 
     const serviceAssetIds = [...new Set(jadwalServiceAset.map((item) => item.asset_id))]
