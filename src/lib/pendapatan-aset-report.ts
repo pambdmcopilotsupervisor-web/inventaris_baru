@@ -1,26 +1,15 @@
 import { prisma } from "@/lib/prisma"
+import { getContractForBillingPeriod, getVehicleSaleDates, isStillBillableThisPeriod } from "@/lib/kendaraan-billing"
 
 const BULAN_ID: Record<number, string> = {
   1: "Januari", 2: "Februari", 3: "Maret", 4: "April", 5: "Mei", 6: "Juni",
   7: "Juli", 8: "Agustus", 9: "September", 10: "Oktober", 11: "November", 12: "Desember",
 }
 
-function sortKontraksByEndDateDesc<T extends { tgl_akhir: Date; id: bigint | number }>(items: T[]): T[] {
-  return [...items].sort((a, b) => {
-    const endDiff = new Date(b.tgl_akhir).getTime() - new Date(a.tgl_akhir).getTime()
-    if (endDiff !== 0) return endDiff
-    return Number(b.id) - Number(a.id)
-  })
-}
-
 interface ContractLike {
   id: bigint | number
   tgl_awal: Date
   tgl_akhir: Date
-}
-
-interface SaleLike {
-  tgl_jual?: Date | null
 }
 
 export interface ActiveVehicleEntry {
@@ -63,27 +52,6 @@ export interface PendapatanAsetReportData {
   vehicleTrendDetails: { r2: Record<number, VehicleTrendChange>; r4: Record<number, VehicleTrendChange> }
 }
 
-const BILLING_CUTOFF_DAY = 19
-
-function isSameUtcMonth(date: Date, year: number, month: number): boolean {
-  return date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month
-}
-
-function isStillBillableThisPeriod(date: Date | null, year: number, month: number): boolean {
-  if (!date) return true
-  if (date.getUTCFullYear() > year) return true
-  if (date.getUTCFullYear() === year && date.getUTCMonth() + 1 > month) return true
-  if (!isSameUtcMonth(date, year, month)) return false
-  return date.getUTCDate() > BILLING_CUTOFF_DAY
-}
-
-function hasContractStartedBillingThisPeriod(date: Date, year: number, month: number): boolean {
-  if (date.getUTCFullYear() < year) return true
-  if (date.getUTCFullYear() === year && date.getUTCMonth() + 1 < month) return true
-  if (!isSameUtcMonth(date, year, month)) return false
-  return date.getUTCDate() <= BILLING_CUTOFF_DAY
-}
-
 async function loadSharedData() {
   const [penjualanRaw, kontrakDetails, kontraks, penjualans, allVehicles] = await Promise.all([
     prisma.penjualan_r2r4s.findMany({ select: { data_r2r4_id: true } }),
@@ -115,7 +83,7 @@ async function loadSharedData() {
   )
 
   const kontrakMap = new Map(kontraks.map((kontrak) => [Number(kontrak.id), kontrak]))
-  const penjualanMap = new Map(penjualans.map((penjualan) => [penjualan.data_r2r4_id, penjualan]))
+  const saleDates = getVehicleSaleDates(penjualans)
 
   const kontrakByVehicle = new Map<number, typeof kontraks>()
   for (const detail of kontrakDetails) {
@@ -125,7 +93,7 @@ async function loadSharedData() {
     if (kontrak) kontrakByVehicle.get(detail.data_r2r4_id)!.push(kontrak)
   }
 
-  return { vehicles, kontrakByVehicle, penjualanMap }
+  return { vehicles, kontrakByVehicle, saleDates }
 }
 
 type SharedVehicle = Awaited<ReturnType<typeof loadSharedData>>["vehicles"][number]
@@ -135,11 +103,8 @@ function getActiveVehicles(
   month: number,
   vehicles: SharedVehicle[],
   kontrakByVehicle: Map<number, ContractLike[]>,
-  penjualanMap: Map<number | null, SaleLike>,
+  saleDates: Map<number, Date>,
 ) {
-  const startDate = new Date(Date.UTC(year, month - 1, 1))
-  const endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999))
-
   const result = {
     r2: [] as ActiveVehicleEntry[],
     r4: [] as ActiveVehicleEntry[],
@@ -151,21 +116,12 @@ function getActiveVehicles(
 
   for (const vehicle of vehicles) {
     const vehicleId = Number(vehicle.id)
-    const vehicleKontraks = sortKontraksByEndDateDesc(kontrakByVehicle.get(vehicleId) ?? [])
-
-    const periodKontraks = vehicleKontraks.filter((kontrak) => {
-      const start = new Date(kontrak.tgl_awal)
-      const end = new Date(kontrak.tgl_akhir)
-      return start <= endDate && end >= startDate && hasContractStartedBillingThisPeriod(start, year, month)
-    })
-    if (periodKontraks.length === 0) continue
-
-    const kontrak = periodKontraks[0]
+    const kontrak = getContractForBillingPeriod(kontrakByVehicle.get(vehicleId) ?? [], year, month)
+    if (!kontrak) continue
     const contractEnd = new Date(kontrak.tgl_akhir)
     if (!isStillBillableThisPeriod(contractEnd, year, month)) continue
 
-    const penjualan = penjualanMap.get(vehicleId)
-    const saleDate = penjualan?.tgl_jual ? new Date(penjualan.tgl_jual) : null
+    const saleDate = saleDates.get(vehicleId) ?? null
     if (!isStillBillableThisPeriod(saleDate, year, month)) continue
 
     const stopDate = vehicle.tgl_stop_tagihan ? new Date(vehicle.tgl_stop_tagihan) : null
@@ -234,7 +190,7 @@ export async function getPendapatanAsetReport(params: {
   const monthLabels: Record<number, string> = {}
   months.forEach((month) => { monthLabels[month] = BULAN_ID[month] })
 
-  const { vehicles, kontrakByVehicle, penjualanMap } = await loadSharedData()
+  const { vehicles, kontrakByVehicle, saleDates } = await loadSharedData()
 
   const r2Income: Record<number, number> = {}
   const r4Income: Record<number, number> = {}
@@ -244,7 +200,7 @@ export async function getPendapatanAsetReport(params: {
   const vehicleMapByMonth: Record<number, VehicleMonthMap> = {}
 
   for (const month of months) {
-    const data = getActiveVehicles(year, month, vehicles, kontrakByVehicle, penjualanMap)
+    const data = getActiveVehicles(year, month, vehicles, kontrakByVehicle, saleDates)
     r2Income[month] = data.r2Nominal
     r4Income[month] = data.r4Nominal
     r2Units[month] = data.r2Unit

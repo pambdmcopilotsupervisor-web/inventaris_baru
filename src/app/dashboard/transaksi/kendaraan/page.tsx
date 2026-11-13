@@ -16,6 +16,8 @@ import { useApi } from "@/hooks/useApi"
 import { useCrud } from "@/hooks/useCrud"
 import { useAuth } from "@/contexts/AuthContext"
 import { canCreateOrEditTransaksi, canDeleteTransaksi } from "@/lib/transaksi-role"
+import { BillingHistory } from "@/components/kendaraan/billing-history"
+import { RentalProfit } from "@/components/kendaraan/rental-profit"
 
 /* ── Types ─────────────────────────────────────────────────────── */
 interface KontrakInfo {
@@ -157,7 +159,7 @@ export default function KendaraanPage() {
   // Riwayat servis & pembayaran untuk detail view
   const [riwayatServis, setRiwayatServis]       = useState<RiwayatServis[]>([])
   const [riwayatPembayaran, setRiwayatPembayaran] = useState<RiwayatPembayaran[]>([])
-  const [detailTab, setDetailTab] = useState<"info" | "foto" | "servis" | "pembayaran">("info")
+  const [detailTab, setDetailTab] = useState<"info" | "tagihan" | "keuntungan" | "foto" | "servis" | "pembayaran">("info")
   const [loadingRelasi, setLoadingRelasi]       = useState(false)
 
   // Filter + pagination
@@ -933,15 +935,17 @@ export default function KendaraanPage() {
         {selected && (
           <div className="space-y-5">
             {/* Tab buttons */}
-            <div className="flex gap-2 border-b" style={{ borderColor: "var(--border)" }}>
+            <div className="flex gap-2 border-b overflow-x-auto" style={{ borderColor: "var(--border)" }}>
               {[
                 { key: "info",        label: "Informasi", icon: <Eye className="h-3.5 w-3.5" /> },
+                { key: "tagihan",     label: "Tagihan Sewa", icon: <FileText className="h-3.5 w-3.5" /> },
+                { key: "keuntungan",  label: "Keuntungan Sewa", icon: <CreditCard className="h-3.5 w-3.5" /> },
                 { key: "foto",        label: "Foto", icon: <ImageOff className="h-3.5 w-3.5" /> },
                 { key: "servis",      label: `Riwayat Servis (${riwayatServis.length})`, icon: <Wrench className="h-3.5 w-3.5" /> },
                 { key: "pembayaran",  label: `Riwayat Pembayaran (${riwayatPembayaran.length})`, icon: <CreditCard className="h-3.5 w-3.5" /> },
               ].map(tab => (
-                <button key={tab.key} onClick={() => setDetailTab(tab.key as "info" | "foto" | "servis" | "pembayaran")}
-                  className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors duration-150 cursor-pointer"
+                <button key={tab.key} onClick={() => setDetailTab(tab.key as typeof detailTab)}
+                  className="flex shrink-0 items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors duration-150 cursor-pointer"
                   style={{
                     borderBottomColor: detailTab === tab.key ? "var(--primary)" : "transparent",
                     color: detailTab === tab.key ? "var(--primary)" : "var(--text-muted)",
@@ -951,6 +955,9 @@ export default function KendaraanPage() {
                 </button>
               ))}
             </div>
+
+            {detailTab === "tagihan" && <BillingHistory key={selected.id} kendaraanId={selected.id} />}
+            {detailTab === "keuntungan" && <RentalProfit key={selected.id} kendaraanId={selected.id} />}
 
             {/* Tab: Informasi */}
             {detailTab === "info" && (

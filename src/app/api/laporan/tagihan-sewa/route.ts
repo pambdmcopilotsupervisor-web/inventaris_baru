@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma, serialize } from "@/lib/prisma"
+import { getBillingStopReasons, getContractForBillingPeriod, getVehicleSaleDates, isStillBillableThisPeriod, stopsBillingInThisPeriod } from "@/lib/kendaraan-billing"
 
 type ReportType = "R2" | "R4"
 
@@ -24,48 +25,6 @@ interface ReportRow {
 }
 
 type IndexedReportRow = ReportRow & { no: number }
-const BILLING_CUTOFF_DAY = 19
-
-function sortKontraksByEndDateDesc<T extends { tgl_akhir: Date; id: bigint | number }>(items: T[]): T[] {
-  return [...items].sort((a, b) => {
-    const endDiff = new Date(b.tgl_akhir).getTime() - new Date(a.tgl_akhir).getTime()
-    if (endDiff !== 0) return endDiff
-    return Number(b.id) - Number(a.id)
-  })
-}
-
-function isSameUtcMonth(date: Date, year: number, month: number): boolean {
-  return date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month
-}
-
-function stopsBillingInThisPeriod(date: Date | null, year: number, month: number): boolean {
-  if (!date) return false
-
-  if (date.getUTCFullYear() < year) return true
-  if (date.getUTCFullYear() === year && date.getUTCMonth() + 1 < month) return true
-
-  if (!isSameUtcMonth(date, year, month)) return false
-
-  return date.getUTCDate() <= BILLING_CUTOFF_DAY
-}
-
-function isStillBillableThisPeriod(date: Date | null, year: number, month: number): boolean {
-  if (!date) return true
-
-  if (date.getUTCFullYear() > year) return true
-  if (date.getUTCFullYear() === year && date.getUTCMonth() + 1 > month) return true
-
-  if (!isSameUtcMonth(date, year, month)) return false
-
-  return date.getUTCDate() > BILLING_CUTOFF_DAY
-}
-
-function hasContractStartedBillingThisPeriod(date: Date, year: number, month: number): boolean {
-  if (date.getUTCFullYear() < year) return true
-  if (date.getUTCFullYear() === year && date.getUTCMonth() + 1 < month) return true
-  if (!isSameUtcMonth(date, year, month)) return false
-  return date.getUTCDate() <= BILLING_CUTOFF_DAY
-}
 
 export async function GET(req: NextRequest) {
   try {
@@ -77,7 +36,6 @@ export async function GET(req: NextRequest) {
     const monthNum  = parseInt(month)
     const yearNum   = parseInt(year)
     const startDate = new Date(Date.UTC(yearNum, monthNum - 1, 1))
-    const endDate   = new Date(Date.UTC(yearNum, monthNum, 0, 23, 59, 59, 999))
 
     const periodLabel = startDate.toLocaleDateString("id-ID", { month: "long", year: "numeric", timeZone: "UTC" })
 
@@ -102,7 +60,7 @@ export async function GET(req: NextRequest) {
       : []
 
     const kontrakMap = new Map(kontraks.map(k => [Number(k.id), k]))
-    const penjualanMap = new Map(penjualans.map(p => [p.data_r2r4_id, p]))
+    const saleDates = getVehicleSaleDates(penjualans)
 
     // Group kontrak detail by kendaraan
     const kontrakByVehicle = new Map<number, typeof kontraks>()
@@ -118,21 +76,13 @@ export async function GET(req: NextRequest) {
 
     for (const vehicle of vehicles) {
       const vehicleId = Number(vehicle.id)
-      const vehicleKontraks = sortKontraksByEndDateDesc(kontrakByVehicle.get(vehicleId) ?? [])
-      const penjualan = penjualanMap.get(vehicleId)
+      const vehicleKontraks = kontrakByVehicle.get(vehicleId) ?? []
 
       // Cari kontrak yang relevan untuk periode ini
-      const periodKontraks = vehicleKontraks.filter(k => {
-        const kStart = new Date(k.tgl_awal)   // Prisma returns UTC date
-        const kEnd   = new Date(k.tgl_akhir)
-        return kStart <= endDate && kEnd >= startDate && hasContractStartedBillingThisPeriod(kStart, yearNum, monthNum)
-      })
-
-      if (periodKontraks.length === 0) continue
-
-      const kontrak = periodKontraks[0]
+      const kontrak = getContractForBillingPeriod(vehicleKontraks, yearNum, monthNum)
+      if (!kontrak) continue
       const contractEnd = new Date(kontrak.tgl_akhir)
-      const saleDate = penjualan?.tgl_jual ? new Date(penjualan.tgl_jual) : null
+      const saleDate = saleDates.get(vehicleId) ?? null
       const stopDate = vehicle.tgl_stop_tagihan ? new Date(vehicle.tgl_stop_tagihan) : null
 
       const billableByContract = isStillBillableThisPeriod(contractEnd, yearNum, monthNum)
@@ -140,10 +90,7 @@ export async function GET(req: NextRequest) {
       const billableByStop = isStillBillableThisPeriod(stopDate, yearNum, monthNum)
 
       // Cek apakah tagihan sudah berhenti sebelum atau di dalam periode ini
-      const stopReasons: string[] = []
-      if (!billableByContract && stopsBillingInThisPeriod(contractEnd, yearNum, monthNum)) stopReasons.push("kontrak berakhir")
-      if (!billableBySale && stopsBillingInThisPeriod(saleDate, yearNum, monthNum)) stopReasons.push("kendaraan terjual")
-      if (!billableByStop && stopsBillingInThisPeriod(stopDate, yearNum, monthNum)) stopReasons.push("tagihan dihentikan")
+      const stopReasons = getBillingStopReasons(contractEnd, saleDate, stopDate, yearNum, monthNum)
 
       const type: ReportType = vehicle.jns_brg?.toUpperCase().includes("R4") ? "R4" : "R2"
 
